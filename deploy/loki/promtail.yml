@@ -1,0 +1,31 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://172.18.20.145:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: netora-unbound
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: unbound
+          node: dns-dev
+          __path__: /var/log/unbound/unbound.log
+
+  - job_name: netora-api-journal
+    journal:
+      max_age: 12h
+      labels:
+        job: netora-api
+        node: dns-dev
+    relabel_configs:
+      - source_labels: ['__journal__systemd_unit']
+        target_label: 'unit'
+        regex: 'netora-api.service'
+        action: keep

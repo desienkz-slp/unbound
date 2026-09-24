@@ -1,0 +1,114 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Throughput & Resolution Velocity",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Total Queries per Second (QPS)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(netora_queries_total[1m]))",
+          "legendFormat": "Total QPS"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "max": 1, "min": 0 }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 1 },
+      "id": 3,
+      "title": "Cache Hit Ratio",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "sum(rate(netora_cache_hits_total[1m])) / (sum(rate(netora_cache_hits_total[1m])) + sum(rate(netora_cache_misses_total[1m])) + 0.0001)",
+          "legendFormat": "Hit Ratio"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 1 },
+      "id": 4,
+      "title": "Upstream Latency",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "netora_upstream_latency_seconds",
+          "legendFormat": "{{ upstream }}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 5,
+      "title": "Security, Filtering & Error Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 8 },
+      "id": 6,
+      "title": "Threats Blocked by Category",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (category) (rate(netora_blocked_queries_total[1m]))",
+          "legendFormat": "{{ category }}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+      "id": 7,
+      "title": "Error Responses (SERVFAIL & NXDOMAIN)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(netora_servfail_total[1m])",
+          "legendFormat": "SERVFAIL"
+        },
+        {
+          "expr": "rate(netora_nxdomain_total[1m])",
+          "legendFormat": "NXDOMAIN"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["netora", "dns", "isp", "unbound"],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "Netora DNS — Executive NOC Overview",
+  "uid": "netora-dns-overview"
+}

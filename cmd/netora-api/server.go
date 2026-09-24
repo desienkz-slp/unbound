@@ -16,6 +16,7 @@ import (
 	"netora-dns/pkg/policy"
 	"netora-dns/pkg/runtime"
 	"netora-dns/pkg/storage"
+	"netora-dns/pkg/telemetry"
 )
 
 // Server encapsulates the Netora REST API dependencies.
@@ -26,6 +27,8 @@ type Server struct {
 	healthChecker *runtime.DNSHealthChecker
 	jwtSecret     string
 	nodeID        string
+	metrics       *telemetry.Metrics
+	alertEngine   *telemetry.AlertEngine
 }
 
 // NewServer initializes the API server components.
@@ -33,6 +36,9 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 	if policyEngine == nil {
 		policyEngine = policy.NewPolicyEngine()
 	}
+	metrics := telemetry.DefaultMetrics
+	alertEngine := telemetry.NewAlertEngine(nodeID, store, metrics)
+
 	return &Server{
 		store:         store,
 		engine:        engine,
@@ -40,6 +46,8 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		healthChecker: runtime.NewDNSHealthChecker(3 * time.Second),
 		jwtSecret:     jwtSecret,
 		nodeID:        nodeID,
+		metrics:       metrics,
+		alertEngine:   alertEngine,
 	}
 }
 
@@ -47,6 +55,12 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Health & Probe
 	mux.HandleFunc("/api/v1/health", s.handleSystemHealth)
+
+	// Prometheus Telemetry
+	mux.HandleFunc("/metrics", s.metrics.PrometheusHandler())
+
+	// Operational Alerts
+	mux.HandleFunc("/api/v1/alerts", s.requireAuth(s.handleAlerts))
 
 	// Diagnostics & Explainability
 	mux.HandleFunc("/api/v1/diagnose", s.requireAuth(s.handleDiagnose))
@@ -450,8 +464,15 @@ func (s *Server) handleDiagnose(w http.ResponseWriter, r *http.Request) {
 	// 1. Evaluate in Policy Engine
 	decision := s.policyEngine.Evaluate(req.Domain, req.Policy)
 
+	// Record telemetry
+	s.metrics.IncQueries("UDP", false)
+	s.metrics.RecordDecision(string(decision.Action), decision.Category)
+
 	// 2. Perform Live DNS Resolution Probe
 	probe := s.healthChecker.CheckResolution(r.Context(), "127.0.0.1", 53, "udp", req.Domain)
+	if probe.Latency > 0 {
+		s.metrics.SetUpstreamLatency("127.0.0.1", float64(probe.Latency.Milliseconds()))
+	}
 
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"domain":        req.Domain,
@@ -469,6 +490,14 @@ func (s *Server) handleDiagnose(w http.ResponseWriter, r *http.Request) {
 			"error":        probe.ErrorMessage,
 		},
 	})
+}
+
+// Handler: Operational Alerts (/api/v1/alerts)
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	probe := s.healthChecker.CheckResolution(r.Context(), "127.0.0.1", 53, "udp", "google.com")
+	_ = s.alertEngine.Evaluate(r.Context(), probe.Healthy)
+	alerts := s.alertEngine.GetActiveAlerts()
+	s.writeJSON(w, http.StatusOK, alerts)
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data interface{}) {

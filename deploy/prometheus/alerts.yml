@@ -1,0 +1,42 @@
+groups:
+  - name: netora_operational_alerts
+    rules:
+      - alert: DnsNodeDown
+        expr: up{job="netora-dns"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          tier: data-plane
+        annotations:
+          summary: "Netora DNS Node Down ({{ $labels.node }})"
+          description: "Node {{ $labels.node }} at {{ $labels.instance }} has been unreachable for 30 seconds."
+
+      - alert: ServfailSpike
+        expr: rate(netora_servfail_total[2m]) / (rate(netora_queries_total[2m]) + 0.001) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+          tier: resolution
+        annotations:
+          summary: "SERVFAIL spike on {{ $labels.node }}"
+          description: "SERVFAIL responses exceed 5% of resolution throughput on node {{ $labels.node }}."
+
+      - alert: CacheHitRatioCollapse
+        expr: rate(netora_cache_hits_total[5m]) / (rate(netora_cache_hits_total[5m]) + rate(netora_cache_misses_total[5m]) + 0.001) < 0.50
+        for: 5m
+        labels:
+          severity: warning
+          tier: cache
+        annotations:
+          summary: "Cache hit ratio collapsed below 50% on {{ $labels.node }}"
+          description: "Cache hit efficiency on node {{ $labels.node }} dropped to {{ $value | humanizePercentage }}."
+
+      - alert: UpstreamLatencyHigh
+        expr: netora_upstream_latency_seconds > 0.150
+        for: 1m
+        labels:
+          severity: warning
+          tier: upstream
+        annotations:
+          summary: "Upstream DNS latency high ({{ $labels.upstream }})"
+          description: "Latency to upstream {{ $labels.upstream }} is {{ $value }}s on node {{ $labels.node }}."

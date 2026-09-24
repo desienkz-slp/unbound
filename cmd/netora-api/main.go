@@ -16,6 +16,7 @@ import (
 	"netora-dns/pkg/policy"
 	"netora-dns/pkg/runtime"
 	"netora-dns/pkg/storage"
+	"netora-dns/pkg/telemetry"
 )
 
 func main() {
@@ -105,7 +106,13 @@ func main() {
 	policyEngine.AddBlockRule("googleadservices.com", "ADS", "Hagezi PopupAds", "||googleadservices.com^")
 	policyEngine.AddBlockRule("malware-traffic-analysis.net", "MALWARE", "Hagezi Light", "||malware-traffic-analysis.net^")
 
-	// 6. Setup HTTP Server
+	// 6. Start Telemetry Background Collector
+	statsCollector := telemetry.NewUnboundStatsCollector(telemetry.DefaultMetrics, 10*time.Second)
+	collectorCtx, collectorCancel := context.WithCancel(context.Background())
+	defer collectorCancel()
+	go statsCollector.Start(collectorCtx)
+
+	// 7. Setup HTTP Server
 	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID)
 	mux := http.NewServeMux()
 	apiServer.RegisterRoutes(mux)

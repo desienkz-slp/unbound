@@ -207,3 +207,31 @@ func TestAPI_DiagnoseDomain(t *testing.T) {
 		t.Errorf("expected source Hagezi PopupAds, got %v", resp["source"])
 	}
 }
+
+func TestAPI_MetricsAndAlerts(t *testing.T) {
+	server, _, token := setupTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	// Test /metrics
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /metrics, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("netora_queries_total")) {
+		t.Errorf("expected /metrics to contain netora_queries_total")
+	}
+
+	// Test /api/v1/alerts
+	alertsReq := httptest.NewRequest(http.MethodGet, "/api/v1/alerts", nil)
+	alertsReq.Header.Set("Authorization", "Bearer "+token)
+	alertsW := httptest.NewRecorder()
+	mux.ServeHTTP(alertsW, alertsReq)
+
+	if alertsW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/v1/alerts, got %d", alertsW.Code)
+	}
+}
