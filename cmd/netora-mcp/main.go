@@ -250,6 +250,20 @@ func (s *MCPServer) getTools() []ToolDefinition {
 				"required": []string{"node_id", "version_id"},
 			},
 		},
+		// Hermes AI-NOC Diagnostic
+		{
+			Name:        "hermes_investigate_issue",
+			Description: "Executes deep 6-stage AI-NOC investigation of domain access problems with verifiable evidence.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"domain":       map[string]string{"type": "string", "description": "Target domain to investigate (e.g. whatsapp.com, ads.foo.com)"},
+					"client_ip":    map[string]string{"type": "string", "description": "Client IP experiencing the issue"},
+					"policy_group": map[string]string{"type": "string", "description": "Policy profile (DEFAULT, FAMILY, etc.)"},
+				},
+				"required": []string{"domain"},
+			},
+		},
 	}
 }
 
@@ -361,6 +375,21 @@ func (s *MCPServer) executeTool(ctx context.Context, name string, args map[strin
 		data, err := s.apiRequest("POST", fmt.Sprintf("/api/v1/nodes/%s/config/rollback", nodeID), map[string]string{
 			"version_id": versionID,
 		})
+		if err != nil {
+			return nil, err
+		}
+		return &ToolCallResult{Content: []TextContent{{Type: "text", Text: string(data)}}}, nil
+
+	case "hermes_investigate_issue":
+		domain, _ := args["domain"].(string)
+		clientIP, _ := args["client_ip"].(string)
+		policyGroup, _ := args["policy_group"].(string)
+		body := map[string]string{
+			"domain":       domain,
+			"client_ip":    clientIP,
+			"policy_group": policyGroup,
+		}
+		data, err := s.apiRequest("POST", "/api/v1/hermes/investigate", body)
 		if err != nil {
 			return nil, err
 		}

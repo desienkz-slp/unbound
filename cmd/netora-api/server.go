@@ -13,6 +13,7 @@ import (
 	"netora-dns/pkg/auth"
 	"netora-dns/pkg/cluster"
 	"netora-dns/pkg/configengine"
+	"netora-dns/pkg/hermes"
 	"netora-dns/pkg/model"
 	"netora-dns/pkg/policy"
 	"netora-dns/pkg/runtime"
@@ -31,6 +32,7 @@ type Server struct {
 	metrics        *telemetry.Metrics
 	alertEngine    *telemetry.AlertEngine
 	clusterManager *cluster.ClusterManager
+	investigator   *hermes.Investigator
 }
 
 // NewServer initializes the API server components.
@@ -50,16 +52,20 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		SyncStatus:   cluster.SyncSynchronized,
 	})
 
+	hc := runtime.NewDNSHealthChecker(3 * time.Second)
+	inv := hermes.NewInvestigator(nodeID, policyEngine, hc)
+
 	return &Server{
 		store:          store,
 		engine:         engine,
 		policyEngine:   policyEngine,
-		healthChecker:  runtime.NewDNSHealthChecker(3 * time.Second),
+		healthChecker:  hc,
 		jwtSecret:      jwtSecret,
 		nodeID:         nodeID,
 		metrics:        metrics,
 		alertEngine:    alertEngine,
 		clusterManager: cm,
+		investigator:   inv,
 	}
 }
 
@@ -76,6 +82,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// Diagnostics & Explainability
 	mux.HandleFunc("/api/v1/diagnose", s.requireAuth(s.handleDiagnose))
+
+	// Hermes AI-NOC Deep Diagnostic Investigation
+	mux.HandleFunc("/api/v1/hermes/investigate", s.requireAuth(s.handleHermesInvestigate))
 
 	// Auth Endpoints
 	mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
@@ -580,6 +589,28 @@ func (s *Server) handleClusterSync(w http.ResponseWriter, r *http.Request) {
 		"results": results,
 		"summary": s.clusterManager.GetClusterSummary(),
 	})
+}
+
+// Handler: Hermes Deep Diagnostic Investigation (/api/v1/hermes/investigate)
+func (s *Server) handleHermesInvestigate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req struct {
+		Domain      string `json:"domain"`
+		ClientIP    string `json:"client_ip,omitempty"`
+		PolicyGroup string `json:"policy_group,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	state, _ := s.store.GetDesiredState(r.Context(), s.nodeID)
+	report := s.investigator.Investigate(r.Context(), req.Domain, req.ClientIP, req.PolicyGroup, state)
+	s.writeJSON(w, http.StatusOK, report)
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data interface{}) {
