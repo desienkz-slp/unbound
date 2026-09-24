@@ -41,7 +41,7 @@ func setupTestServer(t *testing.T) (*Server, *storage.MemoryStore, string) {
 	})
 
 	jwtSecret := "test-secret-signing-key-123456789"
-	server := NewServer(store, engine, jwtSecret, "test-node")
+	server := NewServer(store, engine, nil, jwtSecret, "test-node")
 
 	token, _ := auth.GenerateToken(user, jwtSecret, 1*time.Hour)
 	return server, store, token
@@ -169,5 +169,41 @@ func TestAPI_AllowlistOperations(t *testing.T) {
 
 	if delW.Code != http.StatusOK {
 		t.Errorf("expected 200 deleting allowlist, got %d", delW.Code)
+	}
+}
+
+func TestAPI_DiagnoseDomain(t *testing.T) {
+	server, _, token := setupTestServer(t)
+
+	// Add block rule
+	server.policyEngine.AddBlockRule("adserver.tracking.net", "ADS", "Hagezi PopupAds", "||adserver.tracking.net^")
+
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	// Diagnose blocked domain
+	diagBody := []byte(`{"domain":"adserver.tracking.net","policy":"HOME"}`)
+	diagReq := httptest.NewRequest(http.MethodPost, "/api/v1/diagnose", bytes.NewReader(diagBody))
+	diagReq.Header.Set("Authorization", "Bearer "+token)
+	diagW := httptest.NewRecorder()
+	mux.ServeHTTP(diagW, diagReq)
+
+	if diagW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from diagnose, got %d", diagW.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(diagW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed parsing diagnose response: %v", err)
+	}
+
+	if resp["action"] != "BLOCKED" {
+		t.Errorf("expected action BLOCKED, got %v", resp["action"])
+	}
+	if resp["category"] != "ADS" {
+		t.Errorf("expected category ADS, got %v", resp["category"])
+	}
+	if resp["source"] != "Hagezi PopupAds" {
+		t.Errorf("expected source Hagezi PopupAds, got %v", resp["source"])
 	}
 }

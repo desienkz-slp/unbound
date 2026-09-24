@@ -13,6 +13,7 @@ import (
 	"netora-dns/pkg/auth"
 	"netora-dns/pkg/configengine"
 	"netora-dns/pkg/model"
+	"netora-dns/pkg/policy"
 	"netora-dns/pkg/runtime"
 	"netora-dns/pkg/storage"
 )
@@ -98,8 +99,14 @@ func main() {
 		log.Fatalf("Failed to initialize engine: %v", err)
 	}
 
-	// 5. Setup HTTP Server
-	apiServer := NewServer(store, engine, *jwtSecret, *nodeID)
+	// 5. Initialize Policy Engine
+	policyEngine := policy.NewPolicyEngine()
+	policyEngine.AddBlockRule("doubleclick.net", "ADS", "Hagezi PopupAds", "||doubleclick.net^")
+	policyEngine.AddBlockRule("googleadservices.com", "ADS", "Hagezi PopupAds", "||googleadservices.com^")
+	policyEngine.AddBlockRule("malware-traffic-analysis.net", "MALWARE", "Hagezi Light", "||malware-traffic-analysis.net^")
+
+	// 6. Setup HTTP Server
+	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID)
 	mux := http.NewServeMux()
 	apiServer.RegisterRoutes(mux)
 

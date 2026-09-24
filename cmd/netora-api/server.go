@@ -11,6 +11,7 @@ import (
 	"netora-dns/pkg/auth"
 	"netora-dns/pkg/configengine"
 	"netora-dns/pkg/model"
+	"netora-dns/pkg/policy"
 	"netora-dns/pkg/runtime"
 	"netora-dns/pkg/storage"
 )
@@ -19,16 +20,21 @@ import (
 type Server struct {
 	store         storage.Store
 	engine        *configengine.Engine
+	policyEngine  *policy.PolicyEngine
 	healthChecker *runtime.DNSHealthChecker
 	jwtSecret     string
 	nodeID        string
 }
 
 // NewServer initializes the API server components.
-func NewServer(store storage.Store, engine *configengine.Engine, jwtSecret, nodeID string) *Server {
+func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *policy.PolicyEngine, jwtSecret, nodeID string) *Server {
+	if policyEngine == nil {
+		policyEngine = policy.NewPolicyEngine()
+	}
 	return &Server{
 		store:         store,
 		engine:        engine,
+		policyEngine:  policyEngine,
 		healthChecker: runtime.NewDNSHealthChecker(3 * time.Second),
 		jwtSecret:     jwtSecret,
 		nodeID:        nodeID,
@@ -39,6 +45,9 @@ func NewServer(store storage.Store, engine *configengine.Engine, jwtSecret, node
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Health & Probe
 	mux.HandleFunc("/api/v1/health", s.handleSystemHealth)
+
+	// Diagnostics & Explainability
+	mux.HandleFunc("/api/v1/diagnose", s.requireAuth(s.handleDiagnose))
 
 	// Auth Endpoints
 	mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
@@ -392,6 +401,51 @@ func (s *Server) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, logs)
+}
+
+// Handler: Domain Diagnostics & Explainability (/api/v1/diagnose)
+func (s *Server) handleDiagnose(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req struct {
+		Domain   string `json:"domain"`
+		ClientIP string `json:"client_ip,omitempty"`
+		Policy   string `json:"policy,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if req.Domain == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
+		return
+	}
+
+	// 1. Evaluate in Policy Engine
+	decision := s.policyEngine.Evaluate(req.Domain, req.Policy)
+
+	// 2. Perform Live DNS Resolution Probe
+	probe := s.healthChecker.CheckResolution(r.Context(), "127.0.0.1", 53, "udp", req.Domain)
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"domain":        req.Domain,
+		"policy":        decision.Policy,
+		"action":        decision.Action,
+		"category":      decision.Category,
+		"source":        decision.Source,
+		"rule":          decision.Rule,
+		"explanation":   decision.Explanation,
+		"rewrite_value": decision.RewriteValue,
+		"live_resolution": map[string]interface{}{
+			"healthy":      probe.Healthy,
+			"latency":      probe.Latency.String(),
+			"resolved_ips": probe.ResolvedIPs,
+			"error":        probe.ErrorMessage,
+		},
+	})
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data interface{}) {
