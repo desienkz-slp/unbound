@@ -1,0 +1,446 @@
+package configengine
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"netora-dns/pkg/model"
+)
+
+// EngineOptions configures directory paths and dependencies for the Engine.
+type EngineOptions struct {
+	ConfigDir       string
+	Generator       *Generator
+	Validator       *Validator
+	Supervisor      SupervisorInterface
+	HealthChecker   HealthCheckerInterface
+	SkipHealthCheck bool
+}
+
+// SupervisorInterface defines the process supervisor requirements.
+type SupervisorInterface interface {
+	Reload(ctx context.Context) error
+	Restart(ctx context.Context) error
+	IsRunning(ctx context.Context) (bool, error)
+	Checkconf(ctx context.Context, confPath string) (string, error)
+}
+
+// HealthCheckerInterface defines the health checker requirements.
+type HealthCheckerInterface interface {
+	CheckResolution(ctx context.Context, serverIP string, serverPort int, protocol string, domain string) *HealthResult
+}
+
+// HealthResult abstracts the DNS probe outcome.
+type HealthResult struct {
+	Healthy      bool
+	ErrorMessage string
+	Latency      time.Duration
+}
+
+// Engine implements the atomic apply, validation, and rollback lifecycle.
+type Engine struct {
+	mu            sync.Mutex
+	configDir     string
+	stagingDir    string
+	historyDir    string
+	generator     *Generator
+	validator     *Validator
+	supervisor    SupervisorInterface
+	healthChecker HealthCheckerInterface
+	skipHealth    bool
+}
+
+// NewEngine creates and initializes an atomic configuration engine.
+func NewEngine(opts EngineOptions) (*Engine, error) {
+	if opts.ConfigDir == "" {
+		opts.ConfigDir = "/etc/unbound"
+	}
+
+	if opts.Generator == nil {
+		gen, err := NewGenerator()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize generator: %w", err)
+		}
+		opts.Generator = gen
+	}
+
+	if opts.Validator == nil {
+		opts.Validator = NewValidator(nil)
+	}
+
+	stagingDir := filepath.Join(opts.ConfigDir, "staging")
+	historyDir := filepath.Join(opts.ConfigDir, "history")
+
+	if err := os.MkdirAll(stagingDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create staging directory: %w", err)
+	}
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create history directory: %w", err)
+	}
+	// Ensure log directory exists so unbound-checkconf does not fail
+	_ = os.MkdirAll("/var/log/unbound", 0755)
+
+	return &Engine{
+		configDir:     opts.ConfigDir,
+		stagingDir:    stagingDir,
+		historyDir:    historyDir,
+		generator:     opts.Generator,
+		validator:     opts.Validator,
+		supervisor:    opts.Supervisor,
+		healthChecker: opts.HealthChecker,
+		skipHealth:    opts.SkipHealthCheck,
+	}, nil
+}
+
+// Apply executes the complete atomic render -> validate -> stage -> apply -> health-check -> activate workflow.
+func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, reason string) (*model.ApplyResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	result := &model.ApplyResult{
+		VersionID: state.VersionID,
+		NodeID:    state.NodeID,
+		StartedAt: time.Now().UTC(),
+	}
+
+	// 1. Semantic Validation
+	valResult := e.validator.ValidateState(state)
+	if !valResult.Valid {
+		result.CompletedAt = time.Now().UTC()
+		result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+		result.SemanticValid = false
+		result.ErrorMessage = fmt.Sprintf("semantic validation failed: %s", valResult.SemanticErrors[0])
+		return result, fmt.Errorf("%s", result.ErrorMessage)
+	}
+	result.SemanticValid = true
+
+	// 2. Render configuration to memory
+	renderRes, err := e.generator.Generate(state, e.configDir)
+	if err != nil {
+		result.CompletedAt = time.Now().UTC()
+		result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+		result.ErrorMessage = fmt.Sprintf("render error: %v", err)
+		return result, err
+	}
+
+	// 3. Write to Staging Directory
+	stageVersionDir := filepath.Join(e.stagingDir, state.VersionID)
+	if err := os.MkdirAll(stageVersionDir, 0750); err != nil {
+		return nil, fmt.Errorf("failed creating staging version dir: %w", err)
+	}
+	defer os.RemoveAll(stageVersionDir) // Clean up staging after apply
+
+	if err := e.writeFiles(stageVersionDir, renderRes.Files); err != nil {
+		result.CompletedAt = time.Now().UTC()
+		result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+		result.ErrorMessage = fmt.Sprintf("failed writing staging files: %v", err)
+		return result, err
+	}
+
+	// 4. Syntax Validation (unbound-checkconf on staged main config)
+	stagedMainConf := filepath.Join(stageVersionDir, "unbound.conf")
+	if e.supervisor != nil {
+		checkOut, err := e.supervisor.Checkconf(ctx, stagedMainConf)
+		result.ValidationOutput = checkOut
+		if err != nil {
+			result.CompletedAt = time.Now().UTC()
+			result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+			result.SyntaxValid = false
+			result.ErrorMessage = fmt.Sprintf("syntax check failed: %v", err)
+			return result, fmt.Errorf("syntax check failed: %w", err)
+		}
+	}
+	result.SyntaxValid = true
+
+	// 5. Save Current Active State to History as "Last Known Good"
+	currentActiveVersion, _ := e.GetActiveVersion()
+	backupDir := filepath.Join(e.historyDir, fmt.Sprintf("backup-pre-%s", state.VersionID))
+	_ = e.backupCurrentConfig(backupDir)
+
+	// 6. Atomic File Replacement
+	if err := e.atomicCopyFiles(stageVersionDir, e.configDir, renderRes.Files); err != nil {
+		result.CompletedAt = time.Now().UTC()
+		result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+		result.ErrorMessage = fmt.Sprintf("atomic file replacement failed: %v", err)
+		return result, err
+	}
+
+	// 7. Reload Service
+	if e.supervisor != nil {
+		if err := e.supervisor.Reload(ctx); err != nil {
+			// RELOAD FAILED -> IMMEDIATE ROLLBACK
+			result.ReloadSuccess = false
+			result.ErrorMessage = fmt.Sprintf("reload failed: %v", err)
+			rollbackErr := e.executeRollback(ctx, backupDir, currentActiveVersion)
+			result.RolledBack = true
+			if currentActiveVersion != nil {
+				result.RolledBackToVersion = currentActiveVersion.VersionID
+			}
+			result.CompletedAt = time.Now().UTC()
+			result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+			return result, fmt.Errorf("reload failed (rolled back): %w (rollback error: %v)", err, rollbackErr)
+		}
+	}
+	result.ReloadSuccess = true
+
+	// 8. Health Check
+	if !e.skipHealth && e.healthChecker != nil {
+		// Probe loopback or first enabled listener
+		targetIP := "127.0.0.1"
+		targetPort := 53
+		for _, l := range state.Listeners {
+			if l.Enabled && l.Role == model.RoleManagement {
+				targetIP = l.IP
+				targetPort = l.Port
+				break
+			}
+		}
+
+		health := e.healthChecker.CheckResolution(ctx, targetIP, targetPort, "udp", "google.com")
+		if !health.Healthy {
+			// HEALTH CHECK FAILED -> AUTOMATIC ROLLBACK
+			result.HealthCheckSuccess = false
+			result.HealthOutput = health.ErrorMessage
+			result.ErrorMessage = fmt.Sprintf("health check failed after apply: %s", health.ErrorMessage)
+
+			rollbackErr := e.executeRollback(ctx, backupDir, currentActiveVersion)
+			result.RolledBack = true
+			if currentActiveVersion != nil {
+				result.RolledBackToVersion = currentActiveVersion.VersionID
+			}
+			result.CompletedAt = time.Now().UTC()
+			result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+			return result, fmt.Errorf("health check failed after apply (rolled back): %s (rollback error: %v)", health.ErrorMessage, rollbackErr)
+		}
+		result.HealthOutput = fmt.Sprintf("healthy, latency=%v", health.Latency)
+	}
+	result.HealthCheckSuccess = true
+
+	// 9. Mark Version Active & Record in History
+	versionRecord := &model.ConfigVersion{
+		VersionID:        state.VersionID,
+		NodeID:           state.NodeID,
+		CreatedAt:        result.StartedAt,
+		Actor:            actor,
+		Reason:           reason,
+		Checksum:         renderRes.MainChecksum,
+		Status:           model.StatusActive,
+		ValidationReport: "Syntax & Semantic OK",
+		AppliedAt:        &result.StartedAt,
+		ActiveConfigPath: filepath.Join(e.configDir, "unbound.conf"),
+	}
+
+	if err := e.saveVersionRecord(versionRecord); err != nil {
+		// Log warning, but apply itself succeeded
+		fmt.Printf("warning: failed to save version record: %v\n", err)
+	}
+
+	// Archive version files in history
+	versionArchiveDir := filepath.Join(e.historyDir, state.VersionID)
+	_ = e.writeFiles(versionArchiveDir, renderRes.Files)
+
+	result.Success = true
+	result.CompletedAt = time.Now().UTC()
+	result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+	return result, nil
+}
+
+// Rollback restores a specific prior configuration from history.
+func (e *Engine) Rollback(ctx context.Context, targetVersionID, actor, reason string) (*model.ApplyResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	result := &model.ApplyResult{
+		VersionID:           targetVersionID,
+		StartedAt:           time.Now().UTC(),
+		RolledBack:          true,
+		RolledBackToVersion: targetVersionID,
+	}
+
+	historyDir := filepath.Join(e.historyDir, targetVersionID)
+	if _, err := os.Stat(historyDir); err != nil {
+		result.CompletedAt = time.Now().UTC()
+		result.ErrorMessage = fmt.Sprintf("target version '%s' not found in history", targetVersionID)
+		return result, fmt.Errorf("%s", result.ErrorMessage)
+	}
+
+	// Copy history files directly into config dir
+	if err := e.copyDir(historyDir, e.configDir); err != nil {
+		result.CompletedAt = time.Now().UTC()
+		result.ErrorMessage = fmt.Sprintf("failed restoring history files: %v", err)
+		return result, err
+	}
+
+	// Reload supervisor
+	if e.supervisor != nil {
+		if err := e.supervisor.Reload(ctx); err != nil {
+			result.CompletedAt = time.Now().UTC()
+			result.ErrorMessage = fmt.Sprintf("failed reload during rollback: %v", err)
+			return result, err
+		}
+	}
+	result.ReloadSuccess = true
+
+	// Mark active
+	versionRecord := &model.ConfigVersion{
+		VersionID:        targetVersionID,
+		CreatedAt:        result.StartedAt,
+		Actor:            actor,
+		Reason:           fmt.Sprintf("Rolled back to %s: %s", targetVersionID, reason),
+		Status:           model.StatusActive,
+		AppliedAt:        &result.StartedAt,
+		ActiveConfigPath: filepath.Join(e.configDir, "unbound.conf"),
+	}
+	_ = e.saveVersionRecord(versionRecord)
+
+	result.Success = true
+	result.CompletedAt = time.Now().UTC()
+	result.DurationMs = time.Since(result.StartedAt).Milliseconds()
+	return result, nil
+}
+
+// executeRollback reverts the live config directory to the backup and reloads.
+func (e *Engine) executeRollback(ctx context.Context, backupDir string, prevVersion *model.ConfigVersion) error {
+	if _, err := os.Stat(backupDir); err != nil {
+		return fmt.Errorf("no backup available for rollback: %w", err)
+	}
+
+	if err := e.copyDir(backupDir, e.configDir); err != nil {
+		return fmt.Errorf("failed copying backup to live config: %w", err)
+	}
+
+	if e.supervisor != nil {
+		_ = e.supervisor.Reload(ctx)
+	}
+
+	if prevVersion != nil {
+		prevVersion.Status = model.StatusRolledBack
+		_ = e.saveVersionRecord(prevVersion)
+	}
+
+	return nil
+}
+
+// writeFiles writes a set of rendered files to a target directory.
+func (e *Engine) writeFiles(targetDir string, files []RenderedFile) error {
+	for _, f := range files {
+		destPath := filepath.Join(targetDir, f.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil {
+			return err
+		}
+		if err := os.WriteFile(destPath, f.Content, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// atomicCopyFiles copies staged files into the destination directory using atomic write-and-rename.
+func (e *Engine) atomicCopyFiles(sourceDir, destDir string, files []RenderedFile) error {
+	for _, f := range files {
+		targetPath := filepath.Join(destDir, f.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0750); err != nil {
+			return err
+		}
+
+		tmpFile := targetPath + ".tmp"
+		if err := os.WriteFile(tmpFile, f.Content, 0644); err != nil {
+			return err
+		}
+
+		// Atomic replace on POSIX
+		if err := os.Rename(tmpFile, targetPath); err != nil {
+			// Fallback on Windows where os.Rename might fail if target exists
+			_ = os.Remove(targetPath)
+			if err := os.Rename(tmpFile, targetPath); err != nil {
+				return fmt.Errorf("atomic rename failed for %s: %w", targetPath, err)
+			}
+		}
+	}
+	return nil
+}
+
+// backupCurrentConfig creates a timestamped copy of existing configuration files.
+func (e *Engine) backupCurrentConfig(destDir string) error {
+	return e.copyDir(e.configDir, destDir)
+}
+
+// copyDir recursively copies files from src to dst (skipping staging and history).
+func (e *Engine) copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip staging and history folders
+		if rel == "staging" || rel == "history" || strings.HasPrefix(rel, "staging"+string(filepath.Separator)) || strings.HasPrefix(rel, "history"+string(filepath.Separator)) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		targetPath := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(targetPath, 0750)
+		}
+
+		return copyFile(path, targetPath)
+	})
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0750); err != nil {
+		return err
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func (e *Engine) saveVersionRecord(v *model.ConfigVersion) error {
+	metaPath := filepath.Join(e.configDir, "active_version.json")
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath, data, 0644)
+}
+
+// GetActiveVersion reads the currently active version metadata.
+func (e *Engine) GetActiveVersion() (*model.ConfigVersion, error) {
+	metaPath := filepath.Join(e.configDir, "active_version.json")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return nil, err
+	}
+	var v model.ConfigVersion
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}

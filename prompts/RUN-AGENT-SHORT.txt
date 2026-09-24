@@ -1,0 +1,11 @@
+Read AGENTS.md and all `.agents/` instructions first.
+
+You are the lead engineer for Netora DNS. Inspect the repository, preserve existing working code, and build the production-grade Unbound ISP DNS platform described by the repository instructions.
+
+Start with discovery and architecture assessment. Then implement incrementally.
+
+Never create an open resolver. Never apply unvalidated Unbound configuration. Never make DNS depend on UI/API/PostgreSQL/AI. Use atomic config apply + health check + rollback. Support multi-IP, IPv4/IPv6, client ACLs, DNSSEC, cache, prefetch, serve-expired, filtering, policy profiles, monitoring, audit, and an AdGuard Home-inspired NOC UI.
+
+Do not claim ISP-scale capacity without benchmark evidence.
+
+Begin now and report progress phase by phase.

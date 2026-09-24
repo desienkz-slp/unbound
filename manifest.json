@@ -1,0 +1,8 @@
+{
+  "name": "netora-dns-ai-agent",
+  "purpose": "AI-agent bootstrap kit for building Netora DNS",
+  "entrypoint": "prompts/RUN-AGENT.md",
+  "agent_rules": ".agents/",
+  "mcp": ".agents/mcp/",
+  "source_reference": "Existing Unbound installer can be preserved/migrated incrementally"
+}
