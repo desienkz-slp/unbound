@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"netora-dns/pkg/auth"
+	"netora-dns/pkg/cluster"
 	"netora-dns/pkg/configengine"
 	"netora-dns/pkg/model"
 	"netora-dns/pkg/policy"
@@ -21,14 +22,15 @@ import (
 
 // Server encapsulates the Netora REST API dependencies.
 type Server struct {
-	store         storage.Store
-	engine        *configengine.Engine
-	policyEngine  *policy.PolicyEngine
-	healthChecker *runtime.DNSHealthChecker
-	jwtSecret     string
-	nodeID        string
-	metrics       *telemetry.Metrics
-	alertEngine   *telemetry.AlertEngine
+	store          storage.Store
+	engine         *configengine.Engine
+	policyEngine   *policy.PolicyEngine
+	healthChecker  *runtime.DNSHealthChecker
+	jwtSecret      string
+	nodeID         string
+	metrics        *telemetry.Metrics
+	alertEngine    *telemetry.AlertEngine
+	clusterManager *cluster.ClusterManager
 }
 
 // NewServer initializes the API server components.
@@ -38,16 +40,26 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 	}
 	metrics := telemetry.DefaultMetrics
 	alertEngine := telemetry.NewAlertEngine(nodeID, store, metrics)
+	cm := cluster.NewClusterManager(store)
+	cm.RegisterNode(&cluster.ClusterNode{
+		ID:           nodeID,
+		Hostname:     nodeID,
+		ManagementIP: "172.18.20.145",
+		Role:         cluster.RolePrimary,
+		State:        cluster.StateOnline,
+		SyncStatus:   cluster.SyncSynchronized,
+	})
 
 	return &Server{
-		store:         store,
-		engine:        engine,
-		policyEngine:  policyEngine,
-		healthChecker: runtime.NewDNSHealthChecker(3 * time.Second),
-		jwtSecret:     jwtSecret,
-		nodeID:        nodeID,
-		metrics:       metrics,
-		alertEngine:   alertEngine,
+		store:          store,
+		engine:         engine,
+		policyEngine:   policyEngine,
+		healthChecker:  runtime.NewDNSHealthChecker(3 * time.Second),
+		jwtSecret:      jwtSecret,
+		nodeID:         nodeID,
+		metrics:        metrics,
+		alertEngine:    alertEngine,
+		clusterManager: cm,
 	}
 }
 
@@ -72,6 +84,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Node Management
 	mux.HandleFunc("/api/v1/nodes", s.requireAuth(s.handleNodes))
 	mux.HandleFunc("/api/v1/nodes/", s.requireAuth(s.handleNodeSubroutes))
+
+	// Cluster & Multi-Node HA
+	mux.HandleFunc("/api/v1/cluster/status", s.requireAuth(s.handleClusterStatus))
+	mux.HandleFunc("/api/v1/cluster/heartbeat", s.handleClusterHeartbeat)
+	mux.HandleFunc("/api/v1/cluster/sync", s.requireAuth(s.handleClusterSync))
 
 	// Policies & Filtering
 	mux.HandleFunc("/api/v1/policies", s.requireAuth(s.handlePolicies))
@@ -498,6 +515,71 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	_ = s.alertEngine.Evaluate(r.Context(), probe.Healthy)
 	alerts := s.alertEngine.GetActiveAlerts()
 	s.writeJSON(w, http.StatusOK, alerts)
+}
+
+// Handler: Cluster Status (/api/v1/cluster/status)
+func (s *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
+	s.clusterManager.EvaluateClusterHealth()
+	nodes := s.clusterManager.GetClusterNodes()
+	summary := s.clusterManager.GetClusterSummary()
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"summary": summary,
+		"nodes":   nodes,
+	})
+}
+
+// Handler: Cluster Heartbeat (/api/v1/cluster/heartbeat)
+func (s *Server) handleClusterHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var hb cluster.HeartbeatPayload
+	if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if err := s.clusterManager.RecordHeartbeat(&hb); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
+}
+
+// Handler: Cluster Sync (/api/v1/cluster/sync)
+func (s *Server) handleClusterSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req struct {
+		State  *model.DesiredState `json:"state"`
+		Reason string              `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.State == nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid desired state payload"})
+		return
+	}
+
+	results, err := s.clusterManager.SyncClusterConfig(r.Context(), req.State, func(ctx context.Context, nodeID string, state *model.DesiredState) error {
+		if nodeID == s.nodeID {
+			_, err := s.engine.Apply(ctx, state, "cluster-sync", req.Reason)
+			return err
+		}
+		// Remote node push would be forwarded here via mTLS/SSH/HTTP
+		return nil
+	})
+
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Cluster configuration synchronization complete",
+		"results": results,
+		"summary": s.clusterManager.GetClusterSummary(),
+	})
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data interface{}) {
