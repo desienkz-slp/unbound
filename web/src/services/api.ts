@@ -1,0 +1,148 @@
+import {
+  AuditRecord,
+  ConfigVersion,
+  DesiredState,
+  DiagnosisResult,
+  NodeRecord,
+  AllowlistRecord,
+} from '../types';
+
+const API_BASE = '/api/v1';
+
+class ApiClient {
+  private token: string | null = null;
+
+  constructor() {
+    this.token = localStorage.getItem('netora_token');
+  }
+
+  setToken(token: string | null) {
+    this.token = token;
+    if (token) {
+      localStorage.setItem('netora_token', token);
+    } else {
+      localStorage.removeItem('netora_token');
+    }
+  }
+
+  getToken(): string | null {
+    return this.token;
+  }
+
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      throw new Error('Unauthorized');
+    }
+
+    if (!response.ok) {
+      let errMsg = `Request failed: ${response.statusText}`;
+      try {
+        const errJson = await response.json();
+        if (errJson.error) errMsg = errJson.error;
+      } catch {
+        // ignore
+      }
+      throw new Error(errMsg);
+    }
+
+    return response.json();
+  }
+
+  // Auth
+  async login(username: string, password: string): Promise<{ token: string; user: { id: string; username: string; role: string } }> {
+    const res = await this.request<{ token: string; user: { id: string; username: string; role: string } }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    this.setToken(res.token);
+    return res;
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await this.request('/auth/logout', { method: 'POST' });
+    } finally {
+      this.setToken(null);
+    }
+  }
+
+  // Nodes
+  async getNodes(): Promise<NodeRecord[]> {
+    return this.request<NodeRecord[]>('/nodes');
+  }
+
+  async getNodeHealth(nodeId: string): Promise<{ healthy: boolean; unbound_running: boolean; port53_listening: boolean; last_check: string; latency_ms: number }> {
+    return this.request(`/nodes/${nodeId}/health`);
+  }
+
+  // Desired State / Config
+  async getDesiredState(nodeId: string): Promise<DesiredState> {
+    return this.request<DesiredState>(`/nodes/${nodeId}/config`);
+  }
+
+  async applyConfig(nodeId: string, state: DesiredState, reason: string): Promise<{ success: boolean; version_id: string; checksum: string; message: string }> {
+    return this.request(`/nodes/${nodeId}/config/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ state, reason }),
+    });
+  }
+
+  async rollbackConfig(nodeId: string, versionId: string): Promise<{ success: boolean; rolled_back_to: string; message: string }> {
+    return this.request(`/nodes/${nodeId}/config/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ version_id: versionId }),
+    });
+  }
+
+  async getConfigVersions(nodeId: string): Promise<ConfigVersion[]> {
+    return this.request<ConfigVersion[]>(`/nodes/${nodeId}/config/versions`);
+  }
+
+  // Diagnostics ("Why Blocked?")
+  async diagnoseDomain(domain: string, clientIp?: string, policy?: string): Promise<DiagnosisResult> {
+    return this.request<DiagnosisResult>('/diagnose', {
+      method: 'POST',
+      body: JSON.stringify({ domain, client_ip: clientIp, policy: policy || 'DEFAULT' }),
+    });
+  }
+
+  // Allowlist
+  async getAllowlist(): Promise<AllowlistRecord[]> {
+    return this.request<AllowlistRecord[]>('/allowlist');
+  }
+
+  async addAllowlist(domain: string, category: string, reason: string): Promise<AllowlistRecord> {
+    return this.request<AllowlistRecord>('/allowlist', {
+      method: 'POST',
+      body: JSON.stringify({ domain, category, reason }),
+    });
+  }
+
+  async deleteAllowlist(id: string): Promise<void> {
+    return this.request(`/allowlist/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Audit Logs
+  async getAuditLogs(): Promise<AuditRecord[]> {
+    return this.request<AuditRecord[]>('/audit');
+  }
+}
+
+export const api = new ApiClient();

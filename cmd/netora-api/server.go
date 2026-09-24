@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,6 +67,27 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// Audit Logs
 	mux.HandleFunc("/api/v1/audit", s.requireAuth(s.handleAuditLogs))
+
+	// Static Web UI (SPA)
+	webDir := "/var/www/netora-ui"
+	if _, err := os.Stat(webDir); os.IsNotExist(err) {
+		webDir = "web/dist"
+	}
+	if _, err := os.Stat(webDir); err == nil {
+		fileServer := http.FileServer(http.Dir(webDir))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				http.NotFound(w, r)
+				return
+			}
+			filePath := filepath.Join(webDir, filepath.Clean(r.URL.Path))
+			if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			http.ServeFile(w, r, filepath.Join(webDir, "index.html"))
+		})
+	}
 }
 
 // Middleware: CORS
