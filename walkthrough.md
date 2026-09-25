@@ -582,5 +582,12 @@ Untuk mempermudah deployment armada (*fleet deployment*) server DNS baru di ling
   Checking Netora API Health...
     API Endpoint (:8080):     PASS -> {"dns_healthy":true,"dns_latency":"429.77µs","node_id":"dns-dev","status":"UP"}
   ```
-* **CLI Status Execution:** Menampilkan seluruh status service `unbound`, `netora-api`, `postgresql`, timer update berkala, dan revisi Git `83d7a0b`.
+* **Resolusi Bug Systemd Sandboxing (Anti-Stuck):**
+  - Pada pengujian background timer, systemd sempat menolak penulisan ke `/etc/unbound/` dengan pesan error `Read-only file system` karena direktif `ProtectSystem=full`.
+  - Dilakukan penyesuaian pada `deploy/systemd/netora-dns-updater.service`: diubah menjadi `ProtectSystem=true` dan ditambahkan deklarasi eksplisit `ReadWritePaths=/etc/unbound /etc/netora-dns /opt/netora-dns /var/lib/netora-dns /var/log/netora-dns /run/lock`.
+  - Eksekusi systemd daemon otomatis berjalan sukses 100% dalam 12 detik.
+* **Status Timer & Eksekusi Otomatis:**
+  - Timer `netora-dns-updater.timer` aktif berjalan di background setiap 5 menit.
+  - Revisi aktif di server saat ini: `468b38b` (Status: `SUCCESS`, Health: `PASS`).
+
 
