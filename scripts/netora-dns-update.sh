@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-UPDATER_VERSION="1.0.0"
+UPDATER_VERSION="1.0.1"
 CONFIG_FILE="/etc/netora-dns/updater.conf"
 NODE_ID_FILE="/etc/netora-dns/node-id"
 LOCK_FILE="/run/lock/netora-dns-update.lock"
@@ -195,7 +195,7 @@ action_health() {
     # 1. Localhost Basic Query
     if dig "@${target_ip}" -p 53 localhost +short +time="${HEALTH_CHECK_TIMEOUT}" +tries=1 >/dev/null 2>&1 || \
        dig "@${target_ip}" -p 53 example.com +short +time="${HEALTH_CHECK_TIMEOUT}" +tries=2 >/dev/null 2>&1; then
-        ((passed++))
+        passed=$(( passed + 1 ))
     else
         log_event "ERROR" "health_probe_failed" "Localhost basic query probe failed"
     fi
@@ -204,7 +204,7 @@ action_health() {
     local dnssec_resp
     dnssec_resp="$(dig "@${target_ip}" -p 53 cloudflare.com +dnssec +time="${HEALTH_CHECK_TIMEOUT}" +tries=2 2>/dev/null || true)"
     if echo "$dnssec_resp" | grep -q "flags:.*ad.*QUERY"; then
-        ((passed++))
+        passed=$(( passed + 1 ))
     else
         log_event "WARN" "health_probe_warn" "DNSSEC AD bit check failed or unverified"
     fi
@@ -213,7 +213,7 @@ action_health() {
     local bogus_resp
     bogus_resp="$(dig "@${target_ip}" -p 53 dnssec-failed.org +dnssec +time="${HEALTH_CHECK_TIMEOUT}" +tries=2 2>/dev/null || true)"
     if echo "$bogus_resp" | grep -q "status: SERVFAIL"; then
-        ((passed++))
+        passed=$(( passed + 1 ))
     else
         log_event "WARN" "health_probe_warn" "Bogus DNSSEC domain was not rejected with SERVFAIL"
     fi
@@ -221,7 +221,7 @@ action_health() {
     # 4. Commercial CDN Endpoint Probe (Shopee / Akamai CDN)
     if dig "@${target_ip}" -p 53 cf.shopee.co.id +short +time="${HEALTH_CHECK_TIMEOUT}" +tries=2 >/dev/null 2>&1 || \
        dig "@${target_ip}" -p 53 google.com +short +time="${HEALTH_CHECK_TIMEOUT}" +tries=2 >/dev/null 2>&1; then
-        ((passed++))
+        passed=$(( passed + 1 ))
     else
         log_event "ERROR" "health_probe_failed" "CDN / Public resolution probe failed"
     fi
@@ -260,19 +260,21 @@ validate_candidate_config() {
     mkdir -p "$stage_dir"
     cp -r /etc/unbound/* "$stage_dir/" 2>/dev/null || true
     
-    # Overwrite configuration with candidate
-    if [[ -f "${release_dir}/conf/unbound-base.conf" ]]; then
-        # Merge or copy base config
-        cp "${release_dir}/conf/unbound-base.conf" "${stage_dir}/unbound.conf"
-    fi
-
+    # Overwrite or update configuration with candidate release files
     if [[ -d "${release_dir}/conf/conf.d" ]]; then
         mkdir -p "${stage_dir}/conf.d"
         cp -r "${release_dir}/conf/conf.d/"* "${stage_dir}/conf.d/" 2>/dev/null || true
     fi
 
+    # If the release contains an explicit unbound.conf or compiled netora-cli
+    if [[ -f "${release_dir}/conf/unbound.conf" ]]; then
+        cp "${release_dir}/conf/unbound.conf" "${stage_dir}/unbound.conf"
+    elif [[ -x "${release_dir}/bin/netora-cli" ]]; then
+        "${release_dir}/bin/netora-cli" -mode render -write-dir "$stage_dir" -node-id "$NODE_ID" 2>/dev/null || true
+    fi
+
     # Apply node-specific overlays (if exists)
-    if [[ -d "$OVERLAYS_DIR" ]]; then
+    if [[ -d "$OVERLAYS_DIR" ]] && [[ "$(ls -A "$OVERLAYS_DIR" 2>/dev/null)" ]]; then
         log_event "INFO" "applying_overlays" "Applying node-specific configuration overlays from ${OVERLAYS_DIR}"
         cp -r "${OVERLAYS_DIR}/"* "$stage_dir/" 2>/dev/null || true
     fi
