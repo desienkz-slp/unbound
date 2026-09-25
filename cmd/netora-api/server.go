@@ -375,6 +375,26 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 
 		log.Printf("[apply] Node %s: apply succeeded! Version %s active in %dms\n", nodeID, res.VersionID, res.DurationMs)
 		_ = s.store.SaveDesiredState(r.Context(), &state)
+
+		// Sync core platform filters in database to keep status consistent with Master Cards
+		if filters, err := s.store.ListFilters(r.Context()); err == nil {
+			for _, f := range filters {
+				if f.ID == "feed-adult" {
+					active := state.ParentalControl.Enabled && state.ParentalControl.BlockAdult
+					if f.Enabled != active {
+						f.Enabled = active
+						_ = s.store.UpsertFilter(r.Context(), &f)
+					}
+				} else if f.ID == "feed-gambling" {
+					active := state.GamblingBlock.Enabled || (state.ParentalControl.Enabled && state.ParentalControl.BlockGambling)
+					if f.Enabled != active {
+						f.Enabled = active
+						_ = s.store.UpsertFilter(r.Context(), &f)
+					}
+				}
+			}
+		}
+
 		_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
 			Actor:    claims.Username,
 			Action:   "CONFIG_APPLY",

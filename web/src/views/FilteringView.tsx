@@ -20,6 +20,10 @@ import {
   ToggleLeft,
   ToggleRight,
   Zap,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { AllowlistRecord, DesiredState, FilterRecord, AutoUpdateStatus } from '../types';
 import { api } from '../services/api';
@@ -109,7 +113,7 @@ const ToggleSwitch: React.FC<{
 };
 
 export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, onConfigUpdated }) => {
-  const [activeTab, setActiveTab] = useState<'blocklists' | 'allowlists'>('blocklists');
+  const [showRawFeeds, setShowRawFeeds] = useState(false);
   const [filters, setFilters] = useState<FilterRecord[]>([]);
   const [allowlist, setAllowlist] = useState<AllowlistRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -117,6 +121,8 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   const [togglingSafeSearch, setTogglingSafeSearch] = useState(false);
   const [togglingParental, setTogglingParental] = useState(false);
   const [togglingGambling, setTogglingGambling] = useState(false);
+  const [togglingAdBlock, setTogglingAdBlock] = useState(false);
+  const [togglingMalware, setTogglingMalware] = useState(false);
   const [syncingGitHub, setSyncingGitHub] = useState(false);
   const [autoUpdateStatus, setAutoUpdateStatus] = useState<AutoUpdateStatus | null>(null);
 
@@ -351,6 +357,56 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
     }
   };
 
+  // Iklan & Pelacak (AdBlock) Toggle ON/OFF Handler
+  const handleToggleAdBlock = async (newVal: boolean) => {
+    if (!config) return;
+    setTogglingAdBlock(true);
+    try {
+      const updatedConfig: DesiredState = {
+        ...config,
+        ad_block: {
+          enabled: newVal,
+          redirect_ip: config.ad_block?.redirect_ip || '',
+        },
+      };
+      await api.applyConfig(nodeId, updatedConfig, `AdBlock set to ${newVal ? 'ENABLED' : 'DISABLED'} from Filtering View`);
+      if (onConfigUpdated) onConfigUpdated(updatedConfig);
+      setActionMsg({
+        type: 'success',
+        text: `Filter Iklan & Pelacak berhasil di-${newVal ? 'aktifkan (Iklan Diblokir)' : 'nonaktifkan (Iklan Terbuka)'}! Unbound di-reload atomik.`,
+      });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: `Gagal memperbarui Filter Iklan: ${err.message}` });
+    } finally {
+      setTogglingAdBlock(false);
+    }
+  };
+
+  // Malware & Phishing Shield Toggle ON/OFF Handler
+  const handleToggleMalwareBlock = async (newVal: boolean) => {
+    if (!config) return;
+    setTogglingMalware(true);
+    try {
+      const updatedConfig: DesiredState = {
+        ...config,
+        malware_block: {
+          enabled: newVal,
+          redirect_ip: config.malware_block?.redirect_ip || '',
+        },
+      };
+      await api.applyConfig(nodeId, updatedConfig, `MalwareBlock set to ${newVal ? 'ENABLED' : 'DISABLED'} from Filtering View`);
+      if (onConfigUpdated) onConfigUpdated(updatedConfig);
+      setActionMsg({
+        type: 'success',
+        text: `Malware & Threat Shield berhasil di-${newVal ? 'aktifkan (Malware Diblokir)' : 'nonaktifkan (Proteksi Dimatikan)'}! Unbound di-reload atomik.`,
+      });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: `Gagal memperbarui Filter Malware: ${err.message}` });
+    } finally {
+      setTogglingMalware(false);
+    }
+  };
+
   // Sync All Blocklists Handler
   const handleSyncBlocklists = async () => {
     setSyncingGitHub(true);
@@ -452,6 +508,8 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   const isSafeSearchActive = Boolean(config?.safe_search?.enabled ?? true);
   const isParentalActive = Boolean(config?.parental_control?.enabled);
   const isGamblingActive = Boolean(config?.gambling_block?.enabled || config?.parental_control?.block_gambling);
+  const isAdBlockActive = Boolean(config?.ad_block?.enabled ?? true);
+  const isMalwareBlockActive = Boolean(config?.malware_block?.enabled ?? true);
 
   return (
     <div className="space-y-6">
@@ -460,10 +518,10 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <Filter className="w-5 h-5 text-cyan-400" />
-            DNS Policy Filtering & Hosts Files
+            DNS Policy Filtering & Protection Engine
           </h1>
           <p className="text-xs text-gray-400 mt-1">
-            Manage high-performance Trie blocklists, external threat feeds, local hosts files, and explicit allowlist exceptions.
+            Kelola kebijakan penyaringan DNS: SafeSearch VIP, Konten 18+ Dewasa, Judi Online, Iklan, dan Pengecualian Allowlist.
           </p>
         </div>
 
@@ -478,23 +536,13 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
             <span>{syncingGitHub || autoUpdateStatus?.is_syncing ? 'Syncing...' : 'Sync Seluruh Filter'}</span>
           </button>
 
-          {activeTab === 'blocklists' ? (
-            <button
-              onClick={() => setShowAddBlockModal(true)}
-              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs rounded-lg transition-all shadow-lg shadow-cyan-500/20 flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Blocklist / Hosts File
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowAddAllowModal(true)}
-              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs rounded-lg transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Allowlist Exception
-            </button>
-          )}
+          <button
+            onClick={() => setShowAddAllowModal(true)}
+            className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs rounded-lg transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Allowlist Exception
+          </button>
         </div>
       </div>
 
@@ -588,47 +636,12 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
         </div>
       </div>
 
-      {/* KPI Cards (5 Column Grid) */}
+      {/* Master Policy Protection Cards (5 Column Grid) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-        {/* Card 1: Active Threat Feeds */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden">
+        {/* Card 1: SafeSearch */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden group hover:border-cyan-800/60 transition-all">
           <div className="flex items-center justify-between text-gray-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Threat Feeds</span>
-            <ShieldAlert className="w-4 h-4 text-rose-400" />
-          </div>
-          <div className="text-2xl font-bold text-white font-mono mt-2 flex items-baseline gap-2">
-            <span>{activeFilters.length}</span>
-            <span className="text-sm font-normal text-gray-400">/ {filters.length} Active</span>
-          </div>
-          <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
-            Hagezi, AdGuard DNS, Hosts
-          </p>
-          <div className="mt-3 pt-3 border-t border-gray-800 text-xs font-mono flex items-center justify-between">
-            <span className="text-cyan-400">
-              ~{activeRules > 0 ? activeRules.toLocaleString() : '0'} Rules
-            </span>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                activeFilters.length === filters.length && filters.length > 0
-                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                  : activeFilters.length > 0
-                  ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                  : 'bg-rose-950 text-rose-400 border border-rose-800'
-              }`}
-            >
-              {activeFilters.length === filters.length && filters.length > 0
-                ? 'ALL ON'
-                : activeFilters.length > 0
-                ? 'PARTIAL'
-                : 'ALL OFF'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 2: SafeSearch Status with ON/OFF Toggle */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden">
-          <div className="flex items-center justify-between text-gray-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">SafeSearch</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-cyan-300">SafeSearch</span>
             <div className="flex items-center gap-2">
               <ToggleSwitch
                 checked={isSafeSearchActive}
@@ -648,27 +661,21 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
             ) : (
               <span className="text-gray-500">DISABLED</span>
             )}
-            {togglingSafeSearch && (
-              <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
-            )}
+            {togglingSafeSearch && <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />}
           </div>
           <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
-            {isSafeSearchActive
-              ? 'Forces Google, Bing, YT safe mode'
-              : 'Direct search engine queries allowed'}
+            {isSafeSearchActive ? 'Forces Google, Bing, YT safe mode' : 'Direct search queries allowed'}
           </p>
-          <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-emerald-400 font-mono flex items-center justify-between">
+          <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-cyan-400 font-mono flex items-center justify-between">
             <span className="truncate">{isSafeSearchActive ? '216.239.38.120 (VIP)' : 'SafeSearch Off'}</span>
             <span className="text-[10px] text-gray-500 font-sans">Toggle ON/OFF</span>
           </div>
         </div>
 
-        {/* Card 3: Parental Control (18+ Adult Filter) with ON/OFF Toggle */}
+        {/* Card 2: 18+ Dewasa */}
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden group hover:border-purple-800/60 transition-all">
           <div className="flex items-center justify-between text-gray-400">
-            <span className="text-xs font-semibold uppercase tracking-wider text-purple-300">
-              18+ Dewasa
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-purple-300">18+ Dewasa</span>
             <div className="flex items-center gap-2">
               <ToggleSwitch
                 checked={isParentalActive}
@@ -688,14 +695,10 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
             ) : (
               <span className="text-gray-400">ALLOWED</span>
             )}
-            {togglingParental && (
-              <RefreshCw className="w-4 h-4 text-purple-400 animate-spin" />
-            )}
+            {togglingParental && <RefreshCw className="w-4 h-4 text-purple-400 animate-spin" />}
           </div>
           <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
-            {isParentalActive
-              ? 'Situs 18+ & pornografi diblokir'
-              : 'Konten 18+ bebas akses (terbuka)'}
+            {isParentalActive ? 'Situs 18+ & pornografi diblokir' : 'Konten 18+ bebas akses (terbuka)'}
           </p>
           <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-purple-300 font-mono flex items-center justify-between">
             <span className="truncate">{isParentalActive ? 'Sinkhole NXDOMAIN' : 'Akses Terbuka'}</span>
@@ -703,12 +706,10 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
           </div>
         </div>
 
-        {/* Card 4: Judi Online (Gambling Block) with ON/OFF Toggle */}
+        {/* Card 3: Judi Online */}
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden group hover:border-amber-800/60 transition-all">
           <div className="flex items-center justify-between text-gray-400">
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-300">
-              Judi Online
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-amber-300">Judi Online</span>
             <div className="flex items-center gap-2">
               <ToggleSwitch
                 checked={isGamblingActive}
@@ -728,14 +729,10 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
             ) : (
               <span className="text-gray-400">ALLOWED</span>
             )}
-            {togglingGambling && (
-              <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
-            )}
+            {togglingGambling && <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />}
           </div>
           <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
-            {isGamblingActive
-              ? 'Situs judi & slot diblokir'
-              : 'Situs judi tidak diblokir'}
+            {isGamblingActive ? 'Situs judi & slot diblokir' : 'Situs judi tidak diblokir'}
           </p>
           <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-amber-300 font-mono flex items-center justify-between">
             <span className="truncate">{isGamblingActive ? 'Sinkhole NXDOMAIN' : 'Akses Terbuka'}</span>
@@ -743,270 +740,230 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
           </div>
         </div>
 
-        {/* Card 5: Explicit Allowlist */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5">
+        {/* Card 4: Iklan & Pelacak */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden group hover:border-rose-800/60 transition-all">
           <div className="flex items-center justify-between text-gray-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Allowlist</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold text-white font-mono mt-2">
-            {allowlist.length} <span className="text-sm font-normal text-gray-400">Rules</span>
-          </div>
-          <p className="text-[11px] text-emerald-400 mt-1 font-mono truncate">
-            Priority 2: Overrides all feeds
-          </p>
-          <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-gray-400 font-mono flex items-center justify-between">
-            <span>&lt;50ns Suffix-Trie</span>
-            <span className="text-[10px] text-gray-500 font-sans">Whitelist</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-gray-800 gap-2 text-xs font-medium">
-        <button
-          onClick={() => setActiveTab('blocklists')}
-          className={`px-4 py-2.5 border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === 'blocklists'
-              ? 'border-cyan-400 text-cyan-400 bg-cyan-950/20'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <ShieldAlert className="w-3.5 h-3.5" />
-          Blocklists & Hosts Files ({filters.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('allowlists')}
-          className={`px-4 py-2.5 border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === 'allowlists'
-              ? 'border-emerald-400 text-emerald-400 bg-emerald-950/20'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          Allowlist Exceptions ({allowlist.length})
-        </button>
-      </div>
-
-      {/* Tab Content 1: Blocklists & Hosts Files */}
-      {activeTab === 'blocklists' && (
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-bold text-white">DNS Blocklists & External Hosts Feeds</h2>
-              <p className="text-xs text-gray-400">
-                These URLs and hosts files are parsed and compiled into Unbound's Suffix-Trie engine for microsecond sinkholing.
-              </p>
-            </div>
-
-            {/* Quick Bulk Actions & Search */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-              <div className="flex items-center gap-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => handleToggleAllFeeds(true)}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 hover:bg-gray-900 rounded transition-colors"
-                >
-                  Aktifkan Semua
-                </button>
-                <span className="text-gray-700">|</span>
-                <button
-                  type="button"
-                  onClick={() => handleToggleAllFeeds(false)}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-gray-400 hover:text-gray-300 hover:bg-gray-900 rounded transition-colors"
-                >
-                  Nonaktifkan Semua
-                </button>
-              </div>
-
-              <div className="relative w-full sm:w-64">
-                <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Search filter feeds..."
-                  value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
-                  className="w-full bg-gray-950 border border-gray-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 font-mono"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
-                <tr>
-                  <th className="py-2.5 px-3">Feed Name</th>
-                  <th className="py-2.5 px-3">Category</th>
-                  <th className="py-2.5 px-3">Source URL / Local Path</th>
-                  <th className="py-2.5 px-3">Rules</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/60">
-                {filteredFilters.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-gray-500">
-                      No blocklist feeds found. Click "Add Blocklist / Hosts File" to add one.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredFilters.map((f) => (
-                    <tr
-                      key={f.id}
-                      className={`transition-colors hover:bg-gray-800/30 ${
-                        !f.enabled ? 'opacity-65 bg-gray-950/40' : ''
-                      }`}
-                    >
-                      <td className="py-2.5 px-3 font-bold text-white flex items-center gap-2">
-                        <Shield className={`w-3.5 h-3.5 shrink-0 ${f.enabled ? 'text-cyan-400' : 'text-gray-600'}`} />
-                        <span className={f.enabled ? 'text-white' : 'text-gray-400'}>{f.name}</span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded bg-gray-950 border text-[11px] font-semibold ${
-                            f.enabled
-                              ? 'border-gray-800 text-rose-300'
-                              : 'border-gray-900 text-gray-600'
-                          }`}
-                        >
-                          {f.category}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-gray-400 max-w-xs truncate" title={f.source_url || f.local_path}>
-                        {f.source_url ? (
-                          <a
-                            href={f.source_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-cyan-400 hover:underline flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                            {f.source_url}
-                          </a>
-                        ) : (
-                          <span className="text-gray-300">{f.local_path}</span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3 font-semibold">
-                        <span className={f.enabled ? 'text-white' : 'text-gray-500'}>
-                          {f.rule_count ? f.rule_count.toLocaleString() : 'Active'}
-                        </span>
-                      </td>
-
-                      {/* Interactive Status Column with Toggle Switch */}
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <ToggleSwitch
-                            checked={f.enabled}
-                            onChange={() => handleToggleFeed(f.id, f.enabled)}
-                            size="sm"
-                          />
-                          {f.enabled ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-bold text-[10px] tracking-wide flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                              ENABLED
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-gray-900 text-gray-500 border border-gray-800 font-bold text-[10px] tracking-wide">
-                              DISABLED
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => handleDeleteFilter(f.id, f.name)}
-                          className="p-1 text-gray-500 hover:text-red-400 transition-colors"
-                          title="Delete filter feed"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Tab Content 2: Whitelisted Domain Rules */}
-      {activeTab === 'allowlists' && (
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-bold text-white">Whitelisted Domain Rules (Exceptions)</h2>
-              <p className="text-xs text-gray-400">
-                Domains in this list will never be sinkholed or blocked, ensuring zero false-positive disruption for ISP subscribers.
-              </p>
-            </div>
-
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search whitelisted domains..."
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 font-mono"
+            <span className="text-xs font-semibold uppercase tracking-wider text-rose-300">Iklan & Pelacak</span>
+            <div className="flex items-center gap-2">
+              <ToggleSwitch
+                checked={isAdBlockActive}
+                onChange={handleToggleAdBlock}
+                size="md"
+                disabled={togglingAdBlock || !config}
               />
+              <ShieldAlert className={`w-4 h-4 ${isAdBlockActive ? 'text-rose-400' : 'text-gray-600'}`} />
             </div>
           </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
-                <tr>
-                  <th className="py-2.5 px-3">Domain</th>
-                  <th className="py-2.5 px-3">Category</th>
-                  <th className="py-2.5 px-3">Reason / Ticket</th>
-                  <th className="py-2.5 px-3">Added By</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/60">
-                {filteredAllowlist.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-gray-500">
-                      No allowlist rules found. Click "Add Allowlist Exception" to whitelist a domain.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredAllowlist.map((a) => (
-                    <tr key={a.id || a.domain} className="hover:bg-gray-800/30">
-                      <td className="py-2.5 px-3 font-bold text-emerald-400 flex items-center gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                        {a.domain}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded bg-gray-950 border border-gray-800 text-cyan-300 font-semibold">
-                          {a.category}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-gray-300">{a.reason}</td>
-                      <td className="py-2.5 px-3 text-gray-500 font-sans">{a.created_by}</td>
-                      <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => handleDeleteAllowlist(a.id, a.domain)}
-                          className="p-1 text-gray-500 hover:text-red-400 transition-colors"
-                          title="Delete exception"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="text-2xl font-bold font-mono mt-2 flex items-center gap-2">
+            {isAdBlockActive ? (
+              <span className="text-rose-400 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-400 animate-pulse"></span>
+                BLOCKED
+              </span>
+            ) : (
+              <span className="text-gray-400">ALLOWED</span>
+            )}
+            {togglingAdBlock && <RefreshCw className="w-4 h-4 text-rose-400 animate-spin" />}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
+            {isAdBlockActive ? 'Banner iklan & tracker diblokir' : 'Iklan bebas tampil'}
+          </p>
+          <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-rose-300 font-mono flex items-center justify-between">
+            <span className="truncate">{isAdBlockActive ? 'Sinkhole NXDOMAIN' : 'Akses Terbuka'}</span>
+            <span className="text-[10px] text-gray-500 font-sans">Toggle ON/OFF</span>
           </div>
         </div>
-      )}
+
+        {/* Card 5: Malware Shield */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 relative overflow-hidden group hover:border-emerald-800/60 transition-all">
+          <div className="flex items-center justify-between text-gray-400">
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Malware Shield</span>
+            <div className="flex items-center gap-2">
+              <ToggleSwitch
+                checked={isMalwareBlockActive}
+                onChange={handleToggleMalwareBlock}
+                size="md"
+                disabled={togglingMalware || !config}
+              />
+              <ShieldCheck className={`w-4 h-4 ${isMalwareBlockActive ? 'text-emerald-400' : 'text-gray-600'}`} />
+            </div>
+          </div>
+          <div className="text-2xl font-bold font-mono mt-2 flex items-center gap-2">
+            {isMalwareBlockActive ? (
+              <span className="text-emerald-400 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                PROTECTED
+              </span>
+            ) : (
+              <span className="text-gray-400">DISABLED</span>
+            )}
+            {togglingMalware && <RefreshCw className="w-4 h-4 text-emerald-400 animate-spin" />}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
+            {isMalwareBlockActive ? 'Phishing, C2 botnet & malware' : 'Proteksi malware dinonaktifkan'}
+          </p>
+          <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-emerald-300 font-mono flex items-center justify-between">
+            <span className="truncate">{isMalwareBlockActive ? 'Sinkhole NXDOMAIN' : 'Proteksi Mati'}</span>
+            <span className="text-[10px] text-gray-500 font-sans">Toggle ON/OFF</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Embedded Feeds Architecture Note */}
+      <div className="bg-gradient-to-r from-gray-900/90 via-gray-900 to-gray-850 border border-gray-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs font-bold text-white tracking-wide">
+                Seluruh Filter (18+ Dewasa, Judi Online, Iklan & Malware) Tertanam Otonom
+              </h4>
+              <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">
+                GITHUB SYNCED
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Daftar domain disinkronkan otomatis dari repository GitHub via Auto-Update Engine. Cukup edit file di repository Anda untuk memperbarui domain, atau gunakan saklar master di atas untuk mengaktifkan/menonaktifkan proteksi tanpa downtime.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setShowAddAllowModal(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs rounded-lg transition-all shadow-md shadow-emerald-500/20 flex items-center gap-2"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Allowlist Exception
+          </button>
+        </div>
+      </div>
+
+      {/* Whitelisted Domain Rules (Exceptions) Table */}
+      <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4 shadow-md">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              Whitelisted Domain Rules (Pengecualian Pelanggan)
+            </h2>
+            <p className="text-xs text-gray-400 mt-1">
+              Domain di dalam daftar ini memiliki prioritas tertinggi dan tidak akan pernah diblokir oleh filter 18+, Judi Online, Iklan, maupun Malware.
+            </p>
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search whitelisted domains..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono">
+            <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
+              <tr>
+                <th className="py-2.5 px-3">Domain</th>
+                <th className="py-2.5 px-3">Category</th>
+                <th className="py-2.5 px-3">Reason / Ticket</th>
+                <th className="py-2.5 px-3">Added By</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/60">
+              {filteredAllowlist.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-gray-500">
+                    Belum ada domain pengecualian khusus. Klik "Add Allowlist Exception" jika ada domain pelanggan yang perlu dikecualikan dari pemblokiran.
+                  </td>
+                </tr>
+              ) : (
+                filteredAllowlist.map((a) => (
+                  <tr key={a.id || a.domain} className="hover:bg-gray-800/30">
+                    <td className="py-2.5 px-3 font-bold text-emerald-400 flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      {a.domain}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="px-2 py-0.5 rounded bg-gray-950 border border-gray-800 text-cyan-300 font-semibold">
+                        {a.category}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-gray-300">{a.reason}</td>
+                    <td className="py-2.5 px-3 text-gray-500 font-sans">{a.created_by}</td>
+                    <td className="py-2.5 px-3 text-right">
+                      <button
+                        onClick={() => handleDeleteAllowlist(a.id, a.domain)}
+                        className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                        title="Delete exception"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Optional Discreet Collapsible for Advanced Feeds */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => setShowRawFeeds(!showRawFeeds)}
+          className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5 font-mono py-1 px-2 rounded hover:bg-gray-900"
+        >
+          {showRawFeeds ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          <span>{showRawFeeds ? 'Sembunyikan Detail File Feed Teknis' : 'Tampilkan Detail File Feed Teknis (Lanjutan)'}</span>
+        </button>
+
+        {showRawFeeds && (
+          <div className="mt-3 bg-gray-900/60 border border-gray-800/80 rounded-xl p-4 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-gray-300">File Feed & Sumber Domain (Mode Lanjutan)</h3>
+                <p className="text-[11px] text-gray-500">File-file ini tertanam di sistem dan diperbarui otonom via auto-update.</p>
+              </div>
+              <span className="text-[11px] text-gray-500 font-mono">{filters.length} feeds terdaftar</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-gray-950 text-gray-500 border-b border-gray-800">
+                  <tr>
+                    <th className="py-2 px-3">Feed Name</th>
+                    <th className="py-2 px-3">Category</th>
+                    <th className="py-2 px-3">Path / Source</th>
+                    <th className="py-2 px-3">Rules</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/40 text-gray-400">
+                  {filters.map((f) => (
+                    <tr key={f.id} className="hover:bg-gray-800/20">
+                      <td className="py-2 px-3 text-gray-300 font-semibold">{f.name}</td>
+                      <td className="py-2 px-3">
+                        <span className="px-1.5 py-0.5 rounded bg-gray-950 text-[10px] text-cyan-400 border border-gray-800">{f.category}</span>
+                      </td>
+                      <td className="py-2 px-3 text-[11px] text-gray-500 max-w-xs truncate">{f.source_url || f.local_path}</td>
+                      <td className="py-2 px-3 text-gray-300">{f.rule_count?.toLocaleString() || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
 
       {/* Add Blocklist Modal */}
       {showAddBlockModal && (

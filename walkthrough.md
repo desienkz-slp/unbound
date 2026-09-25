@@ -187,3 +187,24 @@ Jika Anda ingin menambahkan domain darurat langsung di server Linux:
    curl -X POST http://localhost:8080/api/v1/blocklists/sync -H "Authorization: Bearer <token>"
    ```
 3. Konfigurasi Unbound akan ter-reload seketika tanpa perlu restart service.
+
+---
+
+## 8. Penyelesaian Masalah Saklar Ganda (Double Action) & UI Bersih (Single Control)
+
+Menanggapi kendala saklar ganda (*double action*) yang Anda temukan antara Kartu Atas dan Baris Tabel:
+
+1. **Akar Masalah yang Ditemukan:**
+   - Sebelumnya, terdapat 2 titik kontrol: Kartu KPI di atas (*Master Policy*) dan saklar di baris tabel bawah (*Per-feed file list*).
+   - Hal ini menyebabkan kebingungan dan status yang tampak kontradiktif (misal: di atas `ALLOWED` namun di tabel bawah `ENABLED`).
+
+2. **Solusi yang Diterapkan Sesuai Instruksi Anda:**
+   - **Tabel Raw Blocklists Disembunyikan Penuh:** Seluruh daftar filter (18+ Dewasa, Judi Online, Iklan, dan Malware) sudah tertanam di sistem, sehingga tabel baris bawah yang membingungkan telah disembunyikan secara default.
+   - **Single Point of Control (5 Master Policy Cards):** Kontrol saklar kini terpusat secara bersih di kartu bagian atas:
+     1. **SafeSearch VIP** (Google, Bing, YT) [Toggle ON/OFF]
+     2. **18+ Dewasa** (Situs Dewasa & Pornografi) [Toggle ON/OFF]
+     3. **Judi Online** (Slot Gacor, Taruhan Online) [Toggle ON/OFF]
+     4. **Iklan & Pelacak** (Banner Iklan, Tracker & Pop-ups) [Toggle ON/OFF]
+     5. **Malware Shield** (Phishing, Ransomware & Botnet) [Toggle ON/OFF]
+   - **Tabel Pengecualian Allowlist Langsung & Rapi:** Tepat di bawah kartu, antarmuka langsung menyajikan tabel **Whitelisted Domain Rules (Exceptions)** lengkap dengan tombol **`+ Add Allowlist Exception`**, sehingga mempermudah NOC jika ada domain pelanggan darurat yang perlu di-whitelist.
+   - **Alur Update Super Praktis:** Anda cukup mengedit file daftar domain di repository GitHub Anda (`blocklist/adult-domains.txt`, `blocklist/gambling-domains.txt`, dll.). Auto-Update Engine akan menyinkronkannya otomatis setiap 12 jam, atau Anda dapat menekan tombol **"Sync Seluruh Filter Sekarang"** untuk pembaruan instan.
