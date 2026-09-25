@@ -590,4 +590,74 @@ Untuk mempermudah deployment armada (*fleet deployment*) server DNS baru di ling
   - Timer `netora-dns-updater.timer` aktif berjalan di background setiap 5 menit.
   - Revisi aktif di server saat ini: `468b38b` (Status: `SUCCESS`, Health: `PASS`).
 
+---
+
+## 16. Upstream DNS Resolvers Management & AdGuard Directory Integration (Fully Editable)
+
+### 16.1. Latar Belakang & Persyaratan
+Pengguna menginginkan agar daftar **Upstream DNS Resolvers** di antarmuka Web UI (NOC Dashboard) dapat diedit secara fleksibel (*fully editable*), dengan kemampuan:
+1. Menambahkan resolver baru satu per satu atau via bulk copy-paste format AdGuard Home.
+2. Mengintegrasikan direktori resmi penyedia DNS terpercaya berdasarkan [AdGuard DNS Known Providers](https://adguard-dns.io/kb/general/dns-providers/?clid=y5dJ5x&utm_campaign=dns_kb_providers&utm_medium=ui&utm_source=home).
+3. Melakukan uji latensi (*latency probe*) secara interaktif per upstream server.
+4. Menjamin perubahan upstream tersimpan permanen di database PostgreSQL dan dikonversi secara atomik ke dalam direktif `forward-zone` Unbound tanpa *downtime*.
+
+### 16.2. Implementasi Frontend Web UI (`web/src/views/DNSConfigView.tsx`)
+1. **AdGuard Known DNS Providers Direct Integration:**
+   - Menambahkan banner informatif dengan tautan langsung ke basis pengetahuan resmi AdGuard DNS Providers.
+   - Menyediakan tombol quick-add preset untuk:
+     - **AdGuard DNS:** Default (`94.140.14.14:53`), Family Protection (`94.140.14.15:53`), Non-filtering (`94.140.14.140:53`).
+     - **Cloudflare:** Standard (`1.1.1.1:53`), Malware Blocking (`1.1.1.2:53`), Family (`1.1.1.3:53`).
+     - **Google Public DNS:** (`8.8.8.8:53`).
+     - **Quad9:** Security / Threat Blocking (`9.9.9.9:53`).
+     - **Mullvad DNS:** Standard (`194.242.2.2:53`) & Ad-block (`194.242.2.3:53`).
+     - **CleanBrowsing:** Security (`185.228.168.9:53`) & Adult Filter (`185.228.168.168:53`).
+     - **Control D:** Free Standard (`76.76.2.0:53`).
+     - **OpenDNS:** Standard (`208.67.222.222:53`) & FamilyShield (`208.67.222.123:53`).
+2. **Dual-Mode Editing (Table Editor & Bulk Paste):**
+   - **Table Editor:** Memungkinkan pengeditan langsung pada baris tabel: Label Nama, IP Address, Port (default 53), Protokol (`UDP`, `TCP`, `DOT`, `DOH`), Toggle Enable/Disable, Tombol Test Latency, dan Tombol Hapus.
+   - **Bulk Multiline Paste:** Textarea bergaya AdGuard Home untuk paste puluhan IP upstream sekaligus dengan format `IP` atau `IP:PORT`.
+3. **Smart Mode Detector & Alert:**
+   - Sistem mendeteksi otomatis jika terdapat upstream resolver yang aktif namun mode resolusi masih `RECURSIVE`.
+   - Menampilkan notifikasi peringatan dengan 1-click button untuk beralih ke mode **`HYBRID`** (forwarding dengan fallback recursive otomatis).
+
+### 16.3. Perbaikan Backend API & PostgreSQL Storage Layer
+1. **Investigasi Akar Masalah (*Root Cause*):**
+   - Diidentifikasi bahwa fungsi `GetDesiredState()` pada `pkg/storage/postgres.go` hanya membaca tabel `listeners` dan `client_networks`, tetapi **tidak pernah membaca tabel `upstreams`**, sehingga konfigurasi selalu kembali ke default hardcoded (Cloudflare & Google).
+   - Fungsi `SaveDesiredState()` sebelumnya tidak membersihkan upstream yang dihapus oleh pengguna dari UI.
+2. **Perbaikan Transaksional Non-Destruktif (`pkg/storage/postgres.go`):**
+   - **Sinkronisasi Upstream:** Menambahkan logika pembersihan aman (`DELETE FROM upstreams WHERE node_id = $1 AND id NOT IN (...)`) yang diikuti oleh `INSERT ... ON CONFLICT (id) DO UPDATE`.
+   - **Query Upstreams Aktif:** Menambahkan query `SELECT id, name, ip, port, type, COALESCE(tls_name, ''), COALESCE(weight, 100), enabled FROM upstreams WHERE node_id = $1 ORDER BY created_at ASC` ke dalam `GetDesiredState()`.
+   - **Persistensi Resolution Mode:** Menambahkan kolom `resolution_mode` pada tabel `nodes` sehingga mode `HYBRID`/`FORWARDING`/`RECURSIVE` tersimpan permanen di database.
+3. **Penyempurnaan Routing API (`cmd/netora-api/server.go`):**
+   - Mendukung endpoint nested `/api/v1/nodes/{id}/config/apply`, `/api/v1/nodes/{id}/config/rollback`, dan `/api/v1/nodes/{id}/config/versions`.
+   - Mendukung unmarshaling payload fleksibel baik format langsung `model.DesiredState` maupun format wrapped `{"state": ..., "reason": "..."}`.
+
+### 16.4. Hasil Pengujian & Verifikasi Nyata pada `dns-dev` (172.18.20.145)
+1. **Pengujian Penyimpanan Database & API:**
+   - Diterapkan 4 upstream resolver:
+     - `AdGuard DNS (Default)`: `94.140.14.14:53`
+     - `AdGuard DNS (Family Protection)`: `94.140.14.15:53`
+     - `Quad9 (Malware Blocking)`: `9.9.9.9:53`
+     - `Cloudflare 1.1.1.2 (Security)`: `1.1.1.2:53`
+   - Mode diubah ke **`HYBRID`**.
+   - Endpoint `GET /api/v1/nodes/dns-dev/config` mengembalikan seluruh 4 upstream dengan status `enabled: true` secara konsisten.
+2. **Verifikasi Generasi Konfigurasi Unbound (`/etc/unbound/unbound.conf`):**
+   ```ini
+   # --- 12. Upstream & Resolution Architecture ---
+   forward-zone:
+     name: "."
+     forward-first: yes
+     forward-addr: 1.1.1.2
+     forward-addr: 9.9.9.9
+     forward-addr: 94.140.14.14
+     forward-addr: 94.140.14.15
+   ```
+   - Parameter `forward-first: yes` aktif secara otomatis karena mode `HYBRID`.
+   - Sintaks divalidasi via `unbound-checkconf` -> **Syntax OK**.
+   - Daemon Unbound direload via `unbound-control reload` -> **0 downtime**.
+3. **Pengujian Kueri DNS Langsung:**
+   - Kueri `dig @127.0.0.1 -p 53 adguard-dns.io +short` -> Berhasil menjawab `195.216.190.134`.
+   - Kueri dari workstation pengguna via PowerShell:
+     `Resolve-DnsName -Name adguard-dns.io -Server 172.18.20.145` -> Berhasil menjawab `195.216.190.134` (TTL: 292s).
+
 

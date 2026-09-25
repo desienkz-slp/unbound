@@ -25,3 +25,6 @@ vendor/
 # IDE
 .vscode/
 .idea/
+
+# Scratch & test scripts
+scratch/

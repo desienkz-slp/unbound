@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -270,6 +271,10 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action := parts[1]
+	if action == "config" && len(parts) > 2 {
+		action = parts[2]
+	}
+
 	switch action {
 	case "health":
 		res := s.healthChecker.CheckResolution(r.Context(), "127.0.0.1", 53, "udp", "google.com")
@@ -315,10 +320,24 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var state model.DesiredState
-		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
-			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot read request body"})
 			return
+		}
+
+		var bodyMap map[string]json.RawMessage
+		var state model.DesiredState
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil && bodyMap["state"] != nil {
+			if err := json.Unmarshal(bodyMap["state"], &state); err != nil {
+				s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid state in body: " + err.Error()})
+				return
+			}
+		} else {
+			if err := json.Unmarshal(bodyBytes, &state); err != nil {
+				s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body: " + err.Error()})
+				return
+			}
 		}
 
 		claims := r.Context().Value("user_claims").(*auth.Claims)
@@ -354,6 +373,7 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		var req struct {
 			TargetVersionID string `json:"target_version_id"`
+			VersionID       string `json:"version_id"`
 			Reason          string `json:"reason"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -361,8 +381,13 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		targetVer := req.TargetVersionID
+		if targetVer == "" {
+			targetVer = req.VersionID
+		}
+
 		claims := r.Context().Value("user_claims").(*auth.Claims)
-		res, err := s.engine.Rollback(r.Context(), req.TargetVersionID, claims.Username, req.Reason)
+		res, err := s.engine.Rollback(r.Context(), targetVer, claims.Username, req.Reason)
 		if err != nil {
 			_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
 				Actor:    claims.Username,
@@ -377,13 +402,14 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.writeJSON(w, http.StatusOK, res)
 
-	case "history":
+	case "history", "versions":
 		versions, err := s.store.ListConfigVersions(r.Context(), nodeID, 50)
 		if err != nil {
 			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		s.writeJSON(w, http.StatusOK, versions)
+
 
 	default:
 		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "endpoint not found"})

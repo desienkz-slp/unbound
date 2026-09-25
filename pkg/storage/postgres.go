@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -35,6 +36,9 @@ func NewPostgresStore(connStr string) (*PostgresStore, error) {
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping postgres database: %w", err)
 	}
+
+	// Idempotent column check for node resolution_mode
+	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS resolution_mode VARCHAR(32) DEFAULT 'RECURSIVE';`)
 
 	return &PostgresStore{db: db}, nil
 }
@@ -174,7 +178,22 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 	}
 	defer tx.Rollback()
 
+	// 0. Update resolution_mode on node if set
+	if state.ResolutionMode != "" {
+		_, _ = tx.ExecContext(ctx, `UPDATE nodes SET resolution_mode = $1, updated_at = NOW() WHERE id = $2`, string(state.ResolutionMode), state.NodeID)
+	}
+
 	// 1. Sync Listeners (non-destructive UPSERT)
+	if len(state.Listeners) > 0 {
+		var ids []string
+		for _, l := range state.Listeners {
+			ids = append(ids, fmt.Sprintf("'%s'", strings.ReplaceAll(l.ID, "'", "''")))
+		}
+		delQuery := fmt.Sprintf(`DELETE FROM listeners WHERE node_id = $1 AND id NOT IN (%s)`, strings.Join(ids, ","))
+		if _, err := tx.ExecContext(ctx, delQuery, state.NodeID); err != nil {
+			return fmt.Errorf("failed pruning listeners: %w", err)
+		}
+	}
 	for _, l := range state.Listeners {
 		query := `
 			INSERT INTO listeners (id, node_id, name, ip, port, role, is_ipv6, udp, tcp, enabled, created_at)
@@ -195,6 +214,16 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 	}
 
 	// 2. Sync Client Networks
+	if len(state.ClientNetworks) > 0 {
+		var ids []string
+		for _, n := range state.ClientNetworks {
+			ids = append(ids, fmt.Sprintf("'%s'", strings.ReplaceAll(n.ID, "'", "''")))
+		}
+		delQuery := fmt.Sprintf(`DELETE FROM client_networks WHERE node_id = $1 AND id NOT IN (%s)`, strings.Join(ids, ","))
+		if _, err := tx.ExecContext(ctx, delQuery, state.NodeID); err != nil {
+			return fmt.Errorf("failed pruning client networks: %w", err)
+		}
+	}
 	for _, n := range state.ClientNetworks {
 		query := `
 			INSERT INTO client_networks (id, node_id, cidr, description, action, policy_group, enabled, created_at)
@@ -212,6 +241,20 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 	}
 
 	// 3. Sync Upstreams
+	if len(state.Upstreams) > 0 {
+		var ids []string
+		for _, u := range state.Upstreams {
+			ids = append(ids, fmt.Sprintf("'%s'", strings.ReplaceAll(u.ID, "'", "''")))
+		}
+		delQuery := fmt.Sprintf(`DELETE FROM upstreams WHERE node_id = $1 AND id NOT IN (%s)`, strings.Join(ids, ","))
+		if _, err := tx.ExecContext(ctx, delQuery, state.NodeID); err != nil {
+			return fmt.Errorf("failed pruning upstreams: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM upstreams WHERE node_id = $1`, state.NodeID); err != nil {
+			return fmt.Errorf("failed clearing upstreams: %w", err)
+		}
+	}
 	for _, u := range state.Upstreams {
 		query := `
 			INSERT INTO upstreams (id, node_id, name, ip, port, type, tls_name, weight, enabled, created_at)
@@ -242,8 +285,14 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 
 	state := model.NewDefaultDesiredState(nodeID, node.CPUCores, node.RAMMB)
 
+	// Fetch resolution_mode if stored on node
+	var resMode sql.NullString
+	if err := p.db.QueryRowContext(ctx, `SELECT resolution_mode FROM nodes WHERE id = $1`, nodeID).Scan(&resMode); err == nil && resMode.Valid && resMode.String != "" {
+		state.ResolutionMode = model.ResolutionMode(resMode.String)
+	}
+
 	// Fetch Listeners
-	lRows, err := p.db.QueryContext(ctx, `SELECT id, name, ip, port, role, is_ipv6, udp, tcp, enabled FROM listeners WHERE node_id = $1`, nodeID)
+	lRows, err := p.db.QueryContext(ctx, `SELECT id, name, ip, port, role, is_ipv6, udp, tcp, enabled FROM listeners WHERE node_id = $1 ORDER BY created_at ASC`, nodeID)
 	if err == nil {
 		defer lRows.Close()
 		var listeners []model.Listener
@@ -261,7 +310,7 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 	}
 
 	// Fetch Client Networks
-	cRows, err := p.db.QueryContext(ctx, `SELECT id, cidr, description, action, policy_group, enabled FROM client_networks WHERE node_id = $1`, nodeID)
+	cRows, err := p.db.QueryContext(ctx, `SELECT id, cidr, description, action, policy_group, enabled FROM client_networks WHERE node_id = $1 ORDER BY created_at ASC`, nodeID)
 	if err == nil {
 		defer cRows.Close()
 		var networks []model.ClientNetwork
@@ -276,6 +325,24 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 		}
 		if len(networks) > 0 {
 			state.ClientNetworks = networks
+		}
+	}
+
+	// Fetch Upstreams
+	uRows, err := p.db.QueryContext(ctx, `SELECT id, name, ip, port, type, COALESCE(tls_name, ''), COALESCE(weight, 100), enabled FROM upstreams WHERE node_id = $1 ORDER BY created_at ASC`, nodeID)
+	if err == nil {
+		defer uRows.Close()
+		var upstreams []model.UpstreamServer
+		for uRows.Next() {
+			var u model.UpstreamServer
+			var uType string
+			if err := uRows.Scan(&u.ID, &u.Name, &u.IP, &u.Port, &uType, &u.TLSName, &u.Weight, &u.Enabled); err == nil {
+				u.Type = model.UpstreamType(uType)
+				upstreams = append(upstreams, u)
+			}
+		}
+		if len(upstreams) > 0 {
+			state.Upstreams = upstreams
 		}
 	}
 
