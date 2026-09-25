@@ -190,21 +190,41 @@ Jika Anda ingin menambahkan domain darurat langsung di server Linux:
 
 ---
 
-## 8. Penyelesaian Masalah Saklar Ganda (Double Action) & UI Bersih (Single Control)
+## 8. Pemisahan Bersih: Master Policy Cards vs Tabel Feed Teknis (Zero Double Action)
 
-Menanggapi kendala saklar ganda (*double action*) yang Anda temukan antara Kartu Atas dan Baris Tabel:
+Menindaklanjuti instruksi terbaru Anda:
+> *"Selain judi online dan 18+ tampilkan listnya, dan hapus toggle on off di atas untuk iklan dan pelacak, cukup di table bawah saja."*
 
-1. **Akar Masalah yang Ditemukan:**
-   - Sebelumnya, terdapat 2 titik kontrol: Kartu KPI di atas (*Master Policy*) dan saklar di baris tabel bawah (*Per-feed file list*).
-   - Hal ini menyebabkan kebingungan dan status yang tampak kontradiktif (misal: di atas `ALLOWED` namun di tabel bawah `ENABLED`).
+Telah diterapkan arsitektur antarmuka yang sangat jelas, rapi, dan tanpa kebingungan aksi ganda (*zero double action*):
 
-2. **Solusi yang Diterapkan Sesuai Instruksi Anda:**
-   - **Tabel Raw Blocklists Disembunyikan Penuh:** Seluruh daftar filter (18+ Dewasa, Judi Online, Iklan, dan Malware) sudah tertanam di sistem, sehingga tabel baris bawah yang membingungkan telah disembunyikan secara default.
-   - **Single Point of Control (5 Master Policy Cards):** Kontrol saklar kini terpusat secara bersih di kartu bagian atas:
-     1. **SafeSearch VIP** (Google, Bing, YT) [Toggle ON/OFF]
-     2. **18+ Dewasa** (Situs Dewasa & Pornografi) [Toggle ON/OFF]
-     3. **Judi Online** (Slot Gacor, Taruhan Online) [Toggle ON/OFF]
-     4. **Iklan & Pelacak** (Banner Iklan, Tracker & Pop-ups) [Toggle ON/OFF]
-     5. **Malware Shield** (Phishing, Ransomware & Botnet) [Toggle ON/OFF]
-   - **Tabel Pengecualian Allowlist Langsung & Rapi:** Tepat di bawah kartu, antarmuka langsung menyajikan tabel **Whitelisted Domain Rules (Exceptions)** lengkap dengan tombol **`+ Add Allowlist Exception`**, sehingga mempermudah NOC jika ada domain pelanggan darurat yang perlu di-whitelist.
-   - **Alur Update Super Praktis:** Anda cukup mengedit file daftar domain di repository GitHub Anda (`blocklist/adult-domains.txt`, `blocklist/gambling-domains.txt`, dll.). Auto-Update Engine akan menyinkronkannya otomatis setiap 12 jam, atau Anda dapat menekan tombol **"Sync Seluruh Filter Sekarang"** untuk pembaruan instan.
+### 1. Kartu Master Policy di Bagian Atas (3 Saklar Utama + 2 Ringkasan Metrik)
+Bagian atas kini didedikasikan secara eksklusif untuk kebijakan inti (*Master Policy*) dan ringkasan metrik:
+1. **SafeSearch VIP** — Saklar Master [Toggle ON/OFF] (Google, Bing, YouTube).
+2. **18+ Dewasa** (Parental Control) — Saklar Master [Toggle ON/OFF] (Pornografi & Konten Dewasa).
+3. **Judi Online** (Gambling & Slots) — Saklar Master [Toggle ON/OFF] (Slot gacor & taruhan online).
+4. **Feed Iklan & Malware** — **Tanpa Toggle di Atas** (Hanya Ringkasan Metrik: `{activeTableFeeds.length} / {tableFeeds.length} Aktif`, `~391,437 Rules`, label: *"Dikelola di tabel bawah"*). Saklar untuk iklan dan pelacak telah dihapus dari kartu atas sesuai instruksi Anda.
+5. **Allowlist Exceptions** — Ringkasan Metrik Pengecualian (`3 Pengecualian`, `<50ns Suffix-Trie`).
+
+### 2. Tabel Bawah Terbagi Menjadi 2 Tab Rapi
+Tepat di bawah kartu, antarmuka menyediakan tab navigasi yang terstruktur:
+
+#### Tab 1: "Blocklists & Feed Iklan/Malware" (List Feeds Selain 18+ & Judi Online)
+- **18+ Dewasa dan Judi Online secara ketat DIKECUALIKAN dari tabel ini**, sehingga tidak ada lagi redundansi atau *double action* antara kartu atas dan baris tabel.
+- **Menampilkan seluruh daftar feed teknis lainnya:**
+  - `AdGuard Base DNS Filter` (Iklan, Banner & Pelacak)
+  - `Hagezi Multi-PRO Threat Feed` (Malware & Adblock PRO)
+  - `StevenBlack Unified Hosts File`
+  - `Custom ISP Blacklist`
+  - Feed eksternal tambahan yang Anda masukkan via tombol `+ Add Blocklist`
+- **Saklar Toggle Mandiri di Setiap Baris:**
+  - Setiap feed teknis memiliki saklar `ToggleSwitch` (ON/OFF) mandiri di kolom status barisnya.
+  - Dilengkapi tombol cepat **"Aktifkan Semua"** dan **"Nonaktifkan Semua"** serta pencarian real-time.
+
+#### Tab 2: "Allowlist Exceptions" (Whitelisted Domains)
+- Menampilkan daftar domain pengecualian darurat pelanggan ISP yang kebal terhadap semua filter.
+- Dilengkapi tombol **`+ Add Allowlist Exception`** dan tombol hapus instan.
+
+### 3. Alur Kerja Praktis & Efisien
+- **Update Domain 18+ & Judi Online:** Cukup perbarui file di repositori GitHub Anda (`blocklist/adult-domains.txt` dan `blocklist/gambling-domains.txt`). Sinkronisasi berjalan otonom tiap 12 jam atau via tombol *Sync Seluruh Filter*.
+- **Kontrol On/Off 18+ & Judi Online:** Gunakan saklar master di kartu atas.
+- **Kontrol On/Off Iklan, Tracker & Malware:** Cukup klik saklar toggle langsung di baris tabel bawah.
