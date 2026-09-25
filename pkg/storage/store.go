@@ -86,6 +86,7 @@ type Store interface {
 	UpsertPolicy(ctx context.Context, p *PolicyRecord) error
 	ListFilters(ctx context.Context) ([]FilterRecord, error)
 	UpsertFilter(ctx context.Context, f *FilterRecord) error
+	DeleteFilter(ctx context.Context, id string) error
 	ListAllowlist(ctx context.Context) ([]AllowlistRecord, error)
 	AddAllowlist(ctx context.Context, domain, category, reason, createdBy string) error
 	RemoveAllowlist(ctx context.Context, domain string) error

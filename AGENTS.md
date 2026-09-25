@@ -60,6 +60,7 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 13. Every destructive or security-sensitive action needs explicit authorization in the API layer.
 14. Tests must include failure and rollback scenarios, not only happy paths.
 15. Performance claims must be benchmarked, not guessed.
+16. ISP recursive resolvers must prioritize real-world CDN compatibility (e.g. disable strict qname-minimisation if upstream authoritative CDNs return non-compliant NXDOMAIN on intermediate labels).
 
 ## Coding behavior
 
@@ -73,6 +74,7 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 - Reload before restart when possible.
 - Use structured logs.
 - Return actionable errors.
+- For DNS validation, use browser subagent testing against real media-heavy websites (e-commerce, video) to verify CDN and streaming asset delivery alongside CLI benchmarks.
 - Document operational assumptions.
 
 ## Definition of done

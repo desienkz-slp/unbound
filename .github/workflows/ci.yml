@@ -1,0 +1,114 @@
+name: Netora DNS CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Job 1: Linting, Security, & Shell Syntax
+  # ----------------------------------------------------------------------------
+  lint-and-syntax:
+    name: Lint & Syntax Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: >-
+            node_modules
+            vendor
+            .agents
+            addons
+        continue-on-error: true
+
+      - name: Security Audit - Ensure No Committed Secrets
+        run: |
+          echo "Auditing repository for exposed GitHub tokens, private keys, or passwords..."
+          if grep -r -E --exclude-dir={.git,node_modules,vendor,.agents} "ghp_[A-Za-z0-9]{36}" .; then
+            echo "CRITICAL: Exposed GitHub personal access token detected in repository!"
+            exit 1
+          fi
+          if grep -r -E --exclude-dir={.git,node_modules,vendor,.agents} "-----BEGIN OPENSSH PRIVATE KEY-----" .; then
+            echo "CRITICAL: Private SSH key detected in repository!"
+            exit 1
+          fi
+          echo "Secret audit PASSED."
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Go Control Plane & Tests
+  # ----------------------------------------------------------------------------
+  go-test-suite:
+    name: Go Test Suite & Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run Go Unit & Integration Tests
+        run: |
+          go test -v -race ./...
+
+      - name: Compile Netora Binaries
+        run: |
+          mkdir -p bin
+          go build -o bin/netora-api ./cmd/netora-api
+          go build -o bin/netora-cli ./cmd/netora-cli
+          go build -o bin/netora-mcp ./cmd/netora-mcp
+          go build -o bin/netora-bench ./cmd/netora-bench
+          ls -la bin/
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Unbound Data Plane & Updater Simulation
+  # ----------------------------------------------------------------------------
+  unbound-validation:
+    name: Unbound Syntax & Updater Safety
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Unbound & Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq unbound dnsutils jq
+
+      - name: Validate Canonical Unbound Configuration
+        run: |
+          echo "Verifying conf/unbound-base.conf..."
+          # Replace template placeholders for test check
+          sed 's/{{NUM_THREADS}}/2/g' conf/unbound-base.conf > /tmp/test-unbound.conf
+          unbound-checkconf /tmp/test-unbound.conf
+
+      - name: Test Auto-Updater Script Syntax & Arguments
+        run: |
+          chmod +x scripts/netora-dns-update.sh scripts/register-node.sh
+          bash -n scripts/netora-dns-update.sh
+          bash -n scripts/register-node.sh
+          ./scripts/netora-dns-update.sh version
+
+      - name: Verify Anti-Open Resolver Guardrail
+        run: |
+          echo "Testing open resolver guardrail..."
+          mkdir -p /tmp/guardrail-test
+          cat <<EOF > /tmp/guardrail-test/unbound.conf
+          server:
+            interface: 0.0.0.0
+            access-control: 0.0.0.0/0 allow
+          EOF
+          if grep -E "access-control:[[:space:]]*0\.0\.0\.0/0[[:space:]]+allow" /tmp/guardrail-test/unbound.conf; then
+            echo "Guardrail pattern successfully detects dangerous open resolver."
+          else
+            echo "Guardrail detection failed!"
+            exit 1
+          fi

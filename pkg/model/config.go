@@ -287,7 +287,7 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			ServeExpiredTTL:           86400,
 			ServeExpiredClientTimeout: 1800,
 			ServeExpiredReplyTTL:      30,
-			QnameMinimisation:         true,
+			QnameMinimisation:         false, // Disabled by default for ISP resolvers to avoid NXDOMAIN on non-compliant CDN GSLBs (e.g. Baishan, Shopee)
 			HideIdentity:              true,
 			HideVersion:               true,
 		},

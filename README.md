@@ -1,66 +1,53 @@
-# 🛡️ Unbound DNS — Anti-Bengong Installer
+# Netora DNS — AI Agent Build Kit
 
-Automated Unbound DNS resolver installer for Ubuntu Server with DoH forwarding, recursive resolution, blocklist management, and monitoring add-ons.
+Purpose: bootstrap an AI coding agent to build a production-grade Unbound-based ISP DNS platform.
 
-## ✨ Features
+The target is NOT a simple Unbound installer. It is a control-plane + data-plane platform:
 
-- **Interactive Installer** — Choose between DoH forwarding (via cloudflared) or full recursive resolution
-- **Auto-Tuning** — Automatically detects CPU/RAM and optimizes Unbound for your server
-- **Serve-Expired** — Zero-downtime DNS with stale cache serving
-- **Blocklist Engine** — Aggregated ad/tracker/malware blocking with custom whitelist support
-- **Adult Content Scheduling** — Time-based adult domain blocking via cron
-- **Monitoring Ready** — Optional Prometheus exporter & Promtail (Loki) integration
-- **AppArmor Compatible** — Proper security profile configuration
-- **Zero-Downtime Logrotate** — USR1 signal-based log rotation
+- Unbound = DNS data plane
+- Netora API/control service = control plane
+- PostgreSQL = configuration/state/audit metadata
+- Prometheus = metrics
+- Loki/Promtail = logs
+- Web UI = operator experience inspired by AdGuard Home, but designed for ISP/NOC workflows
+- Hermes/AI-NOC = optional diagnostics/automation consumer
+- MCP = optional integration layer for AI agents; never required for DNS data-plane availability
 
-## 📁 Structure
+Core non-negotiable principle:
+DATA PLANE MUST KEEP RUNNING IF UI, API, DATABASE, OR AI LAYER IS DOWN.
 
-```
-unbound/
-├── install-dns.sh          # Main interactive installer
-├── remove-dns.sh           # Clean uninstaller
-├── lib/
-│   └── helpers.sh          # Shared utility functions
-├── conf/
-│   ├── unbound-base.conf   # Base Unbound configuration template
-│   ├── local-records.conf  # Local DNS records (A/PTR)
-│   ├── domain-insecure.conf # DNSSEC-insecure domains
-│   └── logrotate-unbound.conf
-├── blocklist/
-│   ├── gen-blocklist.sh    # Blocklist generator & aggregator
-│   ├── update-lists.sh     # Cron-friendly blocklist updater
-│   ├── block_mine.txt      # Custom block entries
-│   ├── adult-domains.txt   # Adult domain sources
-│   └── whitelist.txt       # Whitelist overrides
-└── addons/
-    ├── install-exporter.sh # Prometheus unbound_exporter
-    ├── install-promtail.sh # Promtail log shipper
-    └── setup-jadwal.sh     # Adult-content schedule manager
-```
+## Autonomous CI/CD & Auto-Update Engine
 
-## 🚀 Quick Start
+Netora DNS nodes maintain complete operational autonomy using an asynchronous pull-based deployment agent:
+
+* **Decentralized Polling:** Every node runs `netora-dns-update` via systemd timer to pull validated releases from GitHub.
+* **Pre-Activation Staging:** Candidate releases are staged and tested with `unbound-checkconf` before touching production.
+* **Anti-Open Resolver Guardrail:** Semantic checks prevent accidental exposure of `0.0.0.0/0 allow`.
+* **Zero Downtime Reload:** Unbound uses atomic file replacement and `unbound-control reload`.
+* **Automated Post-Activation Health Check:** Real DNS queries (localhost, DNSSEC, CDNs) are verified immediately after activation.
+* **Auto-Rollback:** If reload fails or post-activation health checks fail, the previous verified configuration is restored instantly.
+
+### Quick Commands
 
 ```bash
-# Clone the repository
-git clone https://github.com/<YOUR_USERNAME>/unbound.git
-cd unbound
+# View update status & health
+netora-dns-update status
 
-# Run the installer
-sudo bash install-dns.sh
+# Query upstream repository for updates
+netora-dns-update check
+
+# Trigger an immediate safe update
+netora-dns-update update
+
+# Revert to last-known-good backup
+netora-dns-update rollback
 ```
 
-## 📋 Requirements
+For full documentation, see:
+* [CI/CD Architecture](docs/cicd.md)
+* [Server Update Agent](docs/auto-update.md)
+* [Fleet Deployment & Overlays](docs/deployment.md)
+* [Rollback & Recovery SOP](docs/rollback.md)
+* [Node Registration Guide](docs/node-registration.md)
 
-- Ubuntu 20.04+ / Debian 11+
-- Root or sudo access
-- Internet connectivity
-
-## 🗑️ Uninstall
-
-```bash
-sudo bash remove-dns.sh
-```
-
-## 📜 License
-
-MIT
+Read `.agents/00-bootstrap.md` first, then follow `.agents/rules/*`, `.agents/skills/*`, and `.agents/mcp/*`.

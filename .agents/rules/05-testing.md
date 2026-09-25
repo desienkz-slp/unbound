@@ -17,8 +17,14 @@ Required test categories:
 13. stale/expired cache behavior
 14. UI smoke tests
 15. load tests
+16. Real-world CDN and streaming validation via Browser Subagent (e-commerce, video, heavy media)
 
 Failure tests are mandatory.
+
+Browser Subagent Testing Rules:
+- When validating DNS resolver health or quality changes, execute end-to-end visual tests with a browser subagent against real multi-CDN websites (e.g. Shopee, e-commerce, video streaming).
+- Verify that dynamic banners, category icons, lazy-loaded product thumbnails, and live video players render without broken placeholders or network timeouts.
+- Set strict timeout and step limits (max 8-10 steps) with measurable stop conditions to prevent hanging.
 
 Minimum load-test progression:
 - 1K QPS

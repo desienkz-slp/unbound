@@ -152,3 +152,16 @@ export interface AllowlistRecord {
   created_by: string;
   created_at: string;
 }
+
+export interface FilterRecord {
+  id: string;
+  name: string;
+  category: string;
+  source_url: string;
+  local_path: string;
+  rule_count: number;
+  enabled: boolean;
+  last_updated_at?: string;
+  created_at: string;
+}
+

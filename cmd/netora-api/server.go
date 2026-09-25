@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -102,6 +103,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Policies & Filtering
 	mux.HandleFunc("/api/v1/policies", s.requireAuth(s.handlePolicies))
 	mux.HandleFunc("/api/v1/filters", s.requireAuth(s.handleFilters))
+	mux.HandleFunc("/api/v1/filters/", s.requireAuth(s.handleFilterDelete))
 	mux.HandleFunc("/api/v1/allowlist", s.requireAuth(s.handleAllowlist))
 	mux.HandleFunc("/api/v1/allowlist/", s.requireAuth(s.handleAllowlistDelete))
 
@@ -273,6 +275,28 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		res := s.healthChecker.CheckResolution(r.Context(), "127.0.0.1", 53, "udp", "google.com")
 		s.writeJSON(w, http.StatusOK, res)
 
+	case "stats":
+		cmd := exec.CommandContext(r.Context(), "unbound-control", "stats_noreset")
+		out, err := cmd.Output()
+		var totalQueries, cacheHits, cacheMisses float64
+		var avgTime float64
+		if err == nil {
+			parsed := telemetry.ParseStatsString(string(out))
+			totalQueries = parsed["total.num.queries"]
+			cacheHits = parsed["total.num.cachehits"]
+			cacheMisses = parsed["total.num.cachemiss"]
+			avgTime = parsed["total.recursion.time.avg"] * 1000 // to ms
+		}
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"total_queries":          int64(totalQueries),
+			"cache_hits":             int64(cacheHits),
+			"cache_misses":           int64(cacheMisses),
+			"avg_processing_time_ms": avgTime,
+			"blocked_queries":        0,
+			"safe_search_enforced":   0,
+		})
+		return
+
 	case "config":
 		if r.Method == http.MethodGet {
 			cfg, err := s.store.GetDesiredState(r.Context(), nodeID)
@@ -398,12 +422,67 @@ func (s *Server) handlePolicies(w http.ResponseWriter, r *http.Request) {
 
 // Handler: Filters
 func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
-	filters, err := s.store.ListFilters(r.Context())
-	if err != nil {
+	if r.Method == http.MethodGet {
+		filters, err := s.store.ListFilters(r.Context())
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, filters)
+		return
+	}
+	if r.Method == http.MethodPost {
+		var req struct {
+			Name      string `json:"name"`
+			Category  string `json:"category"`
+			SourceURL string `json:"source_url"`
+			LocalPath string `json:"local_path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+		if req.Name == "" || (req.SourceURL == "" && req.LocalPath == "") {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and source_url or local_path are required"})
+			return
+		}
+		id := fmt.Sprintf("filter-%d", time.Now().UnixNano())
+		f := &storage.FilterRecord{
+			ID:        id,
+			Name:      req.Name,
+			Category:  req.Category,
+			SourceURL: req.SourceURL,
+			LocalPath: req.LocalPath,
+			RuleCount: 0,
+			Enabled:   true,
+			CreatedAt: time.Now().UTC(),
+		}
+		if err := s.store.UpsertFilter(r.Context(), f); err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, f)
+		return
+	}
+	s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+}
+
+// Handler: Filter Delete
+func (s *Server) handleFilterDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/filters/")
+	if id == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		return
+	}
+	if err := s.store.DeleteFilter(r.Context(), id); err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	s.writeJSON(w, http.StatusOK, filters)
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "DELETED", "id": id})
 }
 
 // Handler: Allowlist

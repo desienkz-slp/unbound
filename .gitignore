@@ -1,17 +1,25 @@
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
+# secrets
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.token
+github.token
+updater.conf
 
-# Editor
-*.swp
-*.swo
-*~
+# runtime
+data/
+logs/
+tmp/
+
+# build
+bin/
+dist/
+build/
+node_modules/
+vendor/
+
+# IDE
 .vscode/
 .idea/
-
-# Logs
-*.log
-
-# Generated blocklist output (regenerated at runtime)
-blocklist/blocklist.conf

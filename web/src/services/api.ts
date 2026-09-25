@@ -5,6 +5,7 @@ import {
   DiagnosisResult,
   NodeRecord,
   AllowlistRecord,
+  FilterRecord,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -90,6 +91,17 @@ class ApiClient {
     return this.request(`/nodes/${nodeId}/health`);
   }
 
+  async getNodeStats(nodeId: string): Promise<{
+    total_queries: number;
+    cache_hits: number;
+    cache_misses: number;
+    avg_processing_time_ms: number;
+    blocked_queries: number;
+    safe_search_enforced: number;
+  }> {
+    return this.request(`/nodes/${nodeId}/stats`);
+  }
+
   // Desired State / Config
   async getDesiredState(nodeId: string): Promise<DesiredState> {
     return this.request<DesiredState>(`/nodes/${nodeId}/config`);
@@ -118,6 +130,24 @@ class ApiClient {
     return this.request<DiagnosisResult>('/diagnose', {
       method: 'POST',
       body: JSON.stringify({ domain, client_ip: clientIp, policy: policy || 'DEFAULT' }),
+    });
+  }
+
+  // Filter Feeds (Blocklists / Hosts files)
+  async getFilters(): Promise<FilterRecord[]> {
+    return this.request<FilterRecord[]>('/filters');
+  }
+
+  async addFilter(name: string, category: string, source_url: string, local_path?: string): Promise<FilterRecord> {
+    return this.request<FilterRecord>('/filters', {
+      method: 'POST',
+      body: JSON.stringify({ name, category, source_url, local_path }),
+    });
+  }
+
+  async deleteFilter(id: string): Promise<void> {
+    return this.request(`/filters/${id}`, {
+      method: 'DELETE',
     });
   }
 

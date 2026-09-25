@@ -449,6 +449,13 @@ func (p *PostgresStore) UpsertFilter(ctx context.Context, f *FilterRecord) error
 	return err
 }
 
+// DeleteFilter removes a filter feed by ID.
+func (p *PostgresStore) DeleteFilter(ctx context.Context, id string) error {
+	query := `DELETE FROM filters WHERE id = $1`
+	_, err := p.db.ExecContext(ctx, query, id)
+	return err
+}
+
 // ListAllowlist retrieves all allowlist entries.
 func (p *PostgresStore) ListAllowlist(ctx context.Context) ([]AllowlistRecord, error) {
 	query := `SELECT id, domain, category, reason, created_by, created_at FROM allowlists ORDER BY domain ASC`

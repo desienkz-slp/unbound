@@ -189,6 +189,13 @@ func (m *MemoryStore) UpsertFilter(ctx context.Context, f *FilterRecord) error {
 	return nil
 }
 
+func (m *MemoryStore) DeleteFilter(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.filters, id)
+	return nil
+}
+
 func (m *MemoryStore) ListAllowlist(ctx context.Context) ([]AllowlistRecord, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

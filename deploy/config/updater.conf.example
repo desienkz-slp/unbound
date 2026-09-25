@@ -1,0 +1,32 @@
+# ==============================================================================
+# Netora DNS — Server-Side Auto-Update Configuration
+# /etc/netora-dns/updater.conf
+# ==============================================================================
+
+# Node Identity
+NODE_ID="dns-dev"
+
+# Deployment Environment & Channel (development | staging | production)
+CHANNEL="development"
+
+# Upstream Git Repository
+REPO_URL="https://github.com/desienkz-slp/unbound.git"
+GIT_BRANCH="main"
+
+# Authentication: Path to token file (permissions MUST be 600)
+# Leave empty if using SSH deploy key or public repo
+TOKEN_FILE="/etc/netora-dns/github.token"
+
+# Automation Controls
+AUTO_UPDATE_ENABLED="true"
+MAINTENANCE_MODE="false"
+
+# Backup Retention (Number of past revisions to retain)
+BACKUP_RETENTION=5
+
+# Health Check Settings
+HEALTH_CHECK_TIMEOUT=5
+MAX_RELOAD_WAIT=10
+
+# Overlays Directory (Node-local overrides that are NEVER overwritten by Git)
+OVERLAYS_DIR="/etc/netora-dns/overlays"

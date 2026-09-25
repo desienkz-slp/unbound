@@ -1,0 +1,15 @@
+[Unit]
+Description=Periodic Check for Netora DNS Autonomous Updates
+Documentation=https://github.com/desienkz-slp/unbound
+After=network-online.target
+
+[Timer]
+# Run 1 minute after boot, then every 5 minutes
+OnBootSec=1min
+OnUnitActiveSec=5min
+# Randomize within 30 seconds to prevent thundering herd across 100+ DNS nodes
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

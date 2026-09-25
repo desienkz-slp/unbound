@@ -1,0 +1,24 @@
+[Unit]
+Description=Netora DNS Autonomous Auto-Update Agent
+Documentation=https://github.com/desienkz-slp/unbound
+After=network-online.target unbound.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/netora-dns-update update
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+User=root
+Group=root
+
+# Security Sandboxing & Isolation
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ProtectControlGroups=true
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
