@@ -447,3 +447,36 @@ Seluruh pengetahuan operasional, aturan, dan workflow pengujian browser telah di
 1. **Aturan Pengujian:** [.agents/rules/05-testing.md](file:///c:/xampp/htdocs/auto-install/unbound/.agents/rules/05-testing.md) diperbarui dengan kategori pengujian ke-16 (Browser Subagent Real-World Validation) beserta batas timeout dan stop condition.
 2. **Aturan Kompatibilitas CDN:** [.agents/rules/08-cdn-compatibility.md](file:///c:/xampp/htdocs/auto-install/unbound/.agents/rules/08-cdn-compatibility.md) dibuat untuk mendokumentasikan panduan mitigasi bug ENT NXDOMAIN pada authoritative nameserver CDN dan keharusan menonaktifkan strict QNAME minimisation pada ISP resolver.
 3. **Skill Antigravity Baru:** [.agents/skills/dns-validation/SKILL.md](file:///c:/xampp/htdocs/auto-install/unbound/.agents/skills/dns-validation/SKILL.md) dibuat lengkap dengan YAML frontmatter, SOP audit DNS via browser subagent, panduan benchmark, dan langkah remedi/cache invalidation.
+
+---
+
+## 13. Autonomous GitHub CI/CD & Auto-Update Engine (Carrier Fleet Deployment)
+
+### 13.1. Arsitektur & Prinsip Utama
+1. **GitHub sebagai Source of Truth:** Seluruh kode, pustaka Go, template konfigurasi Unbound, dan aturan sekuritas tersentralisasi di GitHub (`desienkz-slp/unbound`).
+2. **Pull-Based Node Autonomy:** Node DNS tidak bergantung pada koneksi SSH langsung dari GitHub Actions. Setiap server DNS (`dns-dev`, `dns-jakarta-01`, dll.) menjalankan agen pembaruan mandiri (`/usr/local/sbin/netora-dns-update`) via systemd timer.
+3. **Isolasi Data Plane Non-Negotiable:** Layanan Unbound DNS terus berjalan 100% melayani kueri pelanggan walaupun GitHub sedang *down*, API rate-limited, atau koneksi jaringan terputus.
+4. **Sandboxed Staging & Pre-Flight Validation:** File dari GitHub tidak pernah disalin langsung ke `/etc/unbound/`. Seluruh kandidat dirakit di `/opt/netora-dns/staging/`, divalidasi dengan `unbound-checkconf`, dan diaudit terhadap guardrail *Anti-Open Resolver* (`0.0.0.0/0 allow`).
+5. **Atomic Activation & Auto-Rollback:** Aktivasi menggunakan symlink atomik `/opt/netora-dns/current` dan backup berkala (`/opt/netora-dns/backups/`). Jika `unbound-control reload` gagal atau post-activation health checks mendeteksi anomali, sistem otomatis melakukan *rollback* ke rilis stabil sebelumnya dalam hitungan detik.
+
+### 13.2. Struktur Direktori `/opt/netora-dns/`
+* `/opt/netora-dns/releases/<sha>/`: Snapshot rilis yang terunduh dan terverifikasi secara *immutable*.
+* `/opt/netora-dns/current`: Symlink aktif ke rilis yang sedang berjalan.
+* `/opt/netora-dns/backups/<sha>_<timestamp>/`: Titik pemulihan (*rollback point*) dengan retensi 5 rilis terakhir.
+* `/opt/netora-dns/staging/<sha>/`: Sandbox perakitan dan pengujian konfigurasi sebelum aktivasi.
+* `/var/lib/netora-dns/update-state.json`: State persisten status update, commit saat ini, durasi, dan metrik kesehatan.
+* `/var/log/netora-dns/update.log`: Audit log terstruktur JSON untuk NOC dan observability.
+
+### 13.3. Verifikasi 4 Uji Penerimaan (*Acceptance Tests*) pada Server `dns-dev` (172.18.20.145)
+
+| Uji Skenario | Deskripsi & Tindakan | Hasil Nyata (*Hard Evidence*) | Status |
+|:---|:---|:---|:---:|
+| **Test A: Siklus Pembaruan Normal** | Push commit pembaruan versi `1.0.1` (`75e919d`) ke GitHub main. Agen mendeteksi revisi baru, mengunduh, memvalidasi di staging, membuat backup, aktivasi atomik, dan reload Unbound. | Revisi `75e919d` aktif dalam 4 detik, health check 4/4 PASS, rollback point tersimpan. | **LULUS (100%)** |
+| **Test B: Injeksi Konfigurasi Rusak** | Push commit dengan sintaks ilegal (`conf.d/test-invalid.conf`). Agen mendeteksi pembaruan dan mengunduhnya, tetapi `unbound-checkconf` di staging sandbox menolak kandidat. | Pembaruan dibatalkan (`VALIDATION_FAILED`), konfigurasi aktif `/etc/unbound/` tidak disentuh, DNS tetap aktif melayani kueri tanpa interupsi. | **LULUS (100%)** |
+| **Test C: Simulasi GitHub Down / Putus** | Mengarahkan `github.com` ke loopback (`127.0.0.1`) untuk mensimulasikan kegagalan jaringan atau GitHub outage total. | Updater mencatat log `update_failed: Cannot reach GitHub`, status `OFFLINE_RETRY`, dan DNS data-plane tetap 100% melayani pelanggan. | **LULUS (100%)** |
+| **Test D: Verifikasi Mekanisme Rollback** | Eksekusi `netora-dns-update rollback` untuk memulihkan konfigurasi stabil sebelumnya. | Konfigurasi sebelumnya dari `/opt/netora-dns/backups/` dipulihkan seketika, direktori `conf.d/` dibersihkan dari file liar, Unbound direload, status `ROLLED_BACK`, health check PASS. | **LULUS (100%)** |
+
+### 13.4. Integrasi Systemd Timer
+* **Service:** `/etc/systemd/system/netora-dns-updater.service` (`Type=oneshot`)
+* **Timer:** `/etc/systemd/system/netora-dns-updater.timer` aktif berjalan setiap 5 menit dengan jitter acak (`RandomizedDelaySec=30s`) guna mencegah *thundering herd* pada ratusan server DNS.
+* **Status:** Aktif dan terjadwal secara background pada `dns-dev`.
