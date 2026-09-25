@@ -304,6 +304,9 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 				listeners = append(listeners, l)
 			}
 		}
+		if err := lRows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating listeners: %w", err)
+		}
 		if len(listeners) > 0 {
 			state.Listeners = listeners
 		}
@@ -323,6 +326,9 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 				networks = append(networks, n)
 			}
 		}
+		if err := cRows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating client networks: %w", err)
+		}
 		if len(networks) > 0 {
 			state.ClientNetworks = networks
 		}
@@ -340,6 +346,9 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 				u.Type = model.UpstreamType(uType)
 				upstreams = append(upstreams, u)
 			}
+		}
+		if err := uRows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating upstreams: %w", err)
 		}
 		if len(upstreams) > 0 {
 			state.Upstreams = upstreams

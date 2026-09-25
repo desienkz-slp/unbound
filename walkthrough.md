@@ -660,4 +660,24 @@ Pengguna menginginkan agar daftar **Upstream DNS Resolvers** di antarmuka Web UI
    - Kueri dari workstation pengguna via PowerShell:
      `Resolve-DnsName -Name adguard-dns.io -Server 172.18.20.145` -> Berhasil menjawab `195.216.190.134` (TTL: 292s).
 
+---
+
+## 17. Code Quality, Dependency Hygiene & Static Analysis Remediation
+
+### 17.1. Latar Belakang Masalah
+Analisis diagnostik IDE (`current_problems`) menemukan 6 peringatan kode:
+1. `go.mod`: Dependensi langsung `github.com/golang-jwt/jwt/v5`, `github.com/lib/pq`, dan `golang.org/x/crypto` sebelumnya tertandai `// indirect`.
+2. `pkg/storage/postgres.go`: Peringatan static analysis `sql.Rows "lRows"`, `"cRows"`, dan `"uRows"` pada loop `.Next()` di `GetDesiredState()` tanpa pemeriksaan akhir `rows.Err()`.
+
+### 17.2. Perbaikan yang Diterapkan
+1. **Pembersihan `go.mod` (Go Modules Hygiene):**
+   - Menjalankan `go mod tidy`. Ketiga modul dependensi (`jwt/v5`, `pq`, `crypto`) sekarang dideklarasikan secara tepat sebagai *direct dependencies*.
+2. **Penanganan Error Iterasi SQL (`pkg/storage/postgres.go`):**
+   - Menambahkan pemeriksaan eksplisit `lRows.Err()`, `cRows.Err()`, dan `uRows.Err()` setelah setiap siklus iterasi `rows.Next()`.
+   - Menjamin bahwa jika koneksi database terputus di tengah streaming baris, error segera dilaporkan ke pemanggil dan tidak menghasilkan partial desired state yang tidak lengkap.
+3. **Kompilasi & Deployment Ulang:**
+   - Binary Linux `deploy/bin/netora-api-linux-amd64` dikompilasi ulang dengan Go 1.27.0.
+   - Binary dipublikasikan ke server `dns-dev` (172.18.20.145) dan service `netora-api` di-restart dengan status aktif (0 error).
+   - Pengujian `netora health` mengonfirmasi latensi kueri DNS 372µs dengan status 100% PASS.
+
 
