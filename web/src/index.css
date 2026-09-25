@@ -3,10 +3,35 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+  }
   body {
     @apply bg-[#080C14] text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-black;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+}
+
+/* Slim scrollbar for cards */
+.card-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.card-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.3);
+  border-radius: 4px;
+}
+.card-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(55, 65, 81, 0.6);
+  border-radius: 4px;
+}
+.card-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.9);
 }
 
 /* Custom modern scrollbar */

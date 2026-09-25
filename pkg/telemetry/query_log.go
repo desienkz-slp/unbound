@@ -241,7 +241,7 @@ func (t *QueryLogTailer) parseLine(raw string) {
 		return
 	}
 	domain := strings.ToLower(strings.TrimSuffix(fields[1], "."))
-	if domain == "" {
+	if domain == "" || strings.HasSuffix(domain, ".arpa") {
 		return
 	}
 
@@ -434,11 +434,6 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	effectiveTotalQueries := int64(totalQueries)
-	if effectiveTotalQueries == 0 {
-		effectiveTotalQueries = t.totalLogQueries
-	}
-
 	type kv struct {
 		Key   string
 		Value int64
@@ -531,6 +526,14 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 	effectiveBlockedQueries := int64(nxdomainCount)
 	if effectiveBlockedQueries == 0 || t.totalLogBlocked > effectiveBlockedQueries {
 		effectiveBlockedQueries = t.totalLogBlocked
+	}
+
+	effectiveTotalQueries := int64(totalQueries)
+	if effectiveTotalQueries == 0 || t.totalLogQueries > effectiveTotalQueries {
+		effectiveTotalQueries = t.totalLogQueries
+	}
+	if effectiveTotalQueries < effectiveBlockedQueries {
+		effectiveTotalQueries = effectiveBlockedQueries
 	}
 
 	return &DetailedStatsReport{

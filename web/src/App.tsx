@@ -74,7 +74,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080C14] text-slate-100 flex flex-col font-sans">
+    <div className="h-screen w-screen bg-[#080C14] text-slate-100 flex flex-col font-sans overflow-hidden">
       <Header
         nodes={nodes.length > 0 ? nodes : [activeNode]}
         selectedNode={selectedNodeId}
@@ -84,14 +84,14 @@ export function App() {
         currentUser={currentUser}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         <Sidebar
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           unboundStatus={unboundHealthy}
         />
 
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+        <main className="flex-1 overflow-y-auto min-h-0 p-6 md:p-8 custom-scrollbar">
           {currentTab === 'overview' && (
             <OverviewView
               nodeId={selectedNodeId}

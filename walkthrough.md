@@ -293,3 +293,45 @@ Hasil pengujian API `/api/v1/nodes/dns-dev/stats`:
 ```
 Semua widget Dashboard di browser kini menampilkan statistik 100% riil dari lalu lintas jaringan Anda.
 
+---
+
+## 10. Penyempurnaan Ukuran Card, Scrollable List, dan Pinning Sidebar (Layout Presisi)
+
+Menindaklanjuti instruksi terbaru Anda:
+> *"- Rapikan ukuran card, dan untuk list kamu bisa buat menjadi bisa di scroll."*
+> *"- Ketika scroll page content, sidebar jangan ikut bergeser juga."*
+
+Telah diterapkan optimasi layout dan arsitektur antarmuka secara menyeluruh:
+
+### 1. Isolasi Scrollbar Konten & Pinning Sidebar Permanen
+- **Penyebab Sebelumnya:** Container utama menggunakan `min-h-screen`, menyebabkan scrollbar muncul di level browser `window/body` sehingga seluruh sidebar dan header ikut terseret ke atas saat halaman digulir.
+- **Solusi Arsitektur:**
+  - File `web/src/index.css`: Ditambahkan konfigurasi `html, body, #root { height: 100%; width: 100%; overflow: hidden; margin: 0; padding: 0; }` untuk mengunci viewport browser.
+  - File `web/src/App.tsx`: Diubah menjadi `<div className="h-screen w-screen overflow-hidden flex flex-col font-sans">`.
+  - Layout Body: `<div className="flex-1 flex overflow-hidden min-h-0">` dengan `<Sidebar className="shrink-0 h-full overflow-y-auto">`.
+  - Area Konten: `<main className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">`.
+  - **Hasil:** Sidebar kini **terkunci 100% di sisi kiri** dan tidak pernah bergeser sedikit pun saat pengguna menggulir (*scroll*) konten dashboard.
+
+### 2. Perapian Ukuran Card Secara Simetris Berpasangan
+Mengganti struktur dua kolom terpisah menjadi 3 baris grid horizontal (`grid grid-cols-1 lg:grid-cols-2 gap-6`) yang memiliki tinggi seragam dan seimbang:
+- **Baris 1 (Tinggi Seragam 310px):**
+  - Kiri: **General Statistics** (`h-[310px]`)
+  - Kanan: **Top Clients** (`h-[310px]`)
+- **Baris 2 (Tinggi Seragam 410px):**
+  - Kiri: **Top Queried Domains** (`h-[410px]`)
+  - Kanan: **Top Blocked Domains** (`h-[410px]`)
+- **Baris 3 (Tinggi Seragam 260px):**
+  - Kiri: **Top Upstreams** (`h-[260px]`)
+  - Kanan: **Average Upstream Response Time** (`h-[260px]`)
+
+### 3. Wadah List Scrollable Mandiri (`.card-scrollbar`)
+- Setiap panel list di dalam kartu dilengkapi container `flex-1 overflow-y-auto pr-1.5 card-scrollbar`.
+- Dilengkapi styling scrollbar modern yang ramping (lebar 4px, rounded, dark slate).
+- Berapa pun jumlah client atau domain (baik 2 item maupun 50 item), ukuran kartu tetap rapi, simetris, dan tidak merusak layout dashboard.
+
+### 4. Penyempurnaan Telemetri & Filter Domain
+- **Perbaikan Persentase Blocked:** Nilai total query dan blocked query disinkronkan sehingga persentase blokir tidak akan pernah melebihi 100%.
+- **Penyaringan Reverse DNS (`.in-addr.arpa`):** Query reverse lookup internal disaring dari Top Domains agar list fokus pada domain internet yang relevan.
+- **Tampilan Badge & Domain:** Domain yang panjang kini memiliki tooltip teks lengkap saat di-hover (`title={item.domain}`) dan badge kategori (*Judi Online*, *Advertising / Tracker*, dll.) tertata rapi tanpa teks yang bertumpuk.
+
+

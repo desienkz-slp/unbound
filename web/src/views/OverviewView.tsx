@@ -142,11 +142,11 @@ export const OverviewView: React.FC<OverviewProps> = ({
       }));
 
   const cacheHitRatio = stats.totalQueries > 0
-    ? (((stats.cacheHits || 0) / stats.totalQueries) * 100).toFixed(1)
+    ? Math.min(100, Number((((stats.cacheHits || 0) / Math.max(1, stats.totalQueries)) * 100).toFixed(1))).toFixed(1)
     : '0.0';
 
   const blockedPct = stats.totalQueries > 0
-    ? (((stats.blockedFilters || 0) / stats.totalQueries) * 100).toFixed(1)
+    ? Math.min(100, Number((((stats.blockedFilters || 0) / Math.max(1, stats.totalQueries)) * 100).toFixed(1))).toFixed(1)
     : '0';
 
   return (
@@ -210,7 +210,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
       {/* 4 Top KPI Cards (AdGuard Home Style) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: DNS Queries */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 flex flex-col justify-between relative overflow-hidden group hover:border-gray-700 transition-all">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-36 flex flex-col justify-between relative overflow-hidden group hover:border-gray-700 transition-all shadow-sm">
           <div>
             <span className="text-2xl lg:text-3xl font-bold font-mono text-white tracking-tight">
               {stats.totalQueries.toLocaleString()}
@@ -218,7 +218,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
             <div className="text-xs font-medium text-gray-400 mt-1">DNS Queries</div>
           </div>
           {/* Subtle sparkline wave */}
-          <div className="mt-4 pt-2">
+          <div className="pt-2">
             <div className="h-8 w-full flex items-end gap-1 opacity-70">
               {[40, 55, 60, 48, 65, 80, 70, 85, 90, 75, 80, 95].map((h, i) => (
                 <div
@@ -232,7 +232,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
 
         {/* Card 2: Blocked by Filters */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 flex flex-col justify-between relative overflow-hidden group hover:border-rose-900/50 transition-all">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-36 flex flex-col justify-between relative overflow-hidden group hover:border-rose-900/50 transition-all shadow-sm">
           <div className="flex items-start justify-between">
             <div>
               <span className="text-2xl lg:text-3xl font-bold font-mono text-rose-400 tracking-tight">
@@ -244,7 +244,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
               {blockedPct}%
             </span>
           </div>
-          <div className="mt-4 pt-2">
+          <div className="pt-2">
             <div className="h-8 w-full flex items-end gap-1 opacity-70">
               {[30, 45, 50, 42, 55, 60, 58, 65, 70, 62, 68, 72].map((h, i) => (
                 <div
@@ -258,7 +258,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
 
         {/* Card 3: Blocked Malware/Phishing */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 flex flex-col justify-between relative overflow-hidden group hover:border-amber-900/50 transition-all">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-36 flex flex-col justify-between relative overflow-hidden group hover:border-amber-900/50 transition-all shadow-sm">
           <div className="flex items-start justify-between">
             <div>
               <span className="text-2xl lg:text-3xl font-bold font-mono text-amber-400 tracking-tight">
@@ -270,7 +270,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
               &lt;0.01%
             </span>
           </div>
-          <div className="mt-4 pt-2">
+          <div className="pt-2">
             <div className="h-8 w-full flex items-end gap-1 opacity-70">
               {[10, 15, 12, 10, 8, 90, 20, 15, 12, 10, 14, 18].map((h, i) => (
                 <div
@@ -284,7 +284,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
 
         {/* Card 4: Blocked Adult Websites */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 flex flex-col justify-between relative overflow-hidden group hover:border-purple-900/50 transition-all">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-36 flex flex-col justify-between relative overflow-hidden group hover:border-purple-900/50 transition-all shadow-sm">
           <div className="flex items-start justify-between">
             <div>
               <span className="text-2xl lg:text-3xl font-bold font-mono text-purple-400 tracking-tight">
@@ -296,7 +296,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
               0%
             </span>
           </div>
-          <div className="mt-4 pt-2">
+          <div className="pt-2">
             <div className="h-8 w-full flex items-end gap-1 opacity-70">
               {[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2].map((h, i) => (
                 <div
@@ -310,290 +310,297 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
       </div>
 
-      {/* Main 2-Column Analytical Grid (Matching AdGuard Home Layout) */}
+      {/* Row 1: General statistics (Left) & Top clients (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column: General stats + Top queried domains + Top upstreams */}
-        <div className="space-y-6">
-          {/* Panel 1: General statistics for the last 24 hours */}
-          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-              <div>
-                <h2 className="text-sm font-bold text-white">General statistics</h2>
-                <span className="text-[11px] text-gray-500">for the last 24 hours</span>
-              </div>
-              <button onClick={fetchHealthAndStats} className="p-1 text-gray-400 hover:text-cyan-400">
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
+        {/* Panel 1: General statistics */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[310px] flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
+            <div>
+              <h2 className="text-sm font-bold text-white">General statistics</h2>
+              <span className="text-[11px] text-gray-500">for the last 24 hours</span>
             </div>
-
-            <div className="divide-y divide-gray-800/60 text-xs font-mono">
-              <div className="py-2.5 flex items-center justify-between">
-                <span className="text-gray-300">Total DNS Queries</span>
-                <span className="text-cyan-400 font-bold">{stats.totalQueries.toLocaleString()}</span>
-              </div>
-
-              <div className="py-2.5 flex items-center justify-between">
-                <span className="text-emerald-400">Cache Hits</span>
-                <span className="text-emerald-400 font-bold">
-                  {stats.cacheHits?.toLocaleString() || 0} ({cacheHitRatio}%)
-                </span>
-              </div>
-
-              <div className="py-2.5 flex items-center justify-between">
-                <span className="text-gray-400">Cache Misses</span>
-                <span className="text-gray-300 font-bold">{stats.cacheMisses?.toLocaleString() || 0}</span>
-              </div>
-
-              <div className="py-2.5 flex items-center justify-between">
-                <span className="text-rose-400">Blocked by Filters</span>
-                <span className="text-rose-400 font-bold">{stats.blockedFilters.toLocaleString()}</span>
-              </div>
-
-              <div className="py-2.5 flex items-center justify-between">
-                <span className="text-amber-400">Blocked malware/phishing</span>
-                <span className="text-amber-400 font-bold">{stats.blockedMalware}</span>
-              </div>
-
-              <div className="py-2.5 flex items-center justify-between">
-                <span className="text-gray-300">Average processing time</span>
-                <span className="text-white font-bold">{stats.avgProcessingTime} ms</span>
-              </div>
-            </div>
+            <button onClick={fetchHealthAndStats} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Refresh">
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          {/* Panel 2: Top queried domains */}
-          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-              <div>
-                <h2 className="text-sm font-bold text-white">Top queried domains</h2>
-                <span className="text-[11px] text-gray-500">for the last 24 hours</span>
-              </div>
-              <button onClick={() => onNavigate('diagnostics')} className="p-1 text-gray-400 hover:text-cyan-400" title="Domain Probe">
-                <Search className="w-3.5 h-3.5" />
-              </button>
+          <div className="flex-1 flex flex-col justify-around divide-y divide-gray-800/60 text-xs font-mono pt-1">
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-gray-300">Total DNS Queries</span>
+              <span className="text-cyan-400 font-bold">{stats.totalQueries.toLocaleString()}</span>
             </div>
 
-            <div className="space-y-3 text-xs font-mono pt-1">
-              <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase">
-                <span>Domain</span>
-                <span>Requests count</span>
-              </div>
-
-              {topQueriedDomains.length === 0 ? (
-                <div className="py-6 text-center text-gray-500 font-mono text-xs">
-                  Belum ada domain yang tercatat dalam log telemetri Unbound.
-                </div>
-              ) : (
-                topQueriedDomains.map((item, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 max-w-[70%]">
-                        <span className="text-gray-200 truncate cursor-pointer hover:text-cyan-400" onClick={() => runQuickProbe(item.domain)}>
-                          {item.domain}
-                        </span>
-                        <button
-                          onClick={() => runQuickProbe(item.domain)}
-                          className="text-gray-500 hover:text-emerald-400 text-[10px]"
-                          title="Probe this domain"
-                        >
-                          <Eye className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-cyan-400 font-bold">{item.count.toLocaleString()}</span>
-                        <span className="text-gray-500 text-[11px] ml-2">{item.pct}%</span>
-                      </div>
-                    </div>
-                    {/* Progress Bar */}
-                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-500 rounded-full"
-                        style={{ width: `${Math.min(item.pct, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Panel 3: Top upstreams */}
-          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-              <div>
-                <h2 className="text-sm font-bold text-white">Top upstreams</h2>
-                <span className="text-[11px] text-gray-500">for the last 24 hours</span>
-              </div>
-              <button onClick={() => onNavigate('dns-config')} className="p-1 text-gray-400 hover:text-cyan-400" title="Configure Upstreams">
-                <Globe className="w-3.5 h-3.5" />
-              </button>
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-emerald-400">Cache Hits</span>
+              <span className="text-emerald-400 font-bold">
+                {stats.cacheHits?.toLocaleString() || 0} ({cacheHitRatio}%)
+              </span>
             </div>
 
-            <div className="space-y-3 text-xs font-mono pt-1">
-              <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase">
-                <span>Upstream</span>
-                <span>Requests count</span>
-              </div>
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-gray-400">Cache Misses</span>
+              <span className="text-gray-300 font-bold">{stats.cacheMisses?.toLocaleString() || 0}</span>
+            </div>
 
-              {topUpstreams.length === 0 ? (
-                <div className="py-6 text-center text-gray-500 font-mono text-xs">
-                  Belum ada upstream DNS aktif.
-                </div>
-              ) : (
-                topUpstreams.map((up, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-300 font-semibold">{up.upstream}</span>
-                      <div>
-                        <span className="text-white font-bold">{up.count.toLocaleString()}</span>
-                        <span className="text-gray-500 text-[11px] ml-2">{up.pct}%</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${Math.min(up.pct, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-rose-400">Blocked by Filters</span>
+              <span className="text-rose-400 font-bold">{stats.blockedFilters.toLocaleString()}</span>
+            </div>
+
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-amber-400">Blocked malware/phishing</span>
+              <span className="text-amber-400 font-bold">{stats.blockedMalware}</span>
+            </div>
+
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-gray-300">Average processing time</span>
+              <span className="text-white font-bold">{stats.avgProcessingTime} ms</span>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Top clients + Top blocked domains + Upstream latency */}
-        <div className="space-y-6">
-          {/* Panel 4: Top clients for the last 24 hours */}
-          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-              <div>
-                <h2 className="text-sm font-bold text-white">Top clients</h2>
-                <span className="text-[11px] text-gray-500">for the last 24 hours</span>
-              </div>
-              <button onClick={() => onNavigate('dns-config')} className="p-1 text-gray-400 hover:text-cyan-400" title="Client ACLs">
-                <Layers className="w-3.5 h-3.5" />
-              </button>
+        {/* Panel 2: Top clients */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[310px] flex flex-col shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
+            <div>
+              <h2 className="text-sm font-bold text-white">Top clients</h2>
+              <span className="text-[11px] text-gray-500">for the last 24 hours</span>
             </div>
-
-            <div className="space-y-3 text-xs font-mono pt-1">
-              <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase">
-                <span>Client</span>
-                <span>Requests count</span>
-              </div>
-
-              {topClients.length === 0 ? (
-                <div className="py-6 text-center text-gray-500 font-mono text-xs">
-                  Belum ada query client yang tercatat dalam log telemetri Unbound.
-                </div>
-              ) : (
-                topClients.map((client, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-cyan-400 font-bold">{client.ip}</span>
-                        <span className="text-gray-500 text-[11px] hidden sm:inline">({client.name})</span>
-                      </div>
-                      <div>
-                        <span className="text-white font-bold">{client.count.toLocaleString()}</span>
-                        <span className="text-gray-500 text-[11px] ml-2">{client.pct}%</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-400 rounded-full"
-                        style={{ width: `${Math.min(client.pct, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            <button onClick={() => onNavigate('dns-config')} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Client ACLs">
+              <Layers className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          {/* Panel 5: Top blocked domains */}
-          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-              <div>
-                <h2 className="text-sm font-bold text-white">Top blocked domains</h2>
-                <span className="text-[11px] text-gray-500">for the last 24 hours</span>
-              </div>
-              <button onClick={() => onNavigate('filtering')} className="p-1 text-gray-400 hover:text-cyan-400" title="Manage Blocklists">
-                <Filter className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs font-mono pt-1">
-              <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase">
-                <span>Domain</span>
-                <span>Requests count</span>
-              </div>
-
-              {topBlockedDomains.length === 0 ? (
-                <div className="py-6 text-center text-gray-500 font-mono text-xs flex flex-col items-center gap-1.5">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500/70" />
-                  <span>Nol ancaman atau pemblokiran dalam riwayat terkini.</span>
-                </div>
-              ) : (
-                topBlockedDomains.map((item, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 max-w-[70%]">
-                        <span className="text-rose-400 font-semibold truncate cursor-pointer hover:underline" onClick={() => runQuickProbe(item.domain)}>
-                          {item.domain}
-                        </span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800">
-                          {item.category}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-rose-400 font-bold">{item.count.toLocaleString()}</span>
-                        <span className="text-gray-500 text-[11px] ml-2">{item.pct}%</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-rose-500 rounded-full"
-                        style={{ width: `${Math.min(item.pct, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase py-2 shrink-0 border-b border-gray-800/40">
+            <span>Client</span>
+            <span>Requests count</span>
           </div>
 
-          {/* Panel 6: Average upstream response time */}
-          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-              <div>
-                <h2 className="text-sm font-bold text-white">Average upstream response time</h2>
-                <span className="text-[11px] text-gray-500">for the last 24 hours</span>
+          <div className="flex-1 overflow-y-auto pr-1.5 space-y-3 pt-2 card-scrollbar">
+            {topClients.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-center text-gray-500 font-mono text-xs">
+                Belum ada query client yang tercatat dalam log telemetri Unbound.
               </div>
-              <button onClick={fetchHealthAndStats} className="p-1 text-gray-400 hover:text-cyan-400">
-                <Clock className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs font-mono pt-1">
-              <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase">
-                <span>Upstream</span>
-                <span>Response time</span>
-              </div>
-
-              {topUpstreams.length === 0 ? (
-                <div className="py-6 text-center text-gray-500 font-mono text-xs">
-                  Belum ada data latensi upstream.
-                </div>
-              ) : (
-                topUpstreams.map((up, idx) => (
-                  <div key={idx} className="flex items-center justify-between py-1 border-b border-gray-800/40 last:border-0">
-                    <span className="text-gray-300">{up.upstream}</span>
-                    <span className="text-cyan-400 font-bold font-mono">{up.latency}</span>
+            ) : (
+              topClients.map((client, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-cyan-400 font-bold font-mono text-xs truncate">{client.ip}</span>
+                      <span className="text-gray-500 text-[11px] hidden sm:inline truncate">({client.name})</span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-white font-bold font-mono text-xs">{client.count.toLocaleString()}</span>
+                      <span className="text-gray-500 text-[11px] ml-2 font-mono">{client.pct}%</span>
+                    </div>
                   </div>
-                ))
-              )}
+                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-cyan-400 rounded-full"
+                      style={{ width: `${Math.min(client.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Top queried domains (Left) & Top blocked domains (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Panel 3: Top queried domains */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[410px] flex flex-col shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
+            <div>
+              <h2 className="text-sm font-bold text-white">Top queried domains</h2>
+              <span className="text-[11px] text-gray-500">for the last 24 hours</span>
             </div>
+            <button onClick={() => onNavigate('diagnostics')} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Domain Probe">
+              <Search className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase py-2 shrink-0 border-b border-gray-800/40">
+            <span>Domain</span>
+            <span>Requests count</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-1.5 space-y-3 pt-2 card-scrollbar">
+            {topQueriedDomains.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-center text-gray-500 font-mono text-xs">
+                Belum ada domain yang tercatat dalam log telemetri Unbound.
+              </div>
+            ) : (
+              topQueriedDomains.map((item, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0 max-w-[68%]">
+                      <span
+                        className="text-gray-200 truncate cursor-pointer hover:text-cyan-400 text-xs font-mono"
+                        title={item.domain}
+                        onClick={() => runQuickProbe(item.domain)}
+                      >
+                        {item.domain}
+                      </span>
+                      <button
+                        onClick={() => runQuickProbe(item.domain)}
+                        className="text-gray-500 hover:text-emerald-400 text-[10px] shrink-0"
+                        title="Probe this domain"
+                      >
+                        <Eye className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-cyan-400 font-bold font-mono text-xs">{item.count.toLocaleString()}</span>
+                      <span className="text-gray-500 text-[11px] ml-2 font-mono">{item.pct}%</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-cyan-500 rounded-full"
+                      style={{ width: `${Math.min(item.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Panel 4: Top blocked domains */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[410px] flex flex-col shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
+            <div>
+              <h2 className="text-sm font-bold text-white">Top blocked domains</h2>
+              <span className="text-[11px] text-gray-500">for the last 24 hours</span>
+            </div>
+            <button onClick={() => onNavigate('filtering')} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Manage Blocklists">
+              <Filter className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase py-2 shrink-0 border-b border-gray-800/40">
+            <span>Domain</span>
+            <span>Requests count</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-1.5 space-y-3 pt-2 card-scrollbar">
+            {topBlockedDomains.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 font-mono text-xs gap-1.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500/70" />
+                <span>Nol ancaman atau pemblokiran dalam riwayat terkini.</span>
+              </div>
+            ) : (
+              topBlockedDomains.map((item, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 max-w-[62%]">
+                      <span
+                        className="text-rose-400 font-semibold truncate cursor-pointer hover:underline text-xs font-mono"
+                        title={item.domain}
+                        onClick={() => runQuickProbe(item.domain)}
+                      >
+                        {item.domain}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/80 shrink-0 whitespace-nowrap">
+                        {item.category}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-rose-400 font-bold font-mono text-xs">{item.count.toLocaleString()}</span>
+                      <span className="text-gray-500 text-[11px] ml-2 font-mono">{item.pct}%</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-rose-500 rounded-full"
+                      style={{ width: `${Math.min(item.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 3: Top upstreams (Left) & Average upstream response time (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Panel 5: Top upstreams */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[260px] flex flex-col shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
+            <div>
+              <h2 className="text-sm font-bold text-white">Top upstreams</h2>
+              <span className="text-[11px] text-gray-500">for the last 24 hours</span>
+            </div>
+            <button onClick={() => onNavigate('dns-config')} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Configure Upstreams">
+              <Globe className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase py-2 shrink-0 border-b border-gray-800/40">
+            <span>Upstream</span>
+            <span>Requests count</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-1.5 space-y-3 pt-2 card-scrollbar">
+            {topUpstreams.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-center text-gray-500 font-mono text-xs">
+                Belum ada upstream DNS aktif.
+              </div>
+            ) : (
+              topUpstreams.map((up, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-gray-300 font-semibold font-mono text-xs truncate">{up.upstream}</span>
+                    <div className="text-right shrink-0">
+                      <span className="text-white font-bold font-mono text-xs">{up.count.toLocaleString()}</span>
+                      <span className="text-gray-500 text-[11px] ml-2 font-mono">{up.pct}%</span>
+                    </div>
+                  </div>
+                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full"
+                      style={{ width: `${Math.min(up.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Panel 6: Average upstream response time */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[260px] flex flex-col shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
+            <div>
+              <h2 className="text-sm font-bold text-white">Average upstream response time</h2>
+              <span className="text-[11px] text-gray-500">for the last 24 hours</span>
+            </div>
+            <button onClick={fetchHealthAndStats} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Refresh">
+              <Clock className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex justify-between text-[11px] text-gray-500 font-sans font-semibold uppercase py-2 shrink-0 border-b border-gray-800/40">
+            <span>Upstream</span>
+            <span>Response time</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-1.5 space-y-2 pt-2 card-scrollbar">
+            {topUpstreams.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-center text-gray-500 font-mono text-xs">
+                Belum ada data latensi upstream.
+              </div>
+            ) : (
+              topUpstreams.map((up, idx) => (
+                <div key={idx} className="flex items-center justify-between py-1.5 border-b border-gray-800/40 last:border-0">
+                  <span className="text-gray-300 font-mono text-xs truncate">{up.upstream}</span>
+                  <span className="text-cyan-400 font-bold font-mono text-xs shrink-0">{up.latency}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

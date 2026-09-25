@@ -36,7 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-16 border-b border-gray-800 bg-[#0B0F19]/90 backdrop-blur px-6 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-16 border-b border-gray-800 bg-[#0B0F19]/90 backdrop-blur px-6 flex items-center justify-between shrink-0 sticky top-0 z-30">
       {/* Brand & Node Selector */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
