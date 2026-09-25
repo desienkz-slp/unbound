@@ -582,5 +582,5 @@ Untuk mempermudah deployment armada (*fleet deployment*) server DNS baru di ling
   Checking Netora API Health...
     API Endpoint (:8080):     PASS -> {"dns_healthy":true,"dns_latency":"429.77µs","node_id":"dns-dev","status":"UP"}
   ```
-* **CLI Status Execution:** Menampilkan seluruh status service `unbound`, `netora-api`, `postgresql`, timer update berkala, dan revisi Git `0aca0a5`.
+* **CLI Status Execution:** Menampilkan seluruh status service `unbound`, `netora-api`, `postgresql`, timer update berkala, dan revisi Git `83d7a0b`.
 
