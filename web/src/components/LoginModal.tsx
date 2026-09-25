@@ -32,12 +32,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl max-w-sm w-full p-8 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col items-center text-center space-y-2">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-black text-xl shadow-lg shadow-cyan-500/20">
-            N
-          </div>
+          <img
+            src="/logo.png"
+            alt="Netora DNS Logo"
+            className="w-16 h-16 object-contain drop-shadow-[0_0_24px_rgba(74,222,128,0.5)] mb-1"
+          />
           <h1 className="text-xl font-bold text-white tracking-wide">Netora DNS NOC</h1>
           <p className="text-xs text-gray-400">Enterprise Operator Authentication</p>
         </div>

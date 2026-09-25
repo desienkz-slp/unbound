@@ -480,3 +480,51 @@ Seluruh pengetahuan operasional, aturan, dan workflow pengujian browser telah di
 * **Service:** `/etc/systemd/system/netora-dns-updater.service` (`Type=oneshot`)
 * **Timer:** `/etc/systemd/system/netora-dns-updater.timer` aktif berjalan setiap 5 menit dengan jitter acak (`RandomizedDelaySec=30s`) guna mencegah *thundering herd* pada ratusan server DNS.
 * **Status:** Aktif dan terjadwal secara background pada `dns-dev`.
+
+---
+
+## 14. Brand Identity & Visual Asset Integration (Netora 3D Identity)
+
+### 14.1. Latar Belakang & Aset Sumber
+Untuk memperkuat identitas visual carrier-grade platform Netora DNS, berkas grafis 3D resmi beresolusi tinggi `dns netora.png` (simbol kubus 'N' hijau futuristik dengan aksen gelombang frekuensi/sinyal dan transparansi alpha) telah ditetapkan sebagai identitas visual tunggal di seluruh ekosistem platform.
+
+### 14.2. Penempatan Aset & Standardisasi Format
+Aset sumber disebarkan ke lokasi-lokasi strategis untuk frontend Web UI, metadata browser, dan dokumentasi repositori:
+1. **Frontend Public Assets:**
+   * `web/public/logo.png`: Digunakan langsung oleh Web UI NOC dan referensi OpenGraph image.
+   * `web/public/favicon.png`: Ikon tab browser resolusi tinggi untuk menggantikan favicon default Vite.
+   * `web/public/apple-touch-icon.png`: Ikon bookmark perangkat mobile / Apple Web Clip.
+2. **Komponen Source:**
+   * `web/src/assets/logo.png`: Aset bundel internal React/TypeScript.
+3. **Repositori & Dokumentasi Root:**
+   * `assets/logo.png`: Aset resmi untuk header Markdown repositori GitHub dan arsitektur docs.
+   * `dns netora.png`: Berkas master resolusi tinggi di root repositori.
+
+### 14.3. Implementasi Komponen & Desain UI
+* **Metadata Browser (`web/index.html`):**
+  * `<link rel="icon" type="image/png" href="/favicon.png" />`
+  * `<link rel="apple-touch-icon" href="/apple-touch-icon.png" />`
+  * Penambahan OpenGraph Tags (`og:title`, `og:description`, `og:image`)
+  * Pembaruan Title resmi: `Netora DNS — Enterprise Carrier-Grade ISP Platform`.
+* **NOC Header Bar (`web/src/components/Header.tsx`):**
+  * Menggantikan kotak gradien "N" generik dengan elemen `<img>` beresolusi tinggi.
+  * Efek visual: Drop-shadow glow emerald hijau neon (`drop-shadow-[0_0_14px_rgba(74,222,128,0.4)]`), transisi halus, dan animasi mikro `hover:scale-105`.
+  * Badge NOC diselaraskan dengan palet warna emerald dark-mode (`bg-emerald-950/80 text-emerald-400 border-emerald-800/80`).
+* **Operator Authentication Modal (`web/src/components/LoginModal.tsx`):**
+  * Menampilkan logo 3D Netora dengan aura glow emerald di tengah modal login operator NOC.
+* **First-Run Deployment Wizard (`web/src/views/WizardView.tsx`):**
+  * Header panduan instalasi diperkaya dengan logo resmi Netora.
+* **README Repositori (`README.md`):**
+  * Ditambahkan banner terpusat (*centered brand header*) yang profesional dengan logo Netora 3D dan deskripsi misi platform.
+
+### 14.4. Build & Verifikasi Deployment Produksi
+1. **Vite Production Compilation:**
+   * `tsc -b && vite build` selesai dalam 6.84 detik dengan 0 error.
+   * Vite otomatis menyalin seluruh aset `web/public/*` langsung ke root `/` direktori dist.
+2. **Server Deployment (`dns-dev` 172.18.20.145):**
+   * Bundel statis dipublikasikan ke direktori web server `/var/www/netora-ui/`.
+3. **Pengujian Akses HTTP Endpoint:**
+   * `GET http://127.0.0.1:8080/logo.png` -> `HTTP/1.1 200 OK` (`Content-Type: image/png`, Content-Length: 1,030,674).
+   * `GET http://127.0.0.1:8080/favicon.png` -> `HTTP/1.1 200 OK` (`Content-Type: image/png`, Content-Length: 1,030,674).
+   * `GET http://127.0.0.1:8080/` -> Memuat index.html dengan tautan favicon dan logo aktif.
+

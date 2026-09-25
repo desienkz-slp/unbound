@@ -40,13 +40,15 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Brand & Node Selector */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-black shadow-lg shadow-cyan-500/20">
-            N
-          </div>
+          <img
+            src="/logo.png"
+            alt="Netora DNS"
+            className="w-9 h-9 object-contain drop-shadow-[0_0_14px_rgba(74,222,128,0.4)] hover:scale-105 transition-transform duration-200"
+          />
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-base tracking-wider text-white">NETORA</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 font-mono">
                 DNS NOC
               </span>
             </div>

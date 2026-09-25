@@ -205,9 +205,11 @@ export const WizardView: React.FC<WizardViewProps> = ({
       <div className="bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-gray-900 border border-cyan-800/60 rounded-xl p-6 relative overflow-hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-              <Sparkles className="w-5 h-5" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Netora DNS"
+              className="w-10 h-10 object-contain drop-shadow-[0_0_14px_rgba(74,222,128,0.4)]"
+            />
             <div>
               <h1 className="text-lg font-bold text-white">Netora DNS First-Run Deployment Wizard</h1>
               <p className="text-xs text-gray-400">

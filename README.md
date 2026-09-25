@@ -1,8 +1,10 @@
-# Netora DNS — AI Agent Build Kit
+<div align="center">
+  <img src="assets/logo.png" alt="Netora DNS Logo" width="140" />
+  <h1>Netora DNS — Enterprise Carrier-Grade ISP Platform</h1>
+  <p>Autonomous carrier-grade Unbound DNS platform with real-time NOC analytics, zero open resolver guardrails, and automated CI/CD.</p>
+</div>
 
-Purpose: bootstrap an AI coding agent to build a production-grade Unbound-based ISP DNS platform.
-
-The target is NOT a simple Unbound installer. It is a control-plane + data-plane platform:
+---
 
 - Unbound = DNS data plane
 - Netora API/control service = control plane
