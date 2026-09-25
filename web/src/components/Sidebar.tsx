@@ -9,6 +9,7 @@ import {
   Network,
   Search,
   Sparkles,
+  UserCheck,
   Wrench,
 } from 'lucide-react';
 
@@ -27,12 +28,14 @@ interface SidebarProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   unboundStatus?: boolean;
+  onOpenUserSettings?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onSelectTab,
   unboundStatus = true,
+  onOpenUserSettings,
 }) => {
   const navItems: Array<{ id: NavTab; label: string; icon: React.ReactNode; badge?: string }> = [
     { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -110,6 +113,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               );
             })}
+
+            {onOpenUserSettings && (
+              <button
+                onClick={onOpenUserSettings}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-cyan-400 hover:bg-gray-800/40 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-400 group-hover:text-cyan-400"><UserCheck className="w-4 h-4" /></span>
+                  <span>User Settings</span>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-cyan-400 font-mono">
+                  Account
+                </span>
+              </button>
+            )}
           </nav>
         </div>
       </div>

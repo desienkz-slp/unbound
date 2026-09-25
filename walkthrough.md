@@ -334,4 +334,52 @@ Mengganti struktur dua kolom terpisah menjadi 3 baris grid horizontal (`grid gri
 - **Penyaringan Reverse DNS (`.in-addr.arpa`):** Query reverse lookup internal disaring dari Top Domains agar list fokus pada domain internet yang relevan.
 - **Tampilan Badge & Domain:** Domain yang panjang kini memiliki tooltip teks lengkap saat di-hover (`title={item.domain}`) dan badge kategori (*Judi Online*, *Advertising / Tracker*, dll.) tertata rapi tanpa teks yang bertumpuk.
 
+---
+
+## 11. Implementasi Fitur Pengaturan Akun & Keamanan (Ganti Username & Password)
+
+Menindaklanjuti permintaan Anda:
+> *"Sekarang fitur setting user belum ada, untuk ganti password dan username."*
+
+Telah diimplementasikan fitur manajemen akun dan keamanan operator secara menyeluruh mulai dari lapisan data PostgreSQL hingga antarmuka modal interaktif:
+
+### 1. Arsitektur Backend (REST API & Database Persistence)
+- **Endpoint Baru:** `POST /api/v1/auth/profile` (dan `PUT /api/v1/auth/profile`), dilindungi oleh middleware JWT autentikasi (`s.requireAuth`).
+- **Pembaruan Interface Storage (`pkg/storage/store.go`):**
+  - `GetUserByID(ctx context.Context, id string) (*auth.User, error)`
+  - `UpdateUserCredentials(ctx context.Context, id string, newUsername string, newPasswordHash string) error`
+- **Implementasi Non-Destruktif PostgreSQL (`pkg/storage/postgres.go`):**
+  - Mengupdate kolom `username`, `password_hash`, dan `updated_at = NOW()` berdasarkan ID unik pengguna.
+- **Standar Keamanan Ketat:**
+  1. **Verifikasi Password Lama:** Operator wajib memasukkan password saat ini (*Current Password*). Sistem memvalidasi hash dengan `bcrypt.CompareHashAndPassword`.
+  2. **Validasi Username:** Minimal 3 karakter dan diperiksa agar tidak terjadi duplikasi (*conflict*) dengan username akun lain.
+  3. **Validasi Password Baru:** Bersifat opsional (jika kosong, password tidak berubah). Jika diisi, minimal 6 karakter dan otomatis di-hash dengan bcrypt (*cost factor standard*).
+  4. **Refreshed JWT Token:** Begitu kredensial berhasil diperbarui, API seketika mengembalikan token JWT baru dengan klaim username terbaru, sehingga session browser langsung diperbarui tanpa memaksa logout.
+  5. **Audit Trail Logging:** Setiap pembaruan kredensial otomatis dicatat pada audit log (`USER_CREDENTIALS_UPDATED`) dengan metadata aktor dan waktu eksekusi.
+
+### 2. Antarmuka Modal Interaktif (`UserSettingsModal.tsx`)
+Diciptakan komponen modal modern bertema NOC dark-mode:
+- **Kartu Identitas Operator:** Menampilkan username aktif, ID sistem (`usr-superadmin`), dan badge peran `SUPER_ADMIN`.
+- **Kolom Username:** Input perubahan username dengan ikon pengguna.
+- **Kolom Password Baru & Konfirmasi:** Dilengkapi toggle sembunyikan/tampilkan password (*eye icon*) dan validasi kecocokan secara real-time.
+- **Kolom Password Saat Ini:** Diperlukan sebagai konfirmasi otorisasi sebelum penyimpanan data.
+- **Feedback Visual:** Indikator loading, alert error merah jika password salah, dan alert sukses hijau saat berhasil.
+
+### 3. Kemudahan Akses di Antarmuka Web UI
+Pengguna dapat membuka modal pengaturan akun kapan saja melalui 2 titik navigasi:
+1. **Header Top-Bar (Pojok Kanan Atas):** Tombol profil operator (`admin | NOC Active`) kini interaktif dengan ikon settings dan indikator hover.
+2. **Sidebar Navigasi (Sisi Kiri):** Ditambahkan tombol cepat **"User Settings"** dengan badge `Account` pada kelompok menu *System & Resilience*.
+
+### 4. Bukti Verifikasi Pengujian Nyata di Server (172.18.20.145)
+Pengujian fungsionalitas end-to-end langsung pada server produksi:
+```bash
+1. Login Akun Eksisting        : 200 OK (User: admin, Role: SUPER_ADMIN)
+2. Uji Password Saat Ini Salah : 401 Unauthorized ("Password saat ini salah")
+3. Uji Username Terlalu Pendek : 400 Bad Request ("Username minimal harus 3 karakter")
+4. Simpan Profil Baru          : 200 OK ("Pengaturan akun berhasil disimpan", Refreshed Token: True)
+5. Verifikasi Login Kredensial : 200 OK (Berhasil login menggunakan password baru)
+6. Status Akun Produksi        : Normal & Siap Digunakan
+```
+
+
 

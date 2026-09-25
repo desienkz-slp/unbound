@@ -112,6 +112,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Auth Endpoints
 	mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("/api/v1/auth/me", s.requireAuth(s.handleMe))
+	mux.HandleFunc("/api/v1/auth/profile", s.requireAuth(s.handleUpdateProfile))
 
 	// Node Management
 	mux.HandleFunc("/api/v1/nodes", s.requireAuth(s.handleNodes))
@@ -261,6 +262,123 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, claims)
+}
+
+type updateProfileRequest struct {
+	Username        string `json:"username"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// Handler: Update Profile / Credentials (Username & Password)
+func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	claims, ok := r.Context().Value("user_claims").(*auth.Claims)
+	if !ok {
+		s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req updateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	// 1. Fetch current user record
+	user, err := s.store.GetUserByID(r.Context(), claims.UserID)
+	if err != nil {
+		user, err = s.store.GetUserByUsername(r.Context(), claims.Username)
+		if err != nil {
+			s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "user record not found"})
+			return
+		}
+	}
+
+	// 2. Validate current password
+	if strings.TrimSpace(req.CurrentPassword) == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Password saat ini wajib diisi untuk verifikasi keamanan"})
+		return
+	}
+	if !auth.CheckPassword(user.PasswordHash, req.CurrentPassword) {
+		s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Password saat ini salah"})
+		return
+	}
+
+	// 3. Validate new username if provided
+	targetUsername := strings.TrimSpace(req.Username)
+	if targetUsername == "" {
+		targetUsername = user.Username
+	}
+	if len(targetUsername) < 3 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Username minimal harus 3 karakter"})
+		return
+	}
+	if targetUsername != user.Username {
+		existing, _ := s.store.GetUserByUsername(r.Context(), targetUsername)
+		if existing != nil && existing.ID != user.ID {
+			s.writeJSON(w, http.StatusConflict, map[string]string{"error": "Username '" + targetUsername + "' sudah digunakan oleh akun lain"})
+			return
+		}
+	}
+
+	// 4. Validate new password if provided
+	targetPasswordHash := user.PasswordHash
+	passwordChanged := false
+	if strings.TrimSpace(req.NewPassword) != "" {
+		if len(req.NewPassword) < 6 {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Password baru minimal harus 6 karakter"})
+			return
+		}
+		hash, err := auth.HashPassword(req.NewPassword)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Gagal mengenkripsi password baru"})
+			return
+		}
+		targetPasswordHash = hash
+		passwordChanged = true
+	}
+
+	// 5. Update user credentials in database
+	if err := s.store.UpdateUserCredentials(r.Context(), user.ID, targetUsername, targetPasswordHash); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Gagal memperbarui akun: " + err.Error()})
+		return
+	}
+
+	// 6. Record Audit Log
+	details := fmt.Sprintf("username updated to '%s'", targetUsername)
+	if passwordChanged {
+		details += ", password changed"
+	}
+	_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+		Actor:    user.Username,
+		Action:   "USER_CREDENTIALS_UPDATED",
+		Target:   user.ID,
+		Details:  details,
+		ClientIP: r.RemoteAddr,
+		Status:   "SUCCESS",
+	})
+
+	// 7. Issue refreshed token with new username
+	user.Username = targetUsername
+	user.PasswordHash = targetPasswordHash
+	newToken, _ := auth.GenerateToken(user, s.jwtSecret, 24*time.Hour)
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Pengaturan akun berhasil disimpan",
+		"token":   newToken,
+		"user": map[string]string{
+			"id":        user.ID,
+			"username":  user.Username,
+			"role":      user.Role,
+			"full_name": user.FullName,
+		},
+	})
 }
 
 // Handler: Nodes List

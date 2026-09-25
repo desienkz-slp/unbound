@@ -85,6 +85,21 @@ class ApiClient {
     }
   }
 
+  async updateProfile(data: {
+    username?: string;
+    current_password: string;
+    new_password?: string;
+  }): Promise<{ success: boolean; message: string; token: string; user: { id: string; username: string; role: string; full_name?: string } }> {
+    const res = await this.request<{ success: boolean; message: string; token: string; user: { id: string; username: string; role: string; full_name?: string } }>('/auth/profile', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
+
   // Nodes
   async getNodes(): Promise<NodeRecord[]> {
     return this.request<NodeRecord[]>('/nodes');

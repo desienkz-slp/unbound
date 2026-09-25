@@ -62,7 +62,9 @@ type Store interface {
 	// Users & Auth
 	CreateUser(ctx context.Context, u *auth.User) error
 	GetUserByUsername(ctx context.Context, username string) (*auth.User, error)
+	GetUserByID(ctx context.Context, id string) (*auth.User, error)
 	ListUsers(ctx context.Context) ([]auth.User, error)
+	UpdateUserCredentials(ctx context.Context, id string, newUsername string, newPasswordHash string) error
 
 	// Nodes
 	UpsertNode(ctx context.Context, n *model.NodeMetadata, status string, mgmtIP string) error

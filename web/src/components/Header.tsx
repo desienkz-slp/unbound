@@ -15,6 +15,7 @@ interface HeaderProps {
   onQuickDiagnose: (domain: string) => void;
   onLogout: () => void;
   currentUser: string;
+  onOpenUserSettings?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   onQuickDiagnose,
   onLogout,
   currentUser,
+  onOpenUserSettings,
 }) => {
   const [quickDomain, setQuickDomain] = useState('');
 
@@ -88,14 +90,19 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right controls */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-xs text-gray-300 bg-gray-900/60 border border-gray-800 px-3 py-1.5 rounded-lg">
-          <User className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="font-mono text-cyan-300">{currentUser || 'admin'}</span>
+        <button
+          onClick={onOpenUserSettings}
+          className="flex items-center gap-2 text-xs text-gray-300 bg-gray-900/60 border border-gray-800 hover:border-cyan-500/50 hover:bg-gray-800/60 px-3 py-1.5 rounded-lg transition-all group cursor-pointer"
+          title="Pengaturan Akun & Keamanan (Ganti Username / Password)"
+        >
+          <User className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+          <span className="font-mono text-cyan-300 font-semibold">{currentUser || 'admin'}</span>
           <span className="text-gray-500">|</span>
-          <span className="text-emerald-400 flex items-center gap-1 font-mono">
+          <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px]">
             <Activity className="w-3 h-3" /> NOC Active
           </span>
-        </div>
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 opacity-60 group-hover:opacity-100 ml-0.5" />
+        </button>
 
         <button
           onClick={onLogout}

@@ -88,6 +88,45 @@ func (p *PostgresStore) GetUserByUsername(ctx context.Context, username string) 
 	return &u, nil
 }
 
+// GetUserByID retrieves a user by their unique primary key ID.
+func (p *PostgresStore) GetUserByID(ctx context.Context, id string) (*auth.User, error) {
+	query := `SELECT id, username, password_hash, role, email, full_name, created_at, updated_at FROM users WHERE id = $1`
+	row := p.db.QueryRowContext(ctx, query, id)
+
+	var u auth.User
+	var email, fullName sql.NullString
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &email, &fullName, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user with id '%s' not found", id)
+		}
+		return nil, err
+	}
+	u.Email = email.String
+	u.FullName = fullName.String
+	return &u, nil
+}
+
+// UpdateUserCredentials safely updates username and password hash for a user.
+func (p *PostgresStore) UpdateUserCredentials(ctx context.Context, id string, newUsername string, newPasswordHash string) error {
+	query := `
+		UPDATE users 
+		SET username = $1, password_hash = $2, updated_at = NOW()
+		WHERE id = $3
+	`
+	res, err := p.db.ExecContext(ctx, query, newUsername, newPasswordHash, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("user with id '%s' not found", id)
+	}
+	return nil
+}
+
 // ListUsers lists all registered operators.
 func (p *PostgresStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 	query := `SELECT id, username, role, email, full_name, created_at, updated_at FROM users ORDER BY username ASC`

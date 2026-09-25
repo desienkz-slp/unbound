@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { LoginModal } from './components/LoginModal';
+import { UserSettingsModal } from './components/UserSettingsModal';
 import { OverviewView } from './views/OverviewView';
 import { DiagnosticsView } from './views/DiagnosticsView';
 import { DNSConfigView } from './views/DNSConfigView';
@@ -21,6 +22,7 @@ export function App() {
   const [config, setConfig] = useState<DesiredState | null>(null);
   const [currentUser, setCurrentUser] = useState<string>('admin');
   const [showLogin, setShowLogin] = useState<boolean>(false);
+  const [showUserSettings, setShowUserSettings] = useState<boolean>(false);
   const [diagnoseDomain, setDiagnoseDomain] = useState<string>('');
   const [unboundHealthy, setUnboundHealthy] = useState<boolean>(true);
 
@@ -82,6 +84,7 @@ export function App() {
         onQuickDiagnose={handleQuickDiagnose}
         onLogout={handleLogout}
         currentUser={currentUser}
+        onOpenUserSettings={() => setShowUserSettings(true)}
       />
 
       <div className="flex-1 flex overflow-hidden min-h-0">
@@ -89,6 +92,7 @@ export function App() {
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           unboundStatus={unboundHealthy}
+          onOpenUserSettings={() => setShowUserSettings(true)}
         />
 
         <main className="flex-1 overflow-y-auto min-h-0 p-6 md:p-8 custom-scrollbar">
@@ -162,6 +166,16 @@ export function App() {
         onSuccess={(user) => {
           setCurrentUser(user.username);
           setShowLogin(false);
+          loadInitialData();
+        }}
+      />
+
+      <UserSettingsModal
+        isOpen={showUserSettings}
+        onClose={() => setShowUserSettings(false)}
+        currentUser={currentUser}
+        onUserUpdated={(newUsername) => {
+          setCurrentUser(newUsername);
           loadInitialData();
         }}
       />

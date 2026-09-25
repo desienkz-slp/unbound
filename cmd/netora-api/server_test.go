@@ -235,3 +235,60 @@ func TestAPI_MetricsAndAlerts(t *testing.T) {
 		t.Fatalf("expected 200 from /api/v1/alerts, got %d", alertsW.Code)
 	}
 }
+
+func TestAPI_UpdateProfileSuccess(t *testing.T) {
+	server, store, token := setupTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	// Update username to 'newadmin' and change password to 'newpassword123'
+	body := []byte(`{"username":"newadmin","current_password":"admin123","new_password":"newpassword123"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/profile", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/v1/auth/profile, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed parsing response: %v", err)
+	}
+
+	if res["token"] == "" {
+		t.Errorf("expected refreshed token in response")
+	}
+
+	// Verify database record has updated username
+	user, err := store.GetUserByUsername(context.Background(), "newadmin")
+	if err != nil {
+		t.Fatalf("expected user 'newadmin' in store, got error: %v", err)
+	}
+
+	// Verify new password works
+	if !auth.CheckPassword(user.PasswordHash, "newpassword123") {
+		t.Errorf("new password hash failed verification")
+	}
+}
+
+func TestAPI_UpdateProfileInvalidCurrentPassword(t *testing.T) {
+	server, _, token := setupTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body := []byte(`{"username":"newadmin","current_password":"wrongcurrentpassword","new_password":"newpassword123"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/profile", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for wrong current password, got %d", w.Code)
+	}
+}

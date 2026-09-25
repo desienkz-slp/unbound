@@ -57,6 +57,35 @@ func (m *MemoryStore) GetUserByUsername(ctx context.Context, username string) (*
 	return u, nil
 }
 
+func (m *MemoryStore) GetUserByID(ctx context.Context, id string) (*auth.User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, u := range m.users {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return nil, fmt.Errorf("user with id '%s' not found", id)
+}
+
+func (m *MemoryStore) UpdateUserCredentials(ctx context.Context, id string, newUsername string, newPasswordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for oldUsername, u := range m.users {
+		if u.ID == id {
+			if oldUsername != newUsername {
+				delete(m.users, oldUsername)
+			}
+			u.Username = newUsername
+			u.PasswordHash = newPasswordHash
+			u.UpdatedAt = time.Now().UTC()
+			m.users[newUsername] = u
+			return nil
+		}
+	}
+	return fmt.Errorf("user with id '%s' not found", id)
+}
+
 func (m *MemoryStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
