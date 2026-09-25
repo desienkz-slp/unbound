@@ -644,49 +644,88 @@ func (s *Server) handleSyncBlocklistsFromGitHub(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	var req struct {
+		AdultURL    string `json:"adult_url"`
+		GamblingURL string `json:"gambling_url"`
+		GitHubToken string `json:"github_token"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
 	blocklistDir := "/etc/unbound/blocklist"
 	_ = os.MkdirAll(blocklistDir, 0755)
 
 	client := &http.Client{Timeout: 15 * time.Second}
 
-	adultURL := "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/adult-domains.txt"
-	gamblingURL := "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/gambling-domains.txt"
-
-	// 1. Fetch Adult Domains
-	adultCount := 0
-	respA, errA := client.Get(adultURL)
-	if errA == nil && respA.StatusCode == http.StatusOK {
-		dataA, _ := io.ReadAll(respA.Body)
-		_ = respA.Body.Close()
-		if len(dataA) > 0 {
-			_ = os.WriteFile(filepath.Join(blocklistDir, "adult-domains.txt"), dataA, 0644)
-			for _, line := range strings.Split(string(dataA), "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "#") {
-					adultCount++
-				}
-			}
-		}
+	token := req.GitHubToken
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
 	}
 
-	// 2. Fetch Gambling Domains
-	gamblingCount := 0
-	respG, errG := client.Get(gamblingURL)
-	if errG == nil && respG.StatusCode == http.StatusOK {
-		dataG, _ := io.ReadAll(respG.Body)
-		_ = respG.Body.Close()
-		if len(dataG) > 0 {
-			_ = os.WriteFile(filepath.Join(blocklistDir, "gambling-domains.txt"), dataG, 0644)
-			for _, line := range strings.Split(string(dataG), "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "#") {
-					gamblingCount++
+	fetchURL := func(targetURL, fallbackURL, destFilename string) int {
+		destPath := filepath.Join(blocklistDir, destFilename)
+
+		tryDownload := func(u string) ([]byte, bool) {
+			if u == "" {
+				return nil, false
+			}
+			httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u, nil)
+			if err != nil {
+				return nil, false
+			}
+			if token != "" {
+				httpReq.Header.Set("Authorization", "token "+token)
+			}
+			resp, err := client.Do(httpReq)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				data, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if len(data) > 0 {
+					return data, true
 				}
 			}
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			return nil, false
 		}
+
+		data, ok := tryDownload(targetURL)
+		if !ok && fallbackURL != "" {
+			data, ok = tryDownload(fallbackURL)
+		}
+
+		if ok && len(data) > 0 {
+			_ = os.WriteFile(destPath, data, 0644)
+		} else {
+			data, _ = os.ReadFile(destPath)
+		}
+
+		count := 0
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				count++
+			}
+		}
+		return count
 	}
 
-	// 3. Trigger Unbound Atomic Apply
+	adultURL := req.AdultURL
+	if adultURL == "" {
+		adultURL = "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/adult-domains.txt"
+	}
+	fallbackAdultURL := "https://raw.githubusercontent.com/alexsannikov/adguardhome-filters/refs/heads/master/porn.txt"
+
+	gamblingURL := req.GamblingURL
+	if gamblingURL == "" {
+		gamblingURL = "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/gambling-domains.txt"
+	}
+	fallbackGamblingURL := "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts"
+
+	adultCount := fetchURL(adultURL, fallbackAdultURL, "adult-domains.txt")
+	gamblingCount := fetchURL(gamblingURL, fallbackGamblingURL, "gambling-domains.txt")
+
+	// Trigger Unbound Atomic Apply
 	cfg, err := s.store.GetDesiredState(r.Context(), s.nodeID)
 	if err == nil && cfg != nil {
 		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
@@ -703,7 +742,7 @@ func (s *Server) handleSyncBlocklistsFromGitHub(w http.ResponseWriter, r *http.R
 		"success":                true,
 		"adult_domains_count":    adultCount,
 		"gambling_domains_count": gamblingCount,
-		"message":                fmt.Sprintf("Successfully synced %d adult and %d gambling domains from GitHub", adultCount, gamblingCount),
+		"message":                fmt.Sprintf("Berhasil sinkronisasi %d domain dewasa (18+) dan %d domain judi online", adultCount, gamblingCount),
 	})
 }
 
