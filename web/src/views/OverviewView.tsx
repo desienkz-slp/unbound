@@ -26,7 +26,7 @@ import {
   UserCheck,
   Zap,
 } from 'lucide-react';
-import { DesiredState, NodeRecord } from '../types';
+import { DesiredState, NodeRecord, DetailedStatsReport } from '../types';
 import { api } from '../services/api';
 
 interface OverviewProps {
@@ -60,40 +60,19 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
   const [isLiveTelemetry, setIsLiveTelemetry] = useState(false);
 
+  const [statsReport, setStatsReport] = useState<DetailedStatsReport | null>(null);
+
   // Live statistics state from Unbound
   const [stats, setStats] = useState({
-    totalQueries: 31240,
-    cacheHits: 31215,
-    cacheMisses: 25,
+    totalQueries: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
     blockedFilters: 0,
     blockedMalware: 0,
     blockedAdult: 0,
     enforcedSafeSearch: 0,
     avgProcessingTime: 1, // ms
   });
-
-  const defaultClients = [
-    { ip: '172.18.20.145', name: 'Localhost / Self-Test', count: 18450, pct: 59.0 },
-    { ip: '172.18.20.1', name: 'Gateway / NOC Router', count: 12790, pct: 40.9 },
-  ];
-
-  const defaultQueriedDomains = [
-    { domain: 'google.com', count: 12450, pct: 39.8, blocked: false },
-    { domain: 'cloudflare.com', count: 8320, pct: 26.6, blocked: false },
-    { domain: 'github.com', count: 6140, pct: 19.6, blocked: false },
-    { domain: 'api.whatsapp.net', count: 4330, pct: 13.8, blocked: false },
-  ];
-
-  const defaultBlockedDomains = [
-    { domain: 'doubleclick.net', count: 412, pct: 45.2, category: 'Advertising' },
-    { domain: 'telemetry.microsoft.com', count: 280, pct: 30.7, category: 'Telemetry' },
-    { domain: 'adservice.google.com', count: 219, pct: 24.0, category: 'Ad/Tracker' },
-  ];
-
-  const defaultUpstreams = [
-    { upstream: '1.1.1.1:53 (UDP)', count: 20306, pct: 65.0, latency: '1.2 ms' },
-    { upstream: '8.8.8.8:53 (UDP)', count: 10934, pct: 35.0, latency: '1.8 ms' },
-  ];
 
   const fetchHealthAndStats = async () => {
     if (!nodeId) return;
@@ -110,19 +89,18 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
       if (resStats.status === 'fulfilled' && resStats.value) {
         const s = resStats.value;
-        if (s.total_queries !== undefined && s.total_queries > 0) {
-          setStats({
-            totalQueries: s.total_queries,
-            cacheHits: s.cache_hits || 0,
-            cacheMisses: s.cache_misses || 0,
-            blockedFilters: s.blocked_queries || 0,
-            blockedMalware: 0,
-            blockedAdult: 0,
-            enforcedSafeSearch: s.safe_search_enforced || 0,
-            avgProcessingTime: Math.max(1, Math.round(s.avg_processing_time_ms || 1)),
-          });
-          setIsLiveTelemetry(true);
-        }
+        setStatsReport(s);
+        setStats({
+          totalQueries: s.total_queries ?? 0,
+          cacheHits: s.cache_hits ?? 0,
+          cacheMisses: s.cache_misses ?? 0,
+          blockedFilters: s.blocked_queries ?? 0,
+          blockedMalware: s.blocked_malware ?? 0,
+          blockedAdult: s.blocked_adult ?? 0,
+          enforcedSafeSearch: s.safe_search_enforced ?? 0,
+          avgProcessingTime: Math.max(1, Math.round(s.avg_processing_time_ms || 1)),
+        });
+        setIsLiveTelemetry(true);
       }
     } catch (err) {
       console.error('Failed to fetch node health and stats:', err);
@@ -133,7 +111,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
   useEffect(() => {
     fetchHealthAndStats();
-    const interval = setInterval(fetchHealthAndStats, 8000);
+    const interval = setInterval(fetchHealthAndStats, 5000);
     return () => clearInterval(interval);
   }, [nodeId]);
 
@@ -150,57 +128,25 @@ export const OverviewView: React.FC<OverviewProps> = ({
     }
   };
 
-  // Individual client IP addresses (Per IP, strictly no subnet CIDR)
-  const clientIPList = [
-    { ip: '172.18.20.30', name: 'Core Router / BNG', weight: 0.38 },
-    { ip: '172.18.20.1', name: 'Gateway / NOC Router', weight: 0.28 },
-    { ip: '10.22.31.234', name: 'Subscriber PPPoE', weight: 0.16 },
-    { ip: '10.22.30.161', name: 'Subscriber DHCP', weight: 0.11 },
-    { ip: '127.0.0.1', name: 'Localhost Prober', weight: 0.07 },
-  ];
-
-  const topClients = clientIPList.map((client) => {
-    const cnt = Math.max(1, Math.round(stats.totalQueries * client.weight));
-    const pct = Number((client.weight * 100).toFixed(1));
-    return {
-      ip: client.ip,
-      name: client.name,
-      count: cnt,
-      pct: pct,
-    };
-  });
-
-  const topQueriedDomains = defaultQueriedDomains.map((d, i) => {
-    const factor = [0.4, 0.28, 0.18, 0.14][i] || 0.1;
-    const cnt = Math.max(1, Math.round(stats.totalQueries * factor));
-    return {
-      ...d,
-      count: cnt,
-      pct: Number((factor * 100).toFixed(1)),
-    };
-  });
-
-  const topBlockedDomains = defaultBlockedDomains;
-
-  const topUpstreams = config?.upstreams && config.upstreams.length > 0
-    ? config.upstreams.map((up, i) => {
-        const pct = i === 0 ? 65.0 : 35.0;
-        const cnt = Math.round(stats.totalQueries * (pct / 100));
-        return {
-          upstream: `${up.ip}:${up.port} (${up.type})`,
-          count: cnt,
-          pct: pct,
-          latency: health?.latency_ms ? `${(health.latency_ms + (i * 0.4)).toFixed(1)} ms` : '1.2 ms',
-        };
-      })
-    : defaultUpstreams;
+  // Real telemetry collections directly from Unbound log tailer & dump_infra
+  const topClients = statsReport?.top_clients || [];
+  const topQueriedDomains = statsReport?.top_queried_domains || [];
+  const topBlockedDomains = statsReport?.top_blocked_domains || [];
+  const topUpstreams = statsReport?.top_upstreams && statsReport.top_upstreams.length > 0
+    ? statsReport.top_upstreams
+    : (config?.upstreams || []).map((up) => ({
+        upstream: `${up.ip}:${up.port} (${up.type})`,
+        count: 0,
+        pct: 0,
+        latency: health?.latency_ms ? `${health.latency_ms.toFixed(1)} ms` : '1.2 ms',
+      }));
 
   const cacheHitRatio = stats.totalQueries > 0
     ? (((stats.cacheHits || 0) / stats.totalQueries) * 100).toFixed(1)
-    : '99.9';
+    : '0.0';
 
   const blockedPct = stats.totalQueries > 0
-    ? ((stats.blockedFilters / stats.totalQueries) * 100).toFixed(0)
+    ? (((stats.blockedFilters || 0) / stats.totalQueries) * 100).toFixed(1)
     : '0';
 
   return (
@@ -433,35 +379,41 @@ export const OverviewView: React.FC<OverviewProps> = ({
                 <span>Requests count</span>
               </div>
 
-              {topQueriedDomains.map((item, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 max-w-[70%]">
-                      <span className="text-gray-200 truncate cursor-pointer hover:text-cyan-400" onClick={() => runQuickProbe(item.domain)}>
-                        {item.domain}
-                      </span>
-                      <button
-                        onClick={() => runQuickProbe(item.domain)}
-                        className="text-gray-500 hover:text-emerald-400 text-[10px]"
-                        title="Probe this domain"
-                      >
-                        <Eye className="w-3 h-3" />
-                      </button>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-cyan-400 font-bold">{item.count.toLocaleString()}</span>
-                      <span className="text-gray-500 text-[11px] ml-2">{item.pct}%</span>
-                    </div>
-                  </div>
-                  {/* Progress Bar */}
-                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-cyan-500 rounded-full"
-                      style={{ width: `${Math.min(item.pct * 25, 100)}%` }}
-                    />
-                  </div>
+              {topQueriedDomains.length === 0 ? (
+                <div className="py-6 text-center text-gray-500 font-mono text-xs">
+                  Belum ada domain yang tercatat dalam log telemetri Unbound.
                 </div>
-              ))}
+              ) : (
+                topQueriedDomains.map((item, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 max-w-[70%]">
+                        <span className="text-gray-200 truncate cursor-pointer hover:text-cyan-400" onClick={() => runQuickProbe(item.domain)}>
+                          {item.domain}
+                        </span>
+                        <button
+                          onClick={() => runQuickProbe(item.domain)}
+                          className="text-gray-500 hover:text-emerald-400 text-[10px]"
+                          title="Probe this domain"
+                        >
+                          <Eye className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-cyan-400 font-bold">{item.count.toLocaleString()}</span>
+                        <span className="text-gray-500 text-[11px] ml-2">{item.pct}%</span>
+                      </div>
+                    </div>
+                    {/* Progress Bar */}
+                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-500 rounded-full"
+                        style={{ width: `${Math.min(item.pct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -483,23 +435,29 @@ export const OverviewView: React.FC<OverviewProps> = ({
                 <span>Requests count</span>
               </div>
 
-              {topUpstreams.map((up, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-300 font-semibold">{up.upstream}</span>
-                    <div>
-                      <span className="text-white font-bold">{up.count.toLocaleString()}</span>
-                      <span className="text-gray-500 text-[11px] ml-2">{up.pct}%</span>
+              {topUpstreams.length === 0 ? (
+                <div className="py-6 text-center text-gray-500 font-mono text-xs">
+                  Belum ada upstream DNS aktif.
+                </div>
+              ) : (
+                topUpstreams.map((up, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-300 font-semibold">{up.upstream}</span>
+                      <div>
+                        <span className="text-white font-bold">{up.count.toLocaleString()}</span>
+                        <span className="text-gray-500 text-[11px] ml-2">{up.pct}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full"
+                        style={{ width: `${Math.min(up.pct, 100)}%` }}
+                      />
                     </div>
                   </div>
-                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full"
-                      style={{ width: `${up.pct}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -524,26 +482,32 @@ export const OverviewView: React.FC<OverviewProps> = ({
                 <span>Requests count</span>
               </div>
 
-              {topClients.map((client, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-cyan-400 font-bold">{client.ip}</span>
-                      <span className="text-gray-500 text-[11px] hidden sm:inline">({client.name})</span>
-                    </div>
-                    <div>
-                      <span className="text-white font-bold">{client.count.toLocaleString()}</span>
-                      <span className="text-gray-500 text-[11px] ml-2">{client.pct}%</span>
-                    </div>
-                  </div>
-                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-cyan-400 rounded-full"
-                      style={{ width: `${client.pct}%` }}
-                    />
-                  </div>
+              {topClients.length === 0 ? (
+                <div className="py-6 text-center text-gray-500 font-mono text-xs">
+                  Belum ada query client yang tercatat dalam log telemetri Unbound.
                 </div>
-              ))}
+              ) : (
+                topClients.map((client, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-cyan-400 font-bold">{client.ip}</span>
+                        <span className="text-gray-500 text-[11px] hidden sm:inline">({client.name})</span>
+                      </div>
+                      <div>
+                        <span className="text-white font-bold">{client.count.toLocaleString()}</span>
+                        <span className="text-gray-500 text-[11px] ml-2">{client.pct}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-400 rounded-full"
+                        style={{ width: `${Math.min(client.pct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -565,30 +529,37 @@ export const OverviewView: React.FC<OverviewProps> = ({
                 <span>Requests count</span>
               </div>
 
-              {topBlockedDomains.map((item, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 max-w-[70%]">
-                      <span className="text-rose-400 font-semibold truncate cursor-pointer hover:underline" onClick={() => runQuickProbe(item.domain)}>
-                        {item.domain}
-                      </span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800">
-                        {item.category}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-rose-400 font-bold">{item.count.toLocaleString()}</span>
-                      <span className="text-gray-500 text-[11px] ml-2">{item.pct}%</span>
-                    </div>
-                  </div>
-                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-rose-500 rounded-full"
-                      style={{ width: `${item.pct * 2}%` }}
-                    />
-                  </div>
+              {topBlockedDomains.length === 0 ? (
+                <div className="py-6 text-center text-gray-500 font-mono text-xs flex flex-col items-center gap-1.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500/70" />
+                  <span>Nol ancaman atau pemblokiran dalam riwayat terkini.</span>
                 </div>
-              ))}
+              ) : (
+                topBlockedDomains.map((item, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 max-w-[70%]">
+                        <span className="text-rose-400 font-semibold truncate cursor-pointer hover:underline" onClick={() => runQuickProbe(item.domain)}>
+                          {item.domain}
+                        </span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800">
+                          {item.category}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-rose-400 font-bold">{item.count.toLocaleString()}</span>
+                        <span className="text-gray-500 text-[11px] ml-2">{item.pct}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-rose-500 rounded-full"
+                        style={{ width: `${Math.min(item.pct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -610,12 +581,18 @@ export const OverviewView: React.FC<OverviewProps> = ({
                 <span>Response time</span>
               </div>
 
-              {topUpstreams.map((up, idx) => (
-                <div key={idx} className="flex items-center justify-between py-1 border-b border-gray-800/40 last:border-0">
-                  <span className="text-gray-300">{up.upstream}</span>
-                  <span className="text-cyan-400 font-bold font-mono">{up.latency}</span>
+              {topUpstreams.length === 0 ? (
+                <div className="py-6 text-center text-gray-500 font-mono text-xs">
+                  Belum ada data latensi upstream.
                 </div>
-              ))}
+              ) : (
+                topUpstreams.map((up, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-1 border-b border-gray-800/40 last:border-0">
+                    <span className="text-gray-300">{up.upstream}</span>
+                    <span className="text-cyan-400 font-bold font-mono">{up.latency}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

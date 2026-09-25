@@ -40,9 +40,9 @@ server:
   harden-dnssec-stripped: {{ if .DNSSEC.HardenDNSSECStripped }}yes{{ else }}no{{ end }}
   use-syslog: no
   logfile: "/var/log/unbound/unbound.log"
-  log-queries: no
-  log-replies: no
-  verbosity: 0
+  log-queries: yes
+  log-replies: yes
+  verbosity: 1
 
   # --- 5. Cache & Resilience ---
   prefetch: {{ if .Features.Prefetch }}yes{{ else }}no{{ end }}

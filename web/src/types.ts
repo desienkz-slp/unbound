@@ -214,4 +214,48 @@ export interface SyncBlocklistResult {
   message: string;
 }
 
+export interface ClientStat {
+  ip: string;
+  name: string;
+  count: number;
+  pct: number;
+}
+
+export interface DomainStat {
+  domain: string;
+  count: number;
+  pct: number;
+  blocked: boolean;
+}
+
+export interface BlockedDomainStat {
+  domain: string;
+  count: number;
+  pct: number;
+  category: string;
+}
+
+export interface UpstreamStat {
+  upstream: string;
+  count: number;
+  pct: number;
+  latency: string;
+}
+
+export interface DetailedStatsReport {
+  total_queries: number;
+  cache_hits: number;
+  cache_misses: number;
+  avg_processing_time_ms: number;
+  blocked_queries: number;
+  blocked_malware: number;
+  blocked_adult: number;
+  blocked_gambling: number;
+  safe_search_enforced: number;
+  top_clients: ClientStat[];
+  top_queried_domains: DomainStat[];
+  top_blocked_domains: BlockedDomainStat[];
+  top_upstreams: UpstreamStat[];
+}
+
 

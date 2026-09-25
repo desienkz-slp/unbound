@@ -38,6 +38,7 @@ type Server struct {
 	alertEngine      *telemetry.AlertEngine
 	clusterManager   *cluster.ClusterManager
 	investigator     *hermes.Investigator
+	queryLogTailer   *telemetry.QueryLogTailer
 }
 
 // NewServer initializes the API server components.
@@ -70,6 +71,11 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 	hc := runtime.NewDNSHealthChecker(3 * time.Second)
 	inv := hermes.NewInvestigator(nodeID, policyEngine, hc)
 
+	tailer := telemetry.DefaultTailer
+	if tailer == nil {
+		tailer = telemetry.NewQueryLogTailer("/var/log/unbound/unbound.log")
+	}
+
 	return &Server{
 		store:            store,
 		engine:           engine,
@@ -82,6 +88,7 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		alertEngine:      alertEngine,
 		clusterManager:   cm,
 		investigator:     inv,
+		queryLogTailer:   tailer,
 	}
 }
 
@@ -297,6 +304,16 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusOK, res)
 
 	case "stats":
+		tailer := s.queryLogTailer
+		if tailer == nil {
+			tailer = telemetry.DefaultTailer
+		}
+		if tailer != nil {
+			report := tailer.GetDetailedReport(r.Context())
+			s.writeJSON(w, http.StatusOK, report)
+			return
+		}
+
 		cmd := exec.CommandContext(r.Context(), "unbound-control", "stats_noreset")
 		out, err := cmd.Output()
 		var totalQueries, cacheHits, cacheMisses float64

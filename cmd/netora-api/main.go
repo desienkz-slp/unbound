@@ -107,11 +107,13 @@ func main() {
 	policyEngine.AddBlockRule("googleadservices.com", "ADS", "Hagezi PopupAds", "||googleadservices.com^")
 	policyEngine.AddBlockRule("malware-traffic-analysis.net", "MALWARE", "Hagezi Light", "||malware-traffic-analysis.net^")
 
-	// 6. Start Telemetry Background Collector
+	// 6. Start Telemetry Background Collector & Query Log Tailer
 	statsCollector := telemetry.NewUnboundStatsCollector(telemetry.DefaultMetrics, 10*time.Second)
+	queryLogTailer := telemetry.NewQueryLogTailer("/var/log/unbound/unbound.log")
 	collectorCtx, collectorCancel := context.WithCancel(context.Background())
 	defer collectorCancel()
 	go statsCollector.Start(collectorCtx)
+	go queryLogTailer.Start(collectorCtx)
 
 	// 7. Setup HTTP Server
 	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID)

@@ -8,6 +8,7 @@ import {
   FilterRecord,
   AutoUpdateStatus,
   SyncBlocklistResult,
+  DetailedStatsReport,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -93,15 +94,8 @@ class ApiClient {
     return this.request(`/nodes/${nodeId}/health`);
   }
 
-  async getNodeStats(nodeId: string): Promise<{
-    total_queries: number;
-    cache_hits: number;
-    cache_misses: number;
-    avg_processing_time_ms: number;
-    blocked_queries: number;
-    safe_search_enforced: number;
-  }> {
-    return this.request(`/nodes/${nodeId}/stats`);
+  async getNodeStats(nodeId: string): Promise<DetailedStatsReport> {
+    return this.request<DetailedStatsReport>(`/nodes/${nodeId}/stats`);
   }
 
   // Desired State / Config
