@@ -89,7 +89,7 @@ func main() {
 	}
 
 	sup := runtime.NewSystemdSupervisor(nil)
-	health := runtime.NewDNSHealthChecker(3 * time.Second)
+	health := runtime.NewDNSHealthChecker(6 * time.Second)
 
 	engine, err := configengine.NewEngine(configengine.EngineOptions{
 		ConfigDir:     *configDir,
@@ -151,9 +151,9 @@ func main() {
 	httpServer := &http.Server{
 		Addr:         *listenAddr,
 		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {

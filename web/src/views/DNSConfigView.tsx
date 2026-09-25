@@ -3,16 +3,20 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  Copy,
   Edit3,
   ExternalLink,
   Globe,
   Layers,
   List,
+  Lock,
   Network,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Server,
+  Shield,
   ShieldCheck,
   Trash2,
   Zap,
@@ -20,22 +24,303 @@ import {
 import { ClientNetwork, DesiredState, Listener, UpstreamServer } from '../types';
 import { api } from '../services/api';
 
-const KNOWN_UPSTREAMS_PRESETS = [
-  { name: 'Cloudflare DNS Primary', ip: '1.1.1.1', port: 53, type: 'UDP' },
-  { name: 'Cloudflare DNS Secondary', ip: '1.0.0.1', port: 53, type: 'UDP' },
-  { name: 'Google Public DNS Primary', ip: '8.8.8.8', port: 53, type: 'UDP' },
-  { name: 'Google Public DNS Secondary', ip: '8.8.4.4', port: 53, type: 'UDP' },
-  { name: 'Quad9 Security Primary', ip: '9.9.9.9', port: 53, type: 'UDP' },
-  { name: 'Quad9 Security Secondary', ip: '149.112.112.112', port: 53, type: 'UDP' },
-  { name: 'AdGuard DNS Default Primary', ip: '94.140.14.14', port: 53, type: 'UDP' },
-  { name: 'AdGuard DNS Default Secondary', ip: '94.140.15.15', port: 53, type: 'UDP' },
-  { name: 'AdGuard DNS Family Protection', ip: '94.140.14.15', port: 53, type: 'UDP' },
-  { name: 'AdGuard DNS Non-filtering', ip: '94.140.14.140', port: 53, type: 'UDP' },
-  { name: 'Cisco OpenDNS Home', ip: '208.67.222.222', port: 53, type: 'UDP' },
-  { name: 'CleanBrowsing Security', ip: '185.228.168.9', port: 53, type: 'UDP' },
-  { name: 'Control D Free', ip: '76.76.2.0', port: 53, type: 'UDP' },
-  { name: 'Mullvad Public DNS', ip: '194.242.2.2', port: 53, type: 'UDP' },
+export interface DoHProviderPreset {
+  id: string;
+  name: string;
+  category: 'unfiltered' | 'security' | 'adblock' | 'family';
+  categoryLabel: string;
+  dohUrl: string;
+  ip: string;
+  port: number;
+  type: 'DOT' | 'DOH' | 'UDP';
+  tlsName: string;
+  description: string;
+  badge?: string;
+}
+
+export const DOH_PROVIDERS_CATALOG: DoHProviderPreset[] = [
+  {
+    id: 'cf-standard',
+    name: 'Cloudflare Standard',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://cloudflare-dns.com/dns-query',
+    ip: '1.1.1.1',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'cloudflare-dns.com',
+    description: 'Resolusi ultra-cepat via Anycast global tanpa sensor. Efektif bypass pemblokiran port 53 ISP.',
+    badge: 'Populer',
+  },
+  {
+    id: 'cf-standard-secondary',
+    name: 'Cloudflare Secondary',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://cloudflare-dns.com/dns-query',
+    ip: '1.0.0.1',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'cloudflare-dns.com',
+    description: 'Secondary IP Cloudflare Anycast berkecepatan tinggi dengan enkripsi DoT/DoH.',
+  },
+  {
+    id: 'cf-security',
+    name: 'Cloudflare Security',
+    category: 'security',
+    categoryLabel: 'Security & Anti-Malware',
+    dohUrl: 'https://security.cloudflare-dns.com/dns-query',
+    ip: '1.1.1.2',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'security.cloudflare-dns.com',
+    description: 'Blokir otomatis domain berbahaya, malware, phishing, dan botnet tanpa menyentuh konten lain.',
+  },
+  {
+    id: 'cf-family',
+    name: 'Cloudflare Family',
+    category: 'family',
+    categoryLabel: 'Family & Konten Dewasa',
+    dohUrl: 'https://family.cloudflare-dns.com/dns-query',
+    ip: '1.1.1.3',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'family.cloudflare-dns.com',
+    description: 'Proteksi keluarga dengan blokir otomatis konten dewasa/pornografi dan malware.',
+  },
+  {
+    id: 'google-dns-primary',
+    name: 'Google Public DNS Primary',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://dns.google/dns-query',
+    ip: '8.8.8.8',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.google',
+    description: 'Infrastruktur anycast global Google. Cepat, stabil, tanpa sensor port 53.',
+    badge: 'Google',
+  },
+  {
+    id: 'google-dns-secondary',
+    name: 'Google Public DNS Secondary',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://dns.google/dns-query',
+    ip: '8.8.4.4',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.google',
+    description: 'Secondary Anycast Google Public DNS dengan proteksi DoT/DoH.',
+  },
+  {
+    id: 'quad9-security',
+    name: 'Quad9 Security (Malware Intel)',
+    category: 'security',
+    categoryLabel: 'Security & Anti-Malware',
+    dohUrl: 'https://dns.quad9.net/dns-query',
+    ip: '9.9.9.9',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.quad9.net',
+    description: 'DNS nirlaba berbasis Swiss dengan threat intelligence real-time untuk memblokir malware.',
+    badge: 'Swiss',
+  },
+  {
+    id: 'quad9-unsecured',
+    name: 'Quad9 Unsecured (No Filter)',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://dns10.quad9.net/dns-query',
+    ip: '9.9.9.10',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns10.quad9.net',
+    description: 'Quad9 versi tanpa blocklist threat intel. Murni resolusi independen terenkripsi.',
+  },
+  {
+    id: 'adguard-default',
+    name: 'AdGuard DNS Default',
+    category: 'adblock',
+    categoryLabel: 'AdBlock & Tracker',
+    dohUrl: 'https://dns.adguard-dns.com/dns-query',
+    ip: '94.140.14.14',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.adguard-dns.com',
+    description: 'Blokir iklan web, tracker pelacak, dan domain phishing di level upstream resolver.',
+    badge: 'AdGuard',
+  },
+  {
+    id: 'adguard-unfiltered',
+    name: 'AdGuard Non-filtering',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://unfiltered.adguard-dns.com/dns-query',
+    ip: '94.140.14.140',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'unfiltered.adguard-dns.com',
+    description: 'Resolver AdGuard tanpa filter iklan atau konten. Sangat privat, cepat, dan netral.',
+  },
+  {
+    id: 'adguard-family',
+    name: 'AdGuard Family Protection',
+    category: 'family',
+    categoryLabel: 'Family & Konten Dewasa',
+    dohUrl: 'https://family.adguard-dns.com/dns-query',
+    ip: '94.140.14.15',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'family.adguard-dns.com',
+    description: 'Kombinasi blokir iklan + blokir domain dewasa (18+) + proteksi pencarian aman.',
+  },
+  {
+    id: 'bebasdns-default',
+    name: 'BebasDNS Indonesia Default',
+    category: 'adblock',
+    categoryLabel: 'AdBlock & Tracker',
+    dohUrl: 'https://dns.bebasid.com/dns-query',
+    ip: '103.87.68.194',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.bebasid.com',
+    description: 'Resolver publik netral Indonesia oleh Komunitas BebasID / KINI. Blokir iklan & malware.',
+    badge: 'Lokal ID',
+  },
+  {
+    id: 'bebasdns-unfiltered',
+    name: 'BebasDNS Indonesia Unfiltered',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://dns.bebasid.com/unfiltered',
+    ip: '103.87.68.194',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'unfiltered.dns.bebasid.com',
+    description: 'BebasDNS murni tanpa filter apapun. Dirancang untuk internet netral dan bebas sensor ISP.',
+    badge: 'Lokal ID',
+  },
+  {
+    id: 'bebasdns-family',
+    name: 'BebasDNS Internet Sehat',
+    category: 'family',
+    categoryLabel: 'Family & Konten Dewasa',
+    dohUrl: 'https://internetsehat.bebasid.com/dns-query',
+    ip: '103.87.68.196',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'internetsehat.bebasid.com',
+    description: 'Varian BebasDNS ramah keluarga dengan filter konten pornografi dan judi online.',
+    badge: 'Lokal ID',
+  },
+  {
+    id: 'controld-uncensored',
+    name: 'Control D Uncensored',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://freedns.controld.com/uncensored',
+    ip: '76.76.2.0',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'freedns.controld.com',
+    description: 'Resolver modern berkecepatan tinggi tanpa log dan tanpa sensor buatan Windscribe.',
+  },
+  {
+    id: 'cleanbrowsing-security',
+    name: 'CleanBrowsing Security',
+    category: 'security',
+    categoryLabel: 'Security & Anti-Malware',
+    dohUrl: 'https://doh.cleanbrowsing.org/doh/security-filter/',
+    ip: '185.228.168.9',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'security-filter-dns.cleanbrowsing.org',
+    description: 'Memblokir phishing, malware, dan domain berbahaya tanpa menyentuh situs umum.',
+  },
+  {
+    id: 'cleanbrowsing-adult',
+    name: 'CleanBrowsing Adult Filter',
+    category: 'family',
+    categoryLabel: 'Family & Konten Dewasa',
+    dohUrl: 'https://doh.cleanbrowsing.org/doh/adult-filter/',
+    ip: '185.228.168.10',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'adult-filter-dns.cleanbrowsing.org',
+    description: 'Filter ketat khusus memblokir domain dewasa/pornografi dan safe search paksa.',
+  },
+  {
+    id: 'mullvad-public',
+    name: 'Mullvad Public DNS',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://dns.mullvad.net/dns-query',
+    ip: '194.242.2.2',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.mullvad.net',
+    description: 'DNS publik ramah privasi tinggi dari penyedia VPN Swedia Mullvad.',
+  },
+  {
+    id: 'cisco-opendns',
+    name: 'Cisco OpenDNS Standard',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://doh.opendns.com/dns-query',
+    ip: '208.67.222.222',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.opendns.com',
+    description: 'Resolver tingkat enterprise oleh Cisco dengan uptime 100% dan latency rendah.',
+  },
+  {
+    id: 'ali-dns',
+    name: 'Ali DNS (Alibaba Cloud)',
+    category: 'unfiltered',
+    categoryLabel: 'Bypass Sensor & Unfiltered',
+    dohUrl: 'https://dns.alidns.com/dns-query',
+    ip: '223.5.5.5',
+    port: 853,
+    type: 'DOT',
+    tlsName: 'dns.alidns.com',
+    description: 'Infrastruktur Alibaba Cloud Anycast dengan rute peering optimal di kawasan Asia.',
+  },
 ];
+
+const ToggleSwitch: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label?: string;
+  size?: 'sm' | 'md';
+  activeColor?: string;
+}> = ({ checked, onChange, label, size = 'md', activeColor = 'bg-cyan-500' }) => {
+  const isSm = size === 'sm';
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      className="inline-flex items-center cursor-pointer select-none"
+    >
+      <div
+        className={`relative inline-flex items-center transition-colors rounded-full ${
+          isSm ? 'w-8 h-4.5' : 'w-11 h-6'
+        } ${checked ? `${activeColor} shadow-md shadow-cyan-500/30` : 'bg-gray-800 border border-gray-700'}`}
+      >
+        <span
+          className={`inline-block transition-transform transform bg-white rounded-full ${
+            isSm ? 'w-3.5 h-3.5' : 'w-4.5 h-4.5'
+          } ${
+            checked ? (isSm ? 'translate-x-3.5' : 'translate-x-5.5') : (isSm ? 'translate-x-0.5' : 'translate-x-0.5')
+          }`}
+        />
+      </div>
+      {label && <span className="ml-2 text-xs font-medium text-gray-300">{label}</span>}
+    </div>
+  );
+};
 
 interface DNSConfigViewProps {
   nodeId: string;
@@ -55,6 +340,9 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
   const [upstreamMode, setUpstreamMode] = useState<'table' | 'raw'>('table');
   const [rawText, setRawText] = useState('');
   const [testStatus, setTestStatus] = useState<Record<string, { status: 'testing' | 'ok' | 'fail'; latency?: number }>>({});
+  const [providerSearch, setProviderSearch] = useState('');
+  const [providerCategory, setProviderCategory] = useState<'all' | 'unfiltered' | 'security' | 'adblock' | 'family'>('all');
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   React.useEffect(() => {
     setLocalState(config);
@@ -141,11 +429,106 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
       id: `up-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       name: preset?.name || 'Custom Upstream',
       ip: preset?.ip || '1.1.1.1',
-      port: preset?.port || 53,
-      type: preset?.type || 'UDP',
+      port: preset?.port || 853,
+      type: preset?.type || 'DOT',
+      tls_name: preset?.tls_name || '',
+      doh_url: preset?.doh_url || '',
       enabled: preset?.enabled ?? true,
     };
-    setLocalState({ ...localState, upstreams: [...localState.upstreams, newUp] });
+    setLocalState({
+      ...localState,
+      upstreams: [...localState.upstreams, newUp],
+      resolution_mode: localState.resolution_mode === 'RECURSIVE' ? 'HYBRID' : localState.resolution_mode,
+    });
+  };
+
+  const isProviderActive = (preset: DoHProviderPreset) => {
+    return localState.upstreams.some(
+      (u) =>
+        u.enabled &&
+        (u.ip === preset.ip || (preset.tlsName && u.tls_name === preset.tlsName)) &&
+        (u.port === preset.port || (!u.port && preset.port === 853))
+    );
+  };
+
+  const toggleProvider = (preset: DoHProviderPreset) => {
+    const existingIdx = localState.upstreams.findIndex(
+      (u) =>
+        (u.ip === preset.ip || (preset.tlsName && u.tls_name === preset.tlsName)) &&
+        (u.port === preset.port || (!u.port && preset.port === 853))
+    );
+
+    let newUpstreams = [...localState.upstreams];
+    if (existingIdx >= 0) {
+      const current = newUpstreams[existingIdx];
+      newUpstreams[existingIdx] = {
+        ...current,
+        enabled: !current.enabled,
+        tls_name: preset.tlsName,
+        doh_url: preset.dohUrl,
+      };
+    } else {
+      newUpstreams.push({
+        id: `up-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: preset.name,
+        ip: preset.ip,
+        port: preset.port,
+        type: preset.type,
+        tls_name: preset.tlsName,
+        doh_url: preset.dohUrl,
+        enabled: true,
+      });
+    }
+
+    setLocalState({
+      ...localState,
+      upstreams: newUpstreams,
+      resolution_mode: localState.resolution_mode === 'RECURSIVE' ? 'HYBRID' : localState.resolution_mode,
+    });
+  };
+
+  const handleCopyUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(url);
+    setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
+  const handleToggleAllCategory = (cat: string, enable: boolean) => {
+    const targets = DOH_PROVIDERS_CATALOG.filter((p) => cat === 'all' || p.category === cat);
+    let newUpstreams = [...localState.upstreams];
+
+    targets.forEach((preset) => {
+      const existingIdx = newUpstreams.findIndex(
+        (u) =>
+          (u.ip === preset.ip || (preset.tlsName && u.tls_name === preset.tlsName)) &&
+          (u.port === preset.port || (!u.port && preset.port === 853))
+      );
+      if (existingIdx >= 0) {
+        newUpstreams[existingIdx] = {
+          ...newUpstreams[existingIdx],
+          enabled: enable,
+          tls_name: preset.tlsName,
+          doh_url: preset.dohUrl,
+        };
+      } else if (enable) {
+        newUpstreams.push({
+          id: `up-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: preset.name,
+          ip: preset.ip,
+          port: preset.port,
+          type: preset.type,
+          tls_name: preset.tlsName,
+          doh_url: preset.dohUrl,
+          enabled: true,
+        });
+      }
+    });
+
+    setLocalState({
+      ...localState,
+      upstreams: newUpstreams,
+      resolution_mode: enable && localState.resolution_mode === 'RECURSIVE' ? 'HYBRID' : localState.resolution_mode,
+    });
   };
 
   const removeUpstream = (index: number) => {
@@ -575,70 +958,207 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
             ))}
           </div>
 
-          {/* AdGuard Known DNS Providers Callout Banner */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-950/40 via-cyan-950/20 to-gray-900 border border-cyan-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
-                <Globe className="w-4 h-4 text-cyan-400" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                  Known DNS Providers Directory
-                  <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-cyan-900/60 text-cyan-300">
-                    AdGuard Knowledge Base
-                  </span>
+          {/* DoH / Encrypted DNS Providers Directory & Toggle Card */}
+          <div className="bg-gray-950/80 border border-gray-800 rounded-xl p-5 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-gray-800/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center shrink-0 shadow-inner">
+                  <Shield className="w-5 h-5 text-cyan-400" />
                 </div>
-                <p className="text-[11px] text-gray-400">
-                  Looking for trusted public resolvers, family protection, or privacy-oriented upstream providers?
-                </p>
+                <div>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    Katalog Upstream DoH / DoT (AdGuard Providers Directory)
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-900/60 text-cyan-300 border border-cyan-800">
+                      Enkripsi TLS Port 853
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Aktifkan upstream terenkripsi dengan toggle switch. Melewati (bypass) sensor transparent DNS port 53 ISP (Kominfo/Internet Positif).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://adguard-dns.io/kb/general/dns-providers/?clid=y5dJ5x&utm_campaign=dns_kb_providers&utm_medium=ui&utm_source=home"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-900/80 flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>AdGuard KB</span>
+                </a>
               </div>
             </div>
 
-            <a
-              href="https://adguard-dns.io/kb/general/dns-providers/?clid=y5dJ5x&utm_campaign=dns_kb_providers&utm_medium=ui&utm_source=home"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-800/60 flex items-center gap-1.5 shrink-0 transition-all hover:border-cyan-500"
-            >
-              <span>Explore Provider List</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
-
-          {/* Quick Preset Selector */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-xs font-medium text-gray-400">Quick-Add Popular Presets:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {KNOWN_UPSTREAMS_PRESETS.slice(0, 6).map((preset) => (
-                <button
-                  key={preset.name}
-                  onClick={() => addUpstream(preset)}
-                  className="px-2.5 py-1 rounded-md bg-gray-950 hover:bg-gray-800 border border-gray-800 text-[11px] font-mono text-gray-300 hover:text-cyan-400 transition-colors flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3 text-cyan-500" />
-                  {preset.name.split(' ')[0]} ({preset.ip})
-                </button>
-              ))}
-              <select
-                onChange={(e) => {
-                  const found = KNOWN_UPSTREAMS_PRESETS.find((p) => p.name === e.target.value);
-                  if (found) {
-                    addUpstream(found);
-                    e.target.value = '';
-                  }
-                }}
-                className="bg-gray-950 border border-gray-800 text-gray-400 text-xs rounded px-2 py-1 focus:border-cyan-500"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  More Presets...
-                </option>
-                {KNOWN_UPSTREAMS_PRESETS.slice(6).map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name} — {p.ip}
-                  </option>
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { id: 'all', label: `Semua (${DOH_PROVIDERS_CATALOG.length})` },
+                  { id: 'unfiltered', label: 'Bypass Sensor & Unfiltered' },
+                  { id: 'security', label: 'Security & Anti-Malware' },
+                  { id: 'adblock', label: 'AdBlock & Tracker' },
+                  { id: 'family', label: 'Family & Dewasa' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setProviderCategory(tab.id as any)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      providerCategory === tab.id
+                        ? 'bg-cyan-600 text-black font-bold shadow-md shadow-cyan-600/30'
+                        : 'bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-800'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
                 ))}
-              </select>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Cari provider, IP, DoH URL..."
+                  value={providerSearch}
+                  onChange={(e) => setProviderSearch(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-cyan-300 placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Quick Bulk Toggle Actions */}
+            <div className="flex items-center justify-between text-xs text-gray-400 pt-1">
+              <span>
+                Menampilkan{' '}
+                <strong className="text-white">
+                  {
+                    DOH_PROVIDERS_CATALOG.filter((p) => {
+                      const matchCat = providerCategory === 'all' || p.category === providerCategory;
+                      const matchQ =
+                        !providerSearch ||
+                        p.name.toLowerCase().includes(providerSearch.toLowerCase()) ||
+                        p.ip.includes(providerSearch) ||
+                        p.dohUrl.toLowerCase().includes(providerSearch.toLowerCase());
+                      return matchCat && matchQ;
+                    }).length
+                  }
+                </strong>{' '}
+                resolver DoH / DoT
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleToggleAllCategory(providerCategory, true)}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 hover:underline"
+                >
+                  Aktifkan Semua Terfilter
+                </button>
+                <span className="text-gray-600">•</span>
+                <button
+                  onClick={() => handleToggleAllCategory(providerCategory, false)}
+                  className="text-[11px] text-gray-400 hover:text-gray-300 hover:underline"
+                >
+                  Nonaktifkan Semua Terfilter
+                </button>
+              </div>
+            </div>
+
+            {/* Provider Grid Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {DOH_PROVIDERS_CATALOG.filter((p) => {
+                const matchCat = providerCategory === 'all' || p.category === providerCategory;
+                const matchQ =
+                  !providerSearch ||
+                  p.name.toLowerCase().includes(providerSearch.toLowerCase()) ||
+                  p.ip.includes(providerSearch) ||
+                  p.dohUrl.toLowerCase().includes(providerSearch.toLowerCase());
+                return matchCat && matchQ;
+              }).map((preset) => {
+                const active = isProviderActive(preset);
+                return (
+                  <div
+                    key={preset.id}
+                    onClick={() => toggleProvider(preset)}
+                    className={`p-3.5 rounded-xl border transition-all cursor-pointer select-none flex flex-col justify-between ${
+                      active
+                        ? 'bg-cyan-950/20 border-cyan-500/80 shadow-md shadow-cyan-950/30'
+                        : 'bg-gray-900/60 border-gray-800/80 hover:border-gray-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-white font-sans">{preset.name}</span>
+                            {preset.badge && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono">
+                                {preset.badge}
+                              </span>
+                            )}
+                          </div>
+                          <span
+                            className={`inline-block text-[10px] mt-1 px-2 py-0.5 rounded-full font-medium ${
+                              preset.category === 'unfiltered'
+                                ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                : preset.category === 'security'
+                                ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                : preset.category === 'adblock'
+                                ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                                : 'bg-rose-950 text-rose-300 border border-rose-800'
+                            }`}
+                          >
+                            {preset.categoryLabel}
+                          </span>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div className="shrink-0 pt-0.5">
+                          <ToggleSwitch checked={active} onChange={() => toggleProvider(preset)} size="md" />
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-gray-400 mt-2.5 line-clamp-2 leading-relaxed">
+                        {preset.description}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-gray-800/80 space-y-1.5 text-[11px] font-mono">
+                      {/* DoH URL with copy button */}
+                      <div className="flex items-center justify-between text-gray-400 bg-gray-950/80 px-2 py-1 rounded border border-gray-800">
+                        <span className="truncate text-cyan-300" title={preset.dohUrl}>
+                          {preset.dohUrl}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyUrl(preset.dohUrl);
+                          }}
+                          className="ml-1 text-gray-500 hover:text-cyan-400 p-0.5"
+                          title="Salin DoH URL"
+                        >
+                          {copiedUrl === preset.dohUrl ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* DoT IP & SNI */}
+                      <div className="flex items-center justify-between text-[10px] text-gray-500">
+                        <span>
+                          IP: <strong className="text-gray-300">{preset.ip}</strong>:853
+                        </span>
+                        <span className="truncate text-gray-400" title={preset.tlsName}>
+                          SNI: {preset.tlsName}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -660,138 +1180,167 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
             </div>
           )}
 
-          {/* Content: Raw Mode vs Table Mode */}
-          {upstreamMode === 'raw' ? (
-            <div className="space-y-3 bg-gray-950 p-4 rounded-xl border border-gray-800">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-gray-300">
-                  Paste Upstream DNS Servers (1 IP address / hostname per line)
-                </label>
-                <span className="text-[11px] text-gray-500 font-mono">Format: 1.1.1.1 or 8.8.8.8:53</span>
-              </div>
-              <textarea
-                rows={6}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder={"1.1.1.1\n1.0.0.1\n8.8.8.8\n9.9.9.9\n94.140.14.14"}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none"
-              />
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] text-gray-400">
-                  You can copy addresses directly from the AdGuard Known Providers list and paste them here.
-                </p>
-                <button
-                  onClick={handleParseRawText}
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-bold rounded-lg shadow-md transition-colors"
-                >
-                  Import to Upstream List
-                </button>
-              </div>
+          {/* Active Upstream Resolvers Table & Editor */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                <Server className="w-3.5 h-3.5 text-cyan-400" />
+                Daftar Upstream Aktif ({localState.upstreams.filter((u) => u.enabled).length} Aktif dari {localState.upstreams.length})
+              </h3>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
-                  <tr>
-                    <th className="py-2.5 px-3">Enabled</th>
-                    <th className="py-2.5 px-3">Provider / Name</th>
-                    <th className="py-2.5 px-3">IP / Server Address</th>
-                    <th className="py-2.5 px-3">Port</th>
-                    <th className="py-2.5 px-3">Protocol</th>
-                    <th className="py-2.5 px-3">Latency Probe</th>
-                    <th className="py-2.5 px-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800/60">
-                  {localState.upstreams.map((up, idx) => {
-                    const test = testStatus[up.id];
-                    return (
-                      <tr key={up.id} className="hover:bg-gray-800/30">
-                        <td className="py-2.5 px-3">
-                          <input
-                            type="checkbox"
-                            checked={up.enabled}
-                            onChange={(e) => updateUpstream(idx, { enabled: e.target.checked })}
-                            className="rounded bg-gray-950 border-gray-700 text-cyan-500 cursor-pointer"
-                          />
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <input
-                            type="text"
-                            value={up.name}
-                            onChange={(e) => updateUpstream(idx, { name: e.target.value })}
-                            className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-48 font-sans"
-                            placeholder="Provider Name"
-                          />
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <input
-                            type="text"
-                            value={up.ip}
-                            onChange={(e) => updateUpstream(idx, { ip: e.target.value })}
-                            className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-cyan-300 text-xs w-40 font-mono"
-                            placeholder="1.1.1.1"
-                          />
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <input
-                            type="number"
-                            value={up.port}
-                            onChange={(e) => updateUpstream(idx, { port: parseInt(e.target.value, 10) || 53 })}
-                            className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-20 font-mono"
-                          />
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <select
-                            value={up.type}
-                            onChange={(e) => updateUpstream(idx, { type: e.target.value })}
-                            className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 font-mono"
-                          >
-                            <option value="UDP">UDP (Standard)</option>
-                            <option value="TCP">TCP</option>
-                            <option value="DOT">DoT (TLS)</option>
-                            <option value="DOH">DoH (HTTPS)</option>
-                          </select>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          {test?.status === 'testing' ? (
-                            <span className="text-[11px] text-cyan-400 flex items-center gap-1 font-sans">
-                              <RefreshCw className="w-3 h-3 animate-spin" /> Testing...
-                            </span>
-                          ) : test?.status === 'ok' ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono">
-                              ✔ {test.latency}ms
-                            </span>
-                          ) : test?.status === 'fail' ? (
-                            <span className="px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 text-[10px] font-mono">
-                              ✖ Timeout
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => testUpstream(up)}
-                              className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] font-sans border border-gray-700 transition-colors"
+
+            {upstreamMode === 'raw' ? (
+              <div className="space-y-3 bg-gray-950 p-4 rounded-xl border border-gray-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-gray-300">
+                    Paste Upstream DNS Servers (1 IP address / hostname per line)
+                  </label>
+                  <span className="text-[11px] text-gray-500 font-mono">Format: 1.1.1.1 or 8.8.8.8:53</span>
+                </div>
+                <textarea
+                  rows={6}
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                  placeholder={"1.1.1.1\n1.0.0.1\n8.8.8.8\n9.9.9.9\n94.140.14.14"}
+                  className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none"
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] text-gray-400">
+                    You can copy addresses directly from the AdGuard Known Providers list and paste them here.
+                  </p>
+                  <button
+                    onClick={handleParseRawText}
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-bold rounded-lg shadow-md transition-colors"
+                  >
+                    Import to Upstream List
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-800">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
+                    <tr>
+                      <th className="py-2.5 px-3">Status / Toggle</th>
+                      <th className="py-2.5 px-3">Provider / Name</th>
+                      <th className="py-2.5 px-3">IP Address</th>
+                      <th className="py-2.5 px-3">Port</th>
+                      <th className="py-2.5 px-3">Protocol</th>
+                      <th className="py-2.5 px-3">TLS SNI Name</th>
+                      <th className="py-2.5 px-3">Latency Probe</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/60 bg-gray-900/40">
+                    {localState.upstreams.map((up, idx) => {
+                      const test = testStatus[up.id];
+                      return (
+                        <tr key={up.id} className="hover:bg-gray-800/30 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <ToggleSwitch
+                                checked={up.enabled}
+                                onChange={(val) => updateUpstream(idx, { enabled: val })}
+                                size="sm"
+                              />
+                              <span
+                                className={`text-[10px] font-sans font-bold px-1.5 py-0.5 rounded ${
+                                  up.enabled
+                                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/80'
+                                    : 'bg-gray-800 text-gray-400'
+                                }`}
+                              >
+                                {up.enabled ? 'AKTIF' : 'OFF'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <input
+                              type="text"
+                              value={up.name}
+                              onChange={(e) => updateUpstream(idx, { name: e.target.value })}
+                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-44 font-sans focus:border-cyan-500"
+                              placeholder="Provider Name"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <input
+                              type="text"
+                              value={up.ip}
+                              onChange={(e) => updateUpstream(idx, { ip: e.target.value })}
+                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-cyan-300 text-xs w-36 font-mono focus:border-cyan-500"
+                              placeholder="1.1.1.1"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <input
+                              type="number"
+                              value={up.port}
+                              onChange={(e) => updateUpstream(idx, { port: parseInt(e.target.value, 10) || 53 })}
+                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-16 font-mono focus:border-cyan-500"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <select
+                              value={up.type}
+                              onChange={(e) => updateUpstream(idx, { type: e.target.value })}
+                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 font-mono focus:border-cyan-500"
                             >
-                              Test Ping
+                              <option value="DOT">DoT (TLS)</option>
+                              <option value="DOH">DoH (HTTPS)</option>
+                              <option value="UDP">UDP (Standard)</option>
+                              <option value="TCP">TCP</option>
+                            </select>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <input
+                              type="text"
+                              value={up.tls_name || ''}
+                              onChange={(e) => updateUpstream(idx, { tls_name: e.target.value })}
+                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-gray-300 text-xs w-44 font-mono focus:border-cyan-500"
+                              placeholder="e.g. cloudflare-dns.com"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {test?.status === 'testing' ? (
+                              <span className="text-[11px] text-cyan-400 flex items-center gap-1 font-sans">
+                                <RefreshCw className="w-3 h-3 animate-spin" /> Testing...
+                              </span>
+                            ) : test?.status === 'ok' ? (
+                              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono">
+                                ✔ {test.latency}ms
+                              </span>
+                            ) : test?.status === 'fail' ? (
+                              <span className="px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 text-[10px] font-mono">
+                                ✖ Timeout
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => testUpstream(up)}
+                                className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] font-sans border border-gray-700 transition-colors"
+                              >
+                                Test Ping
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <button
+                              onClick={() => removeUpstream(idx)}
+                              disabled={localState.upstreams.length <= 1}
+                              className="p-1 text-gray-500 hover:text-red-400 disabled:opacity-30 transition-colors"
+                              title="Hapus Upstream"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <button
-                            onClick={() => removeUpstream(idx)}
-                            disabled={localState.upstreams.length <= 1}
-                            className="p-1 text-gray-500 hover:text-red-400 disabled:opacity-30 transition-colors"
-                            title="Delete Upstream"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

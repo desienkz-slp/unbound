@@ -143,6 +143,20 @@ type SafeSearchConfig struct {
 	YouTubeRestrict    string `json:"youtube_restrict"`     // restrict.youtube.com
 }
 
+// ParentalControlConfig controls adult and 18+ content blocking at DNS level.
+type ParentalControlConfig struct {
+	Enabled       bool   `json:"enabled"`
+	RedirectIP    string `json:"redirect_ip,omitempty"` // e.g. "172.18.20.234" or empty for NXDOMAIN sinkholing
+	BlockAdult    bool   `json:"block_adult"`
+	BlockGambling bool   `json:"block_gambling"`
+}
+
+// GamblingBlockConfig controls online gambling (judi online / slot / betting) blocking at DNS level.
+type GamblingBlockConfig struct {
+	Enabled    bool   `json:"enabled"`
+	RedirectIP string `json:"redirect_ip,omitempty"` // e.g. "172.18.20.234" or empty for NXDOMAIN sinkholing
+}
+
 // LocalRecord defines custom local DNS authoritative answers.
 type LocalRecord struct {
 	Domain string `json:"domain"`
@@ -172,20 +186,22 @@ type NodeMetadata struct {
 
 // DesiredState is the comprehensive desired configuration for a DNS node.
 type DesiredState struct {
-	VersionID        string              `json:"version_id"`
-	NodeID           string              `json:"node_id"`
-	ResolutionMode   ResolutionMode      `json:"resolution_mode"`
-	Listeners        []Listener          `json:"listeners"`
-	ClientNetworks   []ClientNetwork     `json:"client_networks"`
-	Upstreams        []UpstreamServer    `json:"upstreams"`
-	Cache            CacheConfig         `json:"cache"`
-	Performance      PerformanceConfig   `json:"performance"`
-	DNSSEC           DNSSECConfig        `json:"dnssec"`
-	Features         FeatureConfig       `json:"features"`
-	SafeSearch       SafeSearchConfig    `json:"safe_search"`
-	LocalRecords     []LocalRecord       `json:"local_records"`
-	RemoteControl    RemoteControlConfig `json:"remote_control"`
-	IncludeFiles     []string            `json:"include_files,omitempty"`
+	VersionID        string                `json:"version_id"`
+	NodeID           string                `json:"node_id"`
+	ResolutionMode   ResolutionMode        `json:"resolution_mode"`
+	Listeners        []Listener            `json:"listeners"`
+	ClientNetworks   []ClientNetwork       `json:"client_networks"`
+	Upstreams        []UpstreamServer      `json:"upstreams"`
+	Cache            CacheConfig           `json:"cache"`
+	Performance      PerformanceConfig     `json:"performance"`
+	DNSSEC           DNSSECConfig          `json:"dnssec"`
+	Features         FeatureConfig         `json:"features"`
+	SafeSearch       SafeSearchConfig      `json:"safe_search"`
+	ParentalControl  ParentalControlConfig `json:"parental_control"`
+	GamblingBlock    GamblingBlockConfig   `json:"gambling_block"`
+	LocalRecords     []LocalRecord         `json:"local_records"`
+	RemoteControl    RemoteControlConfig   `json:"remote_control"`
+	IncludeFiles     []string              `json:"include_files,omitempty"`
 }
 
 // NewDefaultDesiredState returns a safe, production-grade baseline desired state.
@@ -297,6 +313,15 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			BingRedirectIPv4:   "204.79.197.220",
 			DuckDuckGoVIP:      "safe.duckduckgo.com",
 			YouTubeRestrict:    "restrict.youtube.com",
+		},
+		ParentalControl: ParentalControlConfig{
+			Enabled:       false,
+			BlockAdult:    true,
+			BlockGambling: false,
+		},
+		GamblingBlock: GamblingBlockConfig{
+			Enabled:    false,
+			RedirectIP: "",
 		},
 		LocalRecords: []LocalRecord{},
 		RemoteControl: RemoteControlConfig{

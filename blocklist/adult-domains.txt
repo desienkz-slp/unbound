@@ -1,1 +1,79 @@
+# ==============================================================================
+# Netora DNS — Daftar Domain 18+ & Konten Dewasa (Adult Content Blocklist)
+# Repository: https://github.com/desienkz-slp/unbound/blob/main/blocklist/adult-domains.txt
+#
+# Format: Satu nama domain per baris (tanpa http:// atau www.)
+# Baris yang diawali dengan tanda pagar (#) adalah komentar dan akan diabaikan.
+# ==============================================================================
+
+# Top International Adult Domains
 pornhub.com
+xhamster.com
+xnxx.com
+xvideos.com
+redtube.com
+youporn.com
+chaturbate.com
+onlyfans.com
+stripchat.com
+livejasmin.com
+cam4.com
+beeg.com
+spankbang.com
+tubegalore.com
+eporner.com
+tnaflix.com
+tube8.com
+brazzers.com
+drtuber.com
+adultfriendfinder.com
+bongacams.com
+camsoda.com
+flirt4free.com
+myfreecams.com
+camversity.com
+erome.com
+fapello.com
+faphouse.com
+hclips.com
+heavy-r.com
+hqporner.com
+imagefap.com
+motherless.com
+nuvid.com
+porn.com
+pornmd.com
+porn00.org
+porn300.com
+porn555.com
+pornhat.com
+pornhat.one
+pornktube.com
+pornone.com
+pornktube.tv
+porntrex.com
+rule34.xxx
+rule34video.com
+slutload.com
+submityourflicks.com
+sunporno.com
+thumbzilla.com
+upornia.com
+vporn.com
+watchmygf.me
+xcafe.com
+xgluz.com
+xhamsterlive.com
+xhamster.desi
+xmovies.fyi
+xozilla.com
+xtapes.to
+xuk.com
+xxxbunker.com
+xxxclub.to
+xxxfun.com
+xxxmoviestube.mobi
+xxvideoss.org
+yaoi-chan.me
+youjizz.com
+zenra.net

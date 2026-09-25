@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -104,7 +105,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Policies & Filtering
 	mux.HandleFunc("/api/v1/policies", s.requireAuth(s.handlePolicies))
 	mux.HandleFunc("/api/v1/filters", s.requireAuth(s.handleFilters))
-	mux.HandleFunc("/api/v1/filters/", s.requireAuth(s.handleFilterDelete))
+	mux.HandleFunc("/api/v1/filters/", s.requireAuth(s.handleFilterSubroutes))
+	mux.HandleFunc("/api/v1/blocklists/sync", s.requireAuth(s.handleSyncBlocklistsFromGitHub))
 	mux.HandleFunc("/api/v1/allowlist", s.requireAuth(s.handleAllowlist))
 	mux.HandleFunc("/api/v1/allowlist/", s.requireAuth(s.handleAllowlistDelete))
 
@@ -341,8 +343,10 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 
 		claims := r.Context().Value("user_claims").(*auth.Claims)
+		log.Printf("[apply] Node %s: starting apply for version %s (actor: %s)\n", nodeID, state.VersionID, claims.Username)
 		res, err := s.engine.Apply(r.Context(), &state, claims.Username, "REST API Apply")
 		if err != nil {
+			log.Printf("[apply] Node %s: apply failed: %v\n", nodeID, err)
 			_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
 				Actor:    claims.Username,
 				Action:   "CONFIG_APPLY",
@@ -355,6 +359,7 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		log.Printf("[apply] Node %s: apply succeeded! Version %s active in %dms\n", nodeID, res.VersionID, res.DurationMs)
 		_ = s.store.SaveDesiredState(r.Context(), &state)
 		_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
 			Actor:    claims.Username,
@@ -454,6 +459,48 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		if filters == nil {
+			filters = []storage.FilterRecord{}
+		}
+		// If DB is empty, auto-seed the 3 standard feeds
+		if len(filters) == 0 {
+			defaults := []storage.FilterRecord{
+				{
+					ID:        "feed-hagezi",
+					Name:      "Hagezi Multi-PRO Threat Feed",
+					Category:  "MALWARE_ADS",
+					SourceURL: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+					LocalPath: "/var/lib/netora/filters/hagezi-pro.txt",
+					RuleCount: 142300,
+					Enabled:   true,
+					CreatedAt: time.Now().UTC(),
+				},
+				{
+					ID:        "feed-adguard",
+					Name:      "AdGuard Base DNS Filter",
+					Category:  "ADS_TRACKING",
+					SourceURL: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+					LocalPath: "/var/lib/netora/filters/adguard.txt",
+					RuleCount: 48900,
+					Enabled:   true,
+					CreatedAt: time.Now().UTC(),
+				},
+				{
+					ID:        "feed-stevenblack",
+					Name:      "StevenBlack Unified Hosts File",
+					Category:  "HOSTS_BLOCK",
+					SourceURL: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+					LocalPath: "/etc/unbound/blocklists/stevenblack.hosts",
+					RuleCount: 73200,
+					Enabled:   true,
+					CreatedAt: time.Now().UTC(),
+				},
+			}
+			for i := range defaults {
+				_ = s.store.UpsertFilter(r.Context(), &defaults[i])
+			}
+			filters = defaults
+		}
 		s.writeJSON(w, http.StatusOK, filters)
 		return
 	}
@@ -463,6 +510,7 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 			Category  string `json:"category"`
 			SourceURL string `json:"source_url"`
 			LocalPath string `json:"local_path"`
+			Enabled   *bool  `json:"enabled"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -473,6 +521,10 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		id := fmt.Sprintf("filter-%d", time.Now().UnixNano())
+		enabled := true
+		if req.Enabled != nil {
+			enabled = *req.Enabled
+		}
 		f := &storage.FilterRecord{
 			ID:        id,
 			Name:      req.Name,
@@ -480,7 +532,7 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 			SourceURL: req.SourceURL,
 			LocalPath: req.LocalPath,
 			RuleCount: 0,
-			Enabled:   true,
+			Enabled:   enabled,
 			CreatedAt: time.Now().UTC(),
 		}
 		if err := s.store.UpsertFilter(r.Context(), f); err != nil {
@@ -493,22 +545,166 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 }
 
-// Handler: Filter Delete
-func (s *Server) handleFilterDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/filters/")
+// Handler: Filter Subroutes (/api/v1/filters/{id})
+func (s *Server) handleFilterSubroutes(w http.ResponseWriter, r *http.Request) {
+	subPath := strings.TrimPrefix(r.URL.Path, "/api/v1/filters/")
+	parts := strings.Split(subPath, "/")
+	id := parts[0]
 	if id == "" {
 		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
 		return
 	}
-	if err := s.store.DeleteFilter(r.Context(), id); err != nil {
-		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+
+	if r.Method == http.MethodDelete {
+		if err := s.store.DeleteFilter(r.Context(), id); err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]string{"status": "DELETED", "id": id})
 		return
 	}
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "DELETED", "id": id})
+
+	if r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodPost {
+		filters, err := s.store.ListFilters(r.Context())
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		var target *storage.FilterRecord
+		for _, f := range filters {
+			if f.ID == id {
+				cp := f
+				target = &cp
+				break
+			}
+		}
+
+		var req struct {
+			Enabled   *bool   `json:"enabled"`
+			Name      *string `json:"name"`
+			Category  *string `json:"category"`
+			SourceURL *string `json:"source_url"`
+			LocalPath *string `json:"local_path"`
+			RuleCount *int    `json:"rule_count"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		if target == nil {
+			target = &storage.FilterRecord{
+				ID:        id,
+				Name:      id,
+				Category:  "BLOCKLIST",
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			}
+		}
+
+		if req.Enabled != nil {
+			target.Enabled = *req.Enabled
+		} else if len(parts) > 1 && parts[1] == "toggle" {
+			target.Enabled = !target.Enabled
+		}
+
+		if req.Name != nil && *req.Name != "" {
+			target.Name = *req.Name
+		}
+		if req.Category != nil && *req.Category != "" {
+			target.Category = *req.Category
+		}
+		if req.SourceURL != nil {
+			target.SourceURL = *req.SourceURL
+		}
+		if req.LocalPath != nil {
+			target.LocalPath = *req.LocalPath
+		}
+		if req.RuleCount != nil {
+			target.RuleCount = *req.RuleCount
+		}
+
+		now := time.Now().UTC()
+		target.LastUpdatedAt = &now
+
+		if err := s.store.UpsertFilter(r.Context(), target); err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		s.writeJSON(w, http.StatusOK, target)
+		return
+	}
+
+	s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+}
+
+// Handler: Sync Blocklists from GitHub (/api/v1/blocklists/sync)
+func (s *Server) handleSyncBlocklistsFromGitHub(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	blocklistDir := "/etc/unbound/blocklist"
+	_ = os.MkdirAll(blocklistDir, 0755)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	adultURL := "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/adult-domains.txt"
+	gamblingURL := "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/gambling-domains.txt"
+
+	// 1. Fetch Adult Domains
+	adultCount := 0
+	respA, errA := client.Get(adultURL)
+	if errA == nil && respA.StatusCode == http.StatusOK {
+		dataA, _ := io.ReadAll(respA.Body)
+		_ = respA.Body.Close()
+		if len(dataA) > 0 {
+			_ = os.WriteFile(filepath.Join(blocklistDir, "adult-domains.txt"), dataA, 0644)
+			for _, line := range strings.Split(string(dataA), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					adultCount++
+				}
+			}
+		}
+	}
+
+	// 2. Fetch Gambling Domains
+	gamblingCount := 0
+	respG, errG := client.Get(gamblingURL)
+	if errG == nil && respG.StatusCode == http.StatusOK {
+		dataG, _ := io.ReadAll(respG.Body)
+		_ = respG.Body.Close()
+		if len(dataG) > 0 {
+			_ = os.WriteFile(filepath.Join(blocklistDir, "gambling-domains.txt"), dataG, 0644)
+			for _, line := range strings.Split(string(dataG), "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					gamblingCount++
+				}
+			}
+		}
+	}
+
+	// 3. Trigger Unbound Atomic Apply
+	cfg, err := s.store.GetDesiredState(r.Context(), s.nodeID)
+	if err == nil && cfg != nil {
+		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
+		actor := "GitHub Sync"
+		if claims != nil {
+			actor = claims.Username
+		}
+		cfg.VersionID = fmt.Sprintf("v-gh-sync-%d", time.Now().Unix())
+		_, _ = s.engine.Apply(r.Context(), cfg, actor, "Blocklists synced from GitHub")
+		_ = s.store.SaveDesiredState(r.Context(), cfg)
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":                true,
+		"adult_domains_count":    adultCount,
+		"gambling_domains_count": gamblingCount,
+		"message":                fmt.Sprintf("Successfully synced %d adult and %d gambling domains from GitHub", adultCount, gamblingCount),
+	})
 }
 
 // Handler: Allowlist

@@ -30,16 +30,22 @@ safe_download \
   "${BLOCKLIST_DIR}/block-malware.txt" \
   "Blocklist Malware (Hagezi)"
 
-# === 3. Blocklist Domain Dewasa ===
+# === 3. Blocklist Domain Dewasa (18+) ===
 safe_download \
-  "https://raw.githubusercontent.com/alexsannikov/adguardhome-filters/refs/heads/master/porn.txt" \
+  "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/adult-domains.txt" \
   "${BLOCKLIST_DIR}/adult-domains.txt" \
-  "Blocklist Domain Dewasa"
+  "Blocklist Domain Dewasa (GitHub)"
 
-# === 4. Custom Blocklist ===
+# === 4. Blocklist Judi Online & Taruhan ===
+safe_download \
+  "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/gambling-domains.txt" \
+  "${BLOCKLIST_DIR}/gambling-domains.txt" \
+  "Blocklist Judi Online (GitHub)"
+
+# === 5. Custom Blocklist ===
 safe_download \
   "https://raw.githubusercontent.com/desienkz-slp/DNS/refs/heads/main/block_mine.txt" \
   "${BLOCKLIST_DIR}/block-mine.txt" \
   "Custom Blocklist"
 
-log_success "Semua blocklist diperbarui!"
+log_success "Semua blocklist diperbarui dari GitHub!"

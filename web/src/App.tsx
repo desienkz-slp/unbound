@@ -114,7 +114,11 @@ export function App() {
           )}
 
           {currentTab === 'filtering' && (
-            <FilteringView config={config} nodeId={selectedNodeId} />
+            <FilteringView
+              config={config}
+              nodeId={selectedNodeId}
+              onConfigUpdated={(newCfg) => setConfig(newCfg)}
+            />
           )}
 
           {currentTab === 'performance' && (

@@ -95,6 +95,9 @@ server:
 {{- else }}
   module-config: "iterator"
 {{- end }}
+{{- if .HasTLSUpstream }}
+  tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"
+{{- end }}
 
   # --- 10. Auxiliary Configuration Directives ---
   include: "{{ .ConfigDir }}/conf.d/*.conf"
@@ -110,15 +113,21 @@ remote-control:
 {{- if eq .ResolutionMode "FORWARDING" }}
 forward-zone:
   name: "."
+{{- if .HasTLSUpstream }}
+  forward-tls-upstream: yes
+{{- end }}
 {{- range .ActiveUpstreams }}
-  forward-addr: {{ .IP }}{{ if ne .Port 53 }}@{{ .Port }}{{ end }}
+  forward-addr: {{ .IP }}{{ if ne .Port 53 }}@{{ .Port }}{{ end }}{{ if .TLSName }}#{{ .TLSName }}{{ end }}
 {{- end }}
 {{- else if eq .ResolutionMode "HYBRID" }}
 forward-zone:
   name: "."
   forward-first: yes
+{{- if .HasTLSUpstream }}
+  forward-tls-upstream: yes
+{{- end }}
 {{- range .ActiveUpstreams }}
-  forward-addr: {{ .IP }}{{ if ne .Port 53 }}@{{ .Port }}{{ end }}
+  forward-addr: {{ .IP }}{{ if ne .Port 53 }}@{{ .Port }}{{ end }}{{ if .TLSName }}#{{ .TLSName }}{{ end }}
 {{- end }}
 {{- end }}
 `
@@ -171,3 +180,46 @@ server:
   local-data: "strict.bing.com. A {{ .SafeSearch.BingRedirectIPv4 }}"
 {{- end }}
 `
+
+// ParentalControlTemplate renders parental control adult domain blocking rules.
+const ParentalControlTemplate = `# ==============================================================================
+# Netora DNS — Parental Control & Adult Content Filter
+# Generated: {{ .GeneratedAt }}
+# ==============================================================================
+
+server:
+{{- if .ParentalControl.Enabled }}
+{{- range .AdultBlockedDomains }}
+{{- if $.ParentalControl.RedirectIP }}
+  local-data: "{{ . }} A {{ $.ParentalControl.RedirectIP }}"
+  local-data: "www.{{ . }} A {{ $.ParentalControl.RedirectIP }}"
+{{- else }}
+  local-zone: "{{ . }}." static
+{{- end }}
+{{- end }}
+{{- else }}
+  # Parental Control is DISABLED (Adult websites allowed)
+{{- end }}
+`
+
+// GamblingFilterTemplate renders online gambling (judi online) domain blocking rules.
+const GamblingFilterTemplate = `# ==============================================================================
+# Netora DNS — Judi Online & Gambling Content Filter
+# Generated: {{ .GeneratedAt }}
+# ==============================================================================
+
+server:
+{{- if .IsGamblingBlockActive }}
+{{- range .GamblingBlockedDomains }}
+{{- if $.GamblingRedirectIP }}
+  local-data: "{{ . }} A {{ $.GamblingRedirectIP }}"
+  local-data: "www.{{ . }} A {{ $.GamblingRedirectIP }}"
+{{- else }}
+  local-zone: "{{ . }}." static
+{{- end }}
+{{- end }}
+{{- else }}
+  # Judi Online / Gambling Filter is DISABLED (Gambling websites allowed)
+{{- end }}
+`
+

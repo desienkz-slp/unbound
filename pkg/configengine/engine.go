@@ -203,12 +203,27 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 			}
 		}
 
-		health := e.healthChecker.CheckResolution(ctx, targetIP, targetPort, "udp", "google.com")
-		if !health.Healthy {
+		// Probe loopback or first enabled listener with retries
+		var health *HealthResult
+		for attempt := 1; attempt <= 4; attempt++ {
+			if attempt > 1 {
+				time.Sleep(500 * time.Millisecond)
+			}
+			health = e.healthChecker.CheckResolution(ctx, targetIP, targetPort, "udp", "google.com")
+			if health != nil && health.Healthy {
+				break
+			}
+		}
+
+		if health == nil || !health.Healthy {
 			// HEALTH CHECK FAILED -> AUTOMATIC ROLLBACK
+			errMsg := "unknown health check failure"
+			if health != nil {
+				errMsg = health.ErrorMessage
+			}
 			result.HealthCheckSuccess = false
-			result.HealthOutput = health.ErrorMessage
-			result.ErrorMessage = fmt.Sprintf("health check failed after apply: %s", health.ErrorMessage)
+			result.HealthOutput = errMsg
+			result.ErrorMessage = fmt.Sprintf("health check failed after apply: %s", errMsg)
 
 			rollbackErr := e.executeRollback(ctx, backupDir, currentActiveVersion)
 			result.RolledBack = true
@@ -217,7 +232,7 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 			}
 			result.CompletedAt = time.Now().UTC()
 			result.DurationMs = time.Since(result.StartedAt).Milliseconds()
-			return result, fmt.Errorf("health check failed after apply (rolled back): %s (rollback error: %v)", health.ErrorMessage, rollbackErr)
+			return result, fmt.Errorf("health check failed after apply (rolled back): %s (rollback error: %v)", errMsg, rollbackErr)
 		}
 		result.HealthOutput = fmt.Sprintf("healthy, latency=%v", health.Latency)
 	}

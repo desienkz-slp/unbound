@@ -151,6 +151,26 @@ class ApiClient {
     });
   }
 
+  async toggleFilter(id: string, enabled: boolean): Promise<FilterRecord> {
+    return this.request<FilterRecord>(`/filters/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  async updateFilter(id: string, patch: Partial<FilterRecord>): Promise<FilterRecord> {
+    return this.request<FilterRecord>(`/filters/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    });
+  }
+
+  async syncBlocklistsFromGitHub(): Promise<{ success: boolean; adult_domains_count: number; gambling_domains_count: number; message: string }> {
+    return this.request('/blocklists/sync', {
+      method: 'POST',
+    });
+  }
+
   // Allowlist
   async getAllowlist(): Promise<AllowlistRecord[]> {
     return this.request<AllowlistRecord[]>('/allowlist');

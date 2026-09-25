@@ -29,6 +29,9 @@ export interface UpstreamServer {
   ip: string;
   port: number;
   type: string;
+  tls_name?: string;
+  insecure_tls?: boolean;
+  doh_url?: string;
   enabled: boolean;
 }
 
@@ -80,6 +83,16 @@ export interface DesiredState {
     enabled: boolean;
     google_redirect_ipv4: string;
     bing_redirect_ipv4: string;
+  };
+  parental_control?: {
+    enabled: boolean;
+    redirect_ip?: string;
+    block_adult: boolean;
+    block_gambling: boolean;
+  };
+  gambling_block?: {
+    enabled: boolean;
+    redirect_ip?: string;
   };
   local_records: Array<{
     domain: string;

@@ -178,8 +178,11 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 	}
 	defer tx.Rollback()
 
-	// 0. Update resolution_mode on node if set
-	if state.ResolutionMode != "" {
+	// 0. Update resolution_mode and config_json on node
+	cfgBytes, err := json.Marshal(state)
+	if err == nil {
+		_, _ = tx.ExecContext(ctx, `UPDATE nodes SET resolution_mode = $1, config_json = $2, updated_at = NOW() WHERE id = $3`, string(state.ResolutionMode), cfgBytes, state.NodeID)
+	} else if state.ResolutionMode != "" {
 		_, _ = tx.ExecContext(ctx, `UPDATE nodes SET resolution_mode = $1, updated_at = NOW() WHERE id = $2`, string(state.ResolutionMode), state.NodeID)
 	}
 
@@ -285,10 +288,19 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 
 	state := model.NewDefaultDesiredState(nodeID, node.CPUCores, node.RAMMB)
 
-	// Fetch resolution_mode if stored on node
+	// Fetch resolution_mode and config_json if stored on node
 	var resMode sql.NullString
-	if err := p.db.QueryRowContext(ctx, `SELECT resolution_mode FROM nodes WHERE id = $1`, nodeID).Scan(&resMode); err == nil && resMode.Valid && resMode.String != "" {
-		state.ResolutionMode = model.ResolutionMode(resMode.String)
+	var cfgJSON []byte
+	if err := p.db.QueryRowContext(ctx, `SELECT resolution_mode, config_json FROM nodes WHERE id = $1`, nodeID).Scan(&resMode, &cfgJSON); err == nil {
+		if resMode.Valid && resMode.String != "" {
+			state.ResolutionMode = model.ResolutionMode(resMode.String)
+		}
+		if len(cfgJSON) > 0 {
+			var savedState model.DesiredState
+			if err := json.Unmarshal(cfgJSON, &savedState); err == nil {
+				state = &savedState
+			}
+		}
 	}
 
 	// Fetch Listeners
