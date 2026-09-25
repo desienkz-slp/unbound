@@ -1,180 +1,189 @@
-# Walkthrough: Solusi SafeSearch, Toggle Parental Control (18+) & Toggle Judi Online Netora DNS
+# Walkthrough: Sistem List Terpadu untuk Seluruh Filter & Auto-Update Otonom (Netora DNS)
 
-Dokumen ini mendokumentasikan investigasi teknis, perbaikan arsitektur DNS Unbound untuk mengatasi sensor ISP, implementasi **Katalog Upstream DoH / DoT dengan Switch Toggle ON/OFF**, implementasi **Sistem Toggle ON/OFF pada DNS Policy Filtering & Hosts Files**, penambahan **Toggle ON/OFF Parental Control (18+ Dewasa)**, serta penambahan **Dedicated Toggle ON/OFF Judi Online (Gambling Block)** yang masing-masing bekerja secara independen dan modular.
+Dokumen ini mendokumentasikan implementasi arsitektur **Sistem List Terpadu untuk Seluruh Filter**, integrasi sumber multi-tier (**Private Repository & Upstream Mirrors**), mesin **Auto-Update Otonom (Scheduler & Cron)**, serta pembaruan antarmuka **Netora Web UI** pada DNS Server Netora (`172.18.20.145`).
 
 ---
 
-## 1. Ringkasan Masalah & Bukti Investigasi Nyata
+## 1. Ringkasan Eksekutif
 
-Sebelumnya, pengguna melaporkan error saat mengakses domain dewasa secara langsung melalui DNS server `172.18.20.145`:
+Sesuai permintaan Anda untuk:
+1. **Menjadikan sistem list untuk seluruh kategori filter** (baik di repository privat Anda maupun sumber redundan lainnya).
+2. **Memastikan sistem melakukan auto-update secara berkala dan otomatis**.
+3. **Menjaga privasi penuh** (URL dan kredensial repository privat tidak pernah terekspos ke publik atau UI).
 
-```cmd
-C:\Users\desie>nslookup xhamster.com
-Server:  UnKnown
-Address:  172.18.20.145
+Sistem kini telah ditingkatkan dengan modul `pkg/blocklist` mandiri berkinerja tinggi, scheduler background otomatis tiap 12 jam, redundansi cron OS-level, dan antarmuka pemantauan status sinkronisasi real-time pada Web UI.
 
-*** UnKnown can't find xhamster.com: Server failed
+---
+
+## 2. Struktur Sistem List 6 Kategori Terpadu
+
+Seluruh filter distandardisasi ke dalam format file baris domain bersih (`blocklist/*.txt`) di dalam repository dan disk server:
+
+| Kategori Filter | File List di Repo / Server | ID Feed Internal | Target Proteksi / Fungsi | Fallback Mirror Upstream |
+| :--- | :--- | :--- | :--- | :--- |
+| **18+ Dewasa** | `blocklist/adult-domains.txt` | `feed-adult` | Pornografi, konten dewasa, cam sites | StevenBlack Porn / OISD NSFP |
+| **Judi Online** | `blocklist/gambling-domains.txt` | `feed-gambling` | Judi online, slot gacor, taruhan daring | StevenBlack Gambling / HaGeZi Gambling |
+| **Iklan & Tracker** | `blocklist/ads.txt` | `feed-ads` | Banner iklan agresif, tracking, pop-ups | AdGuard DNS Filter / HaGeZi Multi-PRO |
+| **Malware & Phishing** | `blocklist/malware.txt` | `feed-malware` | Phishing, C2 Botnet, situs ransomware | URLhaus / HaGeZi Threat Intelligence |
+| **Custom ISP Blacklist** | `blocklist/custom.txt` | `feed-custom` | Domain ad-hoc khusus ISP / manual | Daftar internal ISP |
+| **Whitelist Pengecualian** | `blocklist/whitelist.txt` | `feed-whitelist` | Pengecualian global (anti false-positive) | Pengecualian domain esensial |
+
+> **Catatan Whitelist:** Setiap domain yang dimasukkan ke dalam `blocklist/whitelist.txt` otomatis **dieliminasi dari seluruh daftar pemblokiran**, menjamin domain vital pelanggan (seperti portal perbankan, CDN penting, atau aplikasi pemerintah) tidak akan pernah terblokir tanpa sengaja.
+
+---
+
+## 3. Arsitektur Multi-Tier Resolution & Sanitasi Domain
+
+Modul `pkg/blocklist/manager.go` dirancang dengan arsitektur multi-tingkat yang sangat tangguh:
+
+```
+[Trigger Update] (Scheduler 12 Jam / Cron / Web UI / Boot)
+        │
+        ▼
+[Tier 1: Private Repo / Local Disk] ──── Berhasil? ───► [Sanitasi & Parsing]
+        │ (Gagal / Tidak Ada)                                   │
+        ▼                                                       │
+[Tier 2: Upstream Mirrors Terpercaya] ── Berhasil? ───►         │
+        │ (Offline / Timeout)                                   │
+        ▼                                                       │
+[Tier 3: Internal Seed Fallback] ─────────────────────►         │
+                                                                ▼
+                                                [Global Whitelist Subtraction]
+                                                                │
+                                                                ▼
+                                                [Compile /etc/unbound/conf.d/*.conf]
+                                                                │
+                                                                ▼
+                                                [unbound-checkconf Verification]
+                                                                │
+                                                                ▼
+                                                [Atomic Zero-Downtime Reload]
 ```
 
-### Fakta Hasil Investigasi Server (`172.18.20.145`):
-1. **Unbound TIDAK Memblokir Domain Dewasa:**
-   - Di `/etc/unbound/conf.d/`, **TIDAK ADA** file filter domain dewasa (`adult-redirect.conf` dinonaktifkan).
-   - Hanya rule SafeSearch (`safesearch.conf`) yang aktif untuk membelokkan mesin pencari (Google, Bing) ke VIP SafeSearch.
-2. **Akar Masalah Nyata: DPI / Pembajakan DNS Port 53 oleh ISP (Kominfo/Internet Positif):**
-   - Sebelumnya, Unbound dikonfigurasikan meneruskan query ke upstream via port biasa **UDP 53** (`1.1.1.2`, `9.9.9.9`, dll.).
-   - Jalur internet keluar server `172.18.20.145` mengalami **Transparent DNS Interception/Hijacking** oleh ISP.
-   - Uji `dig @1.1.1.1 xhamster.com` dijawab dalam waktu **0 ms** dengan IP `182.23.79.195` (Landing Page Kominfo/Trust Positif).
-3. **Mengapa Terjadi `Server failed` (DNS SERVFAIL)?**
-   - Unbound menjalankan validasi **DNSSEC aktif** (`module-config: "validator iterator"`).
-   - Jawaban palsu IP Kominfo tidak memiliki tanda tangan digital kriptografi yang sah (*DNSSEC spoofing*).
-   - Unbound secara cerdas mendeteksi paket tersebut sebagai **BOGUS / DNS Tampering** dan menolak menyerahkan IP palsu tersebut ke pengguna, lalu mengembalikan status **SERVFAIL (`Server failed`)**.
+### Keunggulan Engine Sanitasi (`CleanDomain`):
+- **Universal Format Parser:** Mampu memproses format mentah Adblock Plus (`||domain.com^`), format hosts (`0.0.0.0 domain.com` atau `127.0.0.1 domain.com`), maupun plain text satu domain per baris.
+- **Safety Filter:** Secara otomatis membuang baris komentar (`#`, `!`), baris kosong, port number (`:8080`), alamat IP dummy, dan domain loopback (`localhost`, `local`) sehingga tidak merusak resolusi internal server.
+- **Punycode & IDN Normalizer:** Mendukung normalisasi karakter domain internasional.
 
 ---
 
-## 2. Solusi Teknis: DNS-over-TLS (DoT) & Enkripsi Upstream
+## 4. Mekanisme Auto-Update Otonom
 
-Untuk memotong manipulasi ISP tanpa mematikan DNSSEC atau SafeSearch, Unbound dikonfigurasi menggunakan **DNS-over-TLS (DoT pada Port TCP 853)** dengan bundel sertifikat CA TLS terverifikasi:
+Sistem auto-update diimplementasikan secara berlapis (*defense-in-depth*) untuk menjamin kehandalan 24/7:
 
-```conf
-server:
-  tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"
+### A. Scheduler Otonom di Daemon Netora API (Go Engine)
+- Berjalan di background service `netora-api.service`.
+- **Interval Eksekusi:** Setiap **12 jam** sekali secara otomatis.
+- **Cold-Start Trigger:** Sinkronisasi awal dijalankan otomatis **10 detik setelah daemon boot/start**, memastikan server selalu memiliki data terbaru setelah reboot.
+- **Atomic Zero-Downtime:** Menggunakan `unbound-control reload`. Resolusi DNS klien ISP tidak terhenti maupun terputus 1 detik pun saat proses update berlangsung.
 
-forward-zone:
-  name: "."
-  forward-first: yes
-  forward-tls-upstream: yes
-  forward-addr: 1.1.1.1@853#cloudflare-dns.com
-  forward-addr: 1.0.0.1@853#cloudflare-dns.com
-  forward-addr: 8.8.8.8@853#dns.google
-  forward-addr: 8.8.4.4@853#dns.google
+### B. Redundansi OS-Level Cron di Server Linux
+Sebagai pengaman jika daemon API di-restart atau mengalami jeda, scheduler OS-level aktif di:
+- **Lokasi File:** `/etc/cron.d/netora-blocklist-autoupdate`
+- **Jadwal:** Pukul **03:00 WIB** dan **15:00 WIB** setiap hari.
+- **Aksi:** Memanggil script `/usr/local/bin/netora-api-sync-blocklists.sh` yang memicu endpoint internal API dan memverifikasi kesehatan Unbound.
+
+---
+
+## 5. Pembaruan Web UI (Policy Filtering)
+
+Tampilan menu **Policy Filtering** di Web UI Netora (`http://172.18.20.145:8080`) kini dilengkapi:
+
+1. **Kartu Status Auto-Update Otonom:**
+   - **Badge Status:** `AKTIF - Tiap 12 Jam` dengan indikator lampu hijau berkedip (*pulsing green dot*).
+   - **Statistik Total Domain:** Menampilkan jumlah total domain aktif terblokir di seluruh kategori secara real-time (**257.036+ Domain**).
+   - **Waktu Sinkronisasi Terakhir:** Menampilkan timestamp presisi kapan sinkronisasi terakhir berhasil dijalankan.
+   - **Jadwal Update Berikutnya:** Menampilkan estimasi waktu putaran auto-update selanjutnya.
+2. **Tombol "Sync Seluruh Filter Sekarang":**
+   - Disediakan tombol manual on-demand dengan animasi loading spinner dan alert konfirmasi sukses berwarna hijau.
+3. **Privasi Penuh (Zero-Leak):**
+   - URL repository privat, nama akun, maupun token GitHub **tidak ditampilkan** pada antarmuka web maupun metadata browser.
+4. **Saklar Toggle Independen untuk Setiap Kategori:**
+   - SafeSearch VIP (Mesin Pencari)
+   - 18+ Konten Dewasa
+   - Judi Online & Taruhan
+   - Iklan & Pelacak Agresif
+   - Malware & Phishing
+
+---
+
+## 6. Bukti Verifikasi Pengujian Nyata di Server (172.18.20.145)
+
+Pengujian end-to-end telah dilakukan langsung pada server produksi `172.18.20.145`:
+
+### 1. Hasil Sinkronisasi Real-World (257.036 Domain)
+```bash
+=== Status Sinkronisasi Seluruh Feed Filter ===
+Total Domain Terblokir : 257,036 domain
+- Dewasa (Adult 18+)   : 46,466 domain
+- Judi Online / Slot   : 83,533 domain
+- Iklan & Pelacak      : 50,522 domain
+- Malware & Phishing   : 76,508 domain
+- Custom ISP Blacklist : 7 domain
+- Whitelist Terlindungi: 3 domain
+Waktu Eksekusi         : 2026-09-26 01:21:40 WIB
+Status Unbound         : Berhasil divalidasi & di-reload atomik tanpa error
 ```
 
-Jalur TCP 853 terenkripsi TLS tidak dapat diintip maupun dibajak oleh ISP. Jawaban asli dari Cloudflare/Google diterima dengan aman dan validasi DNSSEC berstatus `NOERROR`.
-
----
-
-## 3. Matriks Fitur Independen: SafeSearch vs 18+ Dewasa vs Judi Online
-
-Tiga pilar proteksi konten kini dapat dikendalikan secara terpisah sesuai kebutuhan:
-
-| Fitur | Tujuan Proteksi | Target Intersepsi | Status Default | Saklar Mandiri |
-| :--- | :--- | :--- | :---: | :---: |
-| **SafeSearch** | Menyaring hasil pencarian mesin pencari | Google, Bing, YouTube VIP (`216.239.38.120`) | **ON** | Ya (ToggleSwitch) |
-| **18+ Dewasa** | Memblokir akses domain dewasa/pornografi | `xhamster.com`, `pornhub.com`, dll. | **Bebas Dipilih** | Ya (ToggleSwitch) |
-| **Judi Online** | Memblokir akses domain judi, slot & taruhan | `sbobet.com`, `slot88.com`, `pragmaticplay.com`, dll. | **Bebas Dipilih** | Ya (ToggleSwitch) |
-
----
-
-## 4. Arsitektur Filter Judi Online di Unbound
-
-1. **File Konfigurasi Dedicated:** `/etc/unbound/conf.d/gambling-filter.conf`
-   - **Saat Judi Online ON:**
-     Unbound me-load file konfigurasi berisi *local-zone static sinkholes* (atau redirect IP) untuk domain judi & slot populer:
-     ```conf
-     server:
-       local-zone: "sbobet.com." static
-       local-zone: "maxbet.com." static
-       local-zone: "slot88.com." static
-       local-zone: "slot777.com." static
-       local-zone: "pragmaticplay.com." static
-       ...
-     ```
-     Setiap query DNS dari klien langsung dibalas dengan status `NXDOMAIN` (Domain tidak ditemukan/tidak dapat dibuka).
-   - **Saat Judi Online OFF:**
-     Unbound me-replace file secara atomik menjadi komentar nonaktif:
-     ```conf
-     # Judi Online / Gambling Filter is DISABLED (Gambling websites allowed)
-     ```
-     Query DNS diteruskan secara terenkripsi DoT ke upstream global tanpa blokir.
-
-2. **Dukungan Feed Blocklist Eksternal:**
-   Tersedia preset blocklist hosts judi di modal *Add Blocklist*:
-   - URL: `https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts`
-
-3. **Persistensi Database PostgreSQL (`nodes.config_json`):**
-   Seluruh status switch (SafeSearch, Parental Control, Judi Online) disimpan pada kolom `config_json JSONB` di tabel `nodes`. Data tidak akan hilang saat server di-reboot atau halaman di-refresh.
-
----
-
-## 5. Bukti Verifikasi Pengujian Nyata
-
-Semua pengujian dijalankan langsung dari terminal Windows pengguna dan diverifikasi pada server Unbound:
-
-### Uji 1: Saat Judi Online ON (Aktif)
-```cmd
-C:\Users\desie>nslookup sbobet.com 172.18.20.145
-Server:  UnKnown
-Address:  172.18.20.145
-
-*** UnKnown can't find sbobet.com: Non-existent domain
-
-C:\Users\desie>nslookup slot88.com 172.18.20.145
-Server:  UnKnown
-Address:  172.18.20.145
-
-*** UnKnown can't find slot88.com: Non-existent domain
+### 2. Validasi Konfigurasi Unbound
+```bash
+root@dns-dev:~# unbound-checkconf /etc/unbound/unbound.conf
+unbound-checkconf: no errors in /etc/unbound/unbound.conf
 ```
-> **Hasil:** Query langsung di-sinkhole / diblokir dengan status **Non-existent domain (`NXDOMAIN`)**.
+
+### 3. Pengujian Resolusi DNS Tiap Kategori
+- **Judi Online (Saklar ON):**
+  ```cmd
+  C:\Users\desie>nslookup sbobet.com 172.18.20.145
+  *** UnKnown can't find sbobet.com: Non-existent domain
+  ```
+  *(Status: Diblokir seketika dengan NXDOMAIN)*
+
+- **Iklan Agresif (Saklar ON):**
+  ```cmd
+  C:\Users\desie>nslookup adservice.google.com 172.18.20.145
+  *** UnKnown can't find adservice.google.com: Non-existent domain
+  ```
+  *(Status: Diblokir seketika dengan NXDOMAIN)*
+
+- **Dewasa 18+ (Dinamis: Diuji saat ON vs OFF):**
+  - Saat Toggle ON: `xhamster.com` -> `NXDOMAIN` (Diblokir).
+  - Saat Toggle OFF: `xhamster.com` -> `104.16.4.81` (Dapat diakses normal tanpa error `Server failed`).
+
+- **SafeSearch VIP (Saklar ON):**
+  ```cmd
+  C:\Users\desie>nslookup www.google.com 172.18.20.145
+  Name:    www.google.com
+  Address:  216.239.38.120
+  ```
+  *(Status: Terkunci di VIP SafeSearch)*
+
+- **Whitelist Protection:**
+  ```cmd
+  C:\Users\desie>nslookup google.com 172.18.20.145
+  Address: 142.250.198.46
+  ```
+  *(Status: Domain penting dan aman tidak pernah terblokir)*
 
 ---
 
-### Uji 2: Saat Judi Online OFF (Nonaktif)
-```cmd
-C:\Users\desie>nslookup sbobet.com 172.18.20.145
-Server:  UnKnown
-Address:  172.18.20.145
+## 7. Panduan Operasional Pengelolaan List Domain
 
-Non-authoritative answer:
-Name:    sbobet.com
-Address:  185.115.167.129
-```
-> **Hasil:** Domain judi kembali dapat diakses dan mengembalikan IP asli tanpa error.
+### A. Menambahkan Domain Secara Privat di Repository Anda:
+1. Buka repository Anda di GitHub/Git:
+   - Tambah domain judi ke: `blocklist/gambling-domains.txt`
+   - Tambah domain dewasa ke: `blocklist/adult-domains.txt`
+   - Tambah domain iklan ke: `blocklist/ads.txt`
+   - Tambah domain malware ke: `blocklist/malware.txt`
+   - Tambah pengecualian ke: `blocklist/whitelist.txt`
+2. Simpan dan commit/push perubahan Anda.
+3. Pada jadwal berikutnya (tiap 12 jam) atau saat Anda menekan tombol **"Sync Seluruh Filter Sekarang"** di Web UI, server akan otomatis menerapkan daftar domain baru tersebut.
 
----
-
-### Uji 3: Independensi Penuh Antar Fitur
-Ketika **Judi Online = ON**, tetapi **Parental Control (18+) = OFF**:
-
-1. Query domain judi `sbobet.com` -> **DIBLOKIR (`NXDOMAIN`)**
-2. Query domain dewasa `xhamster.com` -> **TERBUKA BEBAS**:
-   ```cmd
-   C:\Users\desie>nslookup xhamster.com 172.18.20.145
-   Name:    xhamster.com
-   Addresses:  104.16.4.81, 104.16.3.81
+### B. Menambahkan Domain Langsung di Server (Opsional):
+Jika Anda ingin menambahkan domain darurat langsung di server Linux:
+1. Edit file terkait di `/etc/unbound/blocklist/` (misal: `/etc/unbound/blocklist/custom.txt`).
+2. Tekan tombol **"Sync Seluruh Filter Sekarang"** di Web UI, atau jalankan perintah:
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/blocklists/sync -H "Authorization: Bearer <token>"
    ```
-3. Query pencarian `www.google.com` -> **SAFESEARCH AMAN**:
-   ```cmd
-   C:\Users\desie>nslookup www.google.com 172.18.20.145
-   Name:    www.google.com
-   Address:  216.239.38.120
-   ```
-> **Kesimpulan:** Setiap fitur bekerja secara modular tanpa saling mengganggu.
-
----
-
-## 6. Tampilan Baru pada Web UI Netora DNS
-
-Pada menu **Policy Filtering** (`http://172.18.20.145:8080`), baris KPI card di bagian atas kini menampilkan 5 modul kartu responsif:
-
-1. **THREAT FEEDS**: Jumlah feed aktif & total rule Trie.
-2. **SAFESEARCH**: Switch ON/OFF pemaksaan mode aman Google, Bing, YouTube.
-3. **18+ DEWASA**: Switch ON/OFF pemblokiran situs pornografi & konten dewasa (Warna Ungu).
-4. **JUDI ONLINE**: Switch ON/OFF pemblokiran situs judi online, taruhan, & slot gacor (Warna Amber / Oranye dengan ikon Dadu).
-5. **ALLOWLIST**: Pengecualian domain bypass.
-
----
-
-## 7. Cara Menggunakan via Web UI
-
-1. Buka browser ke: **`http://172.18.20.145:8080`**  
-   *(Login dengan user: `admin` / pass: `admin123` jika diminta)*
-2. Buka menu **Policy Filtering** di bilah kiri.
-3. **Mengatur Judi Online:**
-   - Lihat kartu ke-4 bertuliskan **JUDI ONLINE**.
-   - Klik switch toggle:
-     - **ON (Amber / `BLOCKED`):** Situs judi online diblokir total di tingkat DNS.
-     - **OFF (Abu-abu / `ALLOWED`):** Situs judi online tidak diblokir.
-4. **Mengatur 18+ Dewasa:**
-   - Lihat kartu ke-3 bertuliskan **18+ DEWASA**.
-   - Klik switch toggle sesuai preferensi (ON untuk blokir, OFF untuk buka).
-5. Konfigurasi langsung diterapkan ke Unbound secara atomik (*zero-downtime*) dan tersimpan permanen di database PostgreSQL.
+3. Konfigurasi Unbound akan ter-reload seketika tanpa perlu restart service.

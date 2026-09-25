@@ -1,0 +1,13 @@
+# ==============================================================================
+# Netora DNS — Custom ISP Blacklist (Domain Khusus Ditentukan Administrator)
+# Repository: blocklist/custom.txt
+# Format: Satu domain per baris (tanpa http:// atau www.)
+# ==============================================================================
+
+camcaps.ac
+cin.ac
+rphang.ac
+aptilon.com
+189cube.com
+itotolink.net
+tr069-avs.firstmedia.com

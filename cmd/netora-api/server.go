@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"netora-dns/pkg/auth"
+	"netora-dns/pkg/blocklist"
 	"netora-dns/pkg/cluster"
 	"netora-dns/pkg/configengine"
 	"netora-dns/pkg/hermes"
@@ -26,16 +27,17 @@ import (
 
 // Server encapsulates the Netora REST API dependencies.
 type Server struct {
-	store          storage.Store
-	engine         *configengine.Engine
-	policyEngine   *policy.PolicyEngine
-	healthChecker  *runtime.DNSHealthChecker
-	jwtSecret      string
-	nodeID         string
-	metrics        *telemetry.Metrics
-	alertEngine    *telemetry.AlertEngine
-	clusterManager *cluster.ClusterManager
-	investigator   *hermes.Investigator
+	store            storage.Store
+	engine           *configengine.Engine
+	policyEngine     *policy.PolicyEngine
+	blocklistManager *blocklist.Manager
+	healthChecker    *runtime.DNSHealthChecker
+	jwtSecret        string
+	nodeID           string
+	metrics          *telemetry.Metrics
+	alertEngine      *telemetry.AlertEngine
+	clusterManager   *cluster.ClusterManager
+	investigator     *hermes.Investigator
 }
 
 // NewServer initializes the API server components.
@@ -55,20 +57,31 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		SyncStatus:   cluster.SyncSynchronized,
 	})
 
+	bm := blocklist.NewManager(blocklist.ManagerOptions{
+		BlocklistDir: "/etc/unbound/blocklist",
+		ConfDDir:     "/etc/unbound/conf.d",
+		Interval:     12 * time.Hour,
+		Store:        store,
+		Engine:       engine,
+		NodeID:       nodeID,
+		PolicyEngine: policyEngine,
+	})
+
 	hc := runtime.NewDNSHealthChecker(3 * time.Second)
 	inv := hermes.NewInvestigator(nodeID, policyEngine, hc)
 
 	return &Server{
-		store:          store,
-		engine:         engine,
-		policyEngine:   policyEngine,
-		healthChecker:  hc,
-		jwtSecret:      jwtSecret,
-		nodeID:         nodeID,
-		metrics:        metrics,
-		alertEngine:    alertEngine,
-		clusterManager: cm,
-		investigator:   inv,
+		store:            store,
+		engine:           engine,
+		policyEngine:     policyEngine,
+		blocklistManager: bm,
+		healthChecker:    hc,
+		jwtSecret:        jwtSecret,
+		nodeID:           nodeID,
+		metrics:          metrics,
+		alertEngine:      alertEngine,
+		clusterManager:   cm,
+		investigator:     inv,
 	}
 }
 
@@ -106,7 +119,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/policies", s.requireAuth(s.handlePolicies))
 	mux.HandleFunc("/api/v1/filters", s.requireAuth(s.handleFilters))
 	mux.HandleFunc("/api/v1/filters/", s.requireAuth(s.handleFilterSubroutes))
-	mux.HandleFunc("/api/v1/blocklists/sync", s.requireAuth(s.handleSyncBlocklistsFromGitHub))
+	mux.HandleFunc("/api/v1/blocklists/sync", s.requireAuth(s.handleSyncBlocklists))
+	mux.HandleFunc("/api/v1/blocklists/auto-update-status", s.requireAuth(s.handleBlocklistAutoUpdateStatus))
 	mux.HandleFunc("/api/v1/allowlist", s.requireAuth(s.handleAllowlist))
 	mux.HandleFunc("/api/v1/allowlist/", s.requireAuth(s.handleAllowlistDelete))
 
@@ -462,44 +476,106 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 		if filters == nil {
 			filters = []storage.FilterRecord{}
 		}
-		// If DB is empty, auto-seed the 3 standard feeds
-		if len(filters) == 0 {
-			defaults := []storage.FilterRecord{
-				{
-					ID:        "feed-hagezi",
-					Name:      "Hagezi Multi-PRO Threat Feed",
-					Category:  "MALWARE_ADS",
-					SourceURL: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
-					LocalPath: "/var/lib/netora/filters/hagezi-pro.txt",
-					RuleCount: 142300,
-					Enabled:   true,
-					CreatedAt: time.Now().UTC(),
-				},
-				{
-					ID:        "feed-adguard",
-					Name:      "AdGuard Base DNS Filter",
-					Category:  "ADS_TRACKING",
-					SourceURL: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
-					LocalPath: "/var/lib/netora/filters/adguard.txt",
-					RuleCount: 48900,
-					Enabled:   true,
-					CreatedAt: time.Now().UTC(),
-				},
-				{
-					ID:        "feed-stevenblack",
-					Name:      "StevenBlack Unified Hosts File",
-					Category:  "HOSTS_BLOCK",
-					SourceURL: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-					LocalPath: "/etc/unbound/blocklists/stevenblack.hosts",
-					RuleCount: 73200,
-					Enabled:   true,
-					CreatedAt: time.Now().UTC(),
-				},
+		canonicalFeeds := []storage.FilterRecord{
+			{
+				ID:        "feed-adult",
+				Name:      "Parental Control (18+ Dewasa)",
+				Category:  "ADULT",
+				SourceURL: "adult-domains.txt",
+				LocalPath: "/etc/unbound/blocklist/adult-domains.txt",
+				RuleCount: 46466,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-gambling",
+				Name:      "Judi Online & Slot Gacor",
+				Category:  "GAMBLING",
+				SourceURL: "gambling-domains.txt",
+				LocalPath: "/etc/unbound/blocklist/gambling-domains.txt",
+				RuleCount: 83549,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-ads",
+				Name:      "Iklan, Pop-up & Pelacak",
+				Category:  "ADS_TRACKING",
+				SourceURL: "ads.txt",
+				LocalPath: "/etc/unbound/blocklist/ads.txt",
+				RuleCount: 52100,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-malware",
+				Name:      "Malware, Phishing & Botnet Shield",
+				Category:  "MALWARE_ADS",
+				SourceURL: "malware.txt",
+				LocalPath: "/etc/unbound/blocklist/malware.txt",
+				RuleCount: 71800,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-custom",
+				Name:      "Custom ISP Blacklist",
+				Category:  "CUSTOM",
+				SourceURL: "custom.txt",
+				LocalPath: "/etc/unbound/blocklist/custom.txt",
+				RuleCount: 15,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-hagezi",
+				Name:      "Hagezi Multi-PRO Threat Feed",
+				Category:  "MALWARE_ADS",
+				SourceURL: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+				LocalPath: "/var/lib/netora/filters/hagezi-pro.txt",
+				RuleCount: 142300,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-adguard",
+				Name:      "AdGuard Base DNS Filter",
+				Category:  "ADS_TRACKING",
+				SourceURL: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+				LocalPath: "/var/lib/netora/filters/adguard.txt",
+				RuleCount: 48900,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "feed-stevenblack",
+				Name:      "StevenBlack Unified Hosts File",
+				Category:  "HOSTS_BLOCK",
+				SourceURL: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+				LocalPath: "/etc/unbound/blocklists/stevenblack.hosts",
+				RuleCount: 73200,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+		}
+
+		existingIDs := make(map[string]bool)
+		for _, f := range filters {
+			existingIDs[f.ID] = true
+		}
+
+		hasNew := false
+		for i := range canonicalFeeds {
+			if !existingIDs[canonicalFeeds[i].ID] {
+				_ = s.store.UpsertFilter(r.Context(), &canonicalFeeds[i])
+				filters = append(filters, canonicalFeeds[i])
+				hasNew = true
 			}
-			for i := range defaults {
-				_ = s.store.UpsertFilter(r.Context(), &defaults[i])
+		}
+		if hasNew {
+			if refetched, err := s.store.ListFilters(r.Context()); err == nil {
+				filters = refetched
 			}
-			filters = defaults
 		}
 		s.writeJSON(w, http.StatusOK, filters)
 		return
@@ -630,6 +706,13 @@ func (s *Server) handleFilterSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Dynamically re-apply filter configuration to Unbound
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			s.reapplyFilterState(bgCtx, "Filter Toggled: "+target.Name)
+		}()
+
 		s.writeJSON(w, http.StatusOK, target)
 		return
 	}
@@ -637,113 +720,81 @@ func (s *Server) handleFilterSubroutes(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 }
 
-// Handler: Sync Blocklists from GitHub (/api/v1/blocklists/sync)
-func (s *Server) handleSyncBlocklistsFromGitHub(w http.ResponseWriter, r *http.Request) {
+// Handler: Sync All Blocklists (/api/v1/blocklists/sync)
+func (s *Server) handleSyncBlocklists(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
 
-	var req struct {
-		AdultURL    string `json:"adult_url"`
-		GamblingURL string `json:"gambling_url"`
-		GitHubToken string `json:"github_token"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-
-	blocklistDir := "/etc/unbound/blocklist"
-	_ = os.MkdirAll(blocklistDir, 0755)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-
-	token := req.GitHubToken
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
+	actor := "Manual NOC Trigger"
+	if claims, ok := r.Context().Value("user_claims").(*auth.Claims); ok && claims != nil {
+		actor = claims.Username
 	}
 
-	fetchURL := func(targetURL, fallbackURL, destFilename string) int {
-		destPath := filepath.Join(blocklistDir, destFilename)
-
-		tryDownload := func(u string) ([]byte, bool) {
-			if u == "" {
-				return nil, false
-			}
-			httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u, nil)
-			if err != nil {
-				return nil, false
-			}
-			if token != "" {
-				httpReq.Header.Set("Authorization", "token "+token)
-			}
-			resp, err := client.Do(httpReq)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				data, _ := io.ReadAll(resp.Body)
-				_ = resp.Body.Close()
-				if len(data) > 0 {
-					return data, true
-				}
-			}
-			if resp != nil {
-				_ = resp.Body.Close()
-			}
-			return nil, false
-		}
-
-		data, ok := tryDownload(targetURL)
-		if !ok && fallbackURL != "" {
-			data, ok = tryDownload(fallbackURL)
-		}
-
-		if ok && len(data) > 0 {
-			_ = os.WriteFile(destPath, data, 0644)
-		} else {
-			data, _ = os.ReadFile(destPath)
-		}
-
-		count := 0
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				count++
-			}
-		}
-		return count
+	report, err := s.blocklistManager.SyncAll(r.Context(), actor)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
 	}
 
-	adultURL := req.AdultURL
-	if adultURL == "" {
-		adultURL = "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/adult-domains.txt"
-	}
-	fallbackAdultURL := "https://raw.githubusercontent.com/alexsannikov/adguardhome-filters/refs/heads/master/porn.txt"
-
-	gamblingURL := req.GamblingURL
-	if gamblingURL == "" {
-		gamblingURL = "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/gambling-domains.txt"
-	}
-	fallbackGamblingURL := "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts"
-
-	adultCount := fetchURL(adultURL, fallbackAdultURL, "adult-domains.txt")
-	gamblingCount := fetchURL(gamblingURL, fallbackGamblingURL, "gambling-domains.txt")
-
-	// Trigger Unbound Atomic Apply
-	cfg, err := s.store.GetDesiredState(r.Context(), s.nodeID)
-	if err == nil && cfg != nil {
-		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
-		actor := "GitHub Sync"
-		if claims != nil {
-			actor = claims.Username
-		}
-		cfg.VersionID = fmt.Sprintf("v-gh-sync-%d", time.Now().Unix())
-		_, _ = s.engine.Apply(r.Context(), cfg, actor, "Blocklists synced from GitHub")
-		_ = s.store.SaveDesiredState(r.Context(), cfg)
-	}
+	adultCount := report.CategoryCounts["ADULT"]
+	gamblingCount := report.CategoryCounts["GAMBLING"]
 
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":                true,
+		"success":                report.Success,
 		"adult_domains_count":    adultCount,
 		"gambling_domains_count": gamblingCount,
-		"message":                fmt.Sprintf("Berhasil sinkronisasi %d domain dewasa (18+) dan %d domain judi online", adultCount, gamblingCount),
+		"category_counts":        report.CategoryCounts,
+		"total_domains":          report.TotalDomains,
+		"duration_ms":            report.DurationMs,
+		"timestamp":              report.Timestamp,
+		"reloaded":               report.Reloaded,
+		"message":                report.Message,
 	})
+}
+
+// Handler: Auto-Update Status (/api/v1/blocklists/auto-update-status)
+func (s *Server) handleBlocklistAutoUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	status := s.blocklistManager.GetStatus()
+	s.writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) reapplyFilterState(ctx context.Context, reason string) {
+	if s.engine == nil || s.store == nil {
+		return
+	}
+	cfg, err := s.store.GetDesiredState(ctx, s.nodeID)
+	if err != nil || cfg == nil {
+		return
+	}
+
+	filters, err := s.store.ListFilters(ctx)
+	if err == nil {
+		for _, f := range filters {
+			switch f.ID {
+			case "feed-adult":
+				cfg.ParentalControl.Enabled = f.Enabled
+				cfg.ParentalControl.BlockAdult = f.Enabled
+			case "feed-gambling":
+				cfg.GamblingBlock.Enabled = f.Enabled
+			case "feed-ads", "feed-adguard":
+				cfg.AdBlock.Enabled = f.Enabled
+			case "feed-malware", "feed-hagezi":
+				cfg.MalwareBlock.Enabled = f.Enabled
+			case "feed-custom":
+				cfg.CustomBlock.Enabled = f.Enabled
+			}
+		}
+	}
+
+	cfg.VersionID = fmt.Sprintf("v-filter-toggle-%d", time.Now().Unix())
+	if _, err := s.engine.Apply(ctx, cfg, "NOC Admin", reason); err == nil {
+		_ = s.store.SaveDesiredState(ctx, cfg)
+	}
 }
 
 // Handler: Allowlist

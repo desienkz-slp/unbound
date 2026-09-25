@@ -94,6 +94,18 @@ export interface DesiredState {
     enabled: boolean;
     redirect_ip?: string;
   };
+  ad_block?: {
+    enabled: boolean;
+    redirect_ip?: string;
+  };
+  malware_block?: {
+    enabled: boolean;
+    redirect_ip?: string;
+  };
+  custom_block?: {
+    enabled: boolean;
+    redirect_ip?: string;
+  };
   local_records: Array<{
     domain: string;
     type: string;
@@ -177,4 +189,29 @@ export interface FilterRecord {
   last_updated_at?: string;
   created_at: string;
 }
+
+export interface AutoUpdateStatus {
+  enabled: boolean;
+  interval_hours: number;
+  last_sync_time: string | null;
+  next_sync_time: string | null;
+  is_syncing: boolean;
+  last_status: string;
+  last_error?: string;
+  category_counts: Record<string, number>;
+  total_domains: number;
+}
+
+export interface SyncBlocklistResult {
+  success: boolean;
+  adult_domains_count: number;
+  gambling_domains_count: number;
+  category_counts?: Record<string, number>;
+  total_domains?: number;
+  duration_ms?: number;
+  timestamp?: string;
+  reloaded?: boolean;
+  message: string;
+}
+
 

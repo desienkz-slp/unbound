@@ -1,0 +1,68 @@
+# ==============================================================================
+# Netora DNS — Daftar Domain Iklan & Pelacak Populer (Ads & Tracking Blocklist)
+# Repository: blocklist/ads.txt
+# Format: Satu domain per baris (tanpa http:// atau www.)
+# ==============================================================================
+
+# Common Ad Networks & Telemetry
+doubleclick.net
+googleads.g.doubleclick.net
+pagead2.googlesyndication.com
+adservice.google.com
+adnxs.com
+ads.pubmatic.com
+criteo.com
+outbrain.com
+taboola.com
+popads.net
+popcash.net
+mgid.com
+propellerads.com
+adsterra.com
+infolinks.com
+scorecardresearch.com
+zedo.com
+adcolony.com
+unityads.unity3d.com
+vungle.com
+applovin.com
+chartboost.com
+ironsrc.com
+quantserve.com
+moatads.com
+bidswitch.net
+openx.net
+rubiconproject.com
+smartadserver.com
+revcontent.com
+adblade.com
+exoclick.com
+trafficjunky.com
+adroll.com
+advertising.com
+yandex.ru/ads
+an.yandex.ru
+telemetry.microsoft.com
+vortex.data.microsoft.com
+events.data.microsoft.com
+metrics.apple.com
+iadsdk.apple.com
+analytics.yahoo.com
+adtechus.com
+carbonads.net
+buysellads.com
+chitika.net
+media.net
+sovtrn.com
+tribalfusion.com
+yieldmanager.com
+casalemedia.com
+imrworldwide.com
+gemini.yahoo.com
+ads.twitter.com
+static.ads-twitter.com
+pixel.facebook.com
+an.facebook.com
+tr.snapchat.com
+ads.tiktok.com
+analytics.tiktok.com

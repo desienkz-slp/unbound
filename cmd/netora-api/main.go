@@ -116,6 +116,9 @@ func main() {
 	// 7. Setup HTTP Server
 	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID)
 
+	// 7.1 Start Autonomous Blocklist Auto-Update Scheduler
+	apiServer.blocklistManager.StartScheduler(collectorCtx)
+
 	// 8. Start Local Node Heartbeat Loop
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)

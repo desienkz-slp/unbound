@@ -144,3 +144,48 @@ func TestGenerator_SecurityValidationOpenResolver(t *testing.T) {
 		t.Errorf("expected open resolver warning in error, got: %v", err)
 	}
 }
+
+func TestGenerator_AllFilterConfigs(t *testing.T) {
+	gen, err := NewGenerator()
+	if err != nil {
+		t.Fatalf("failed to create generator: %v", err)
+	}
+
+	state := model.NewDefaultDesiredState("node-01", 2, 2048)
+	state.ParentalControl.Enabled = true
+	state.GamblingBlock.Enabled = true
+	state.AdBlock.Enabled = true
+	state.MalwareBlock.Enabled = true
+	state.CustomBlock.Enabled = true
+
+	res, err := gen.Generate(state, "/etc/unbound")
+	if err != nil {
+		t.Fatalf("failed to generate config: %v", err)
+	}
+
+	expectedFiles := map[string]bool{
+		"unbound.conf":                 false,
+		"conf.d/domain-insecure.conf": false,
+		"conf.d/local-records.conf":   false,
+		"conf.d/safesearch.conf":      false,
+		"conf.d/parental-control.conf":false,
+		"conf.d/gambling-filter.conf":  false,
+		"conf.d/adblock-filter.conf":   false,
+		"conf.d/malware-filter.conf":   false,
+		"conf.d/custom-filter.conf":    false,
+		"conf.d/whitelist.conf":        false,
+	}
+
+	for _, f := range res.Files {
+		if _, ok := expectedFiles[f.RelativePath]; ok {
+			expectedFiles[f.RelativePath] = true
+		}
+	}
+
+	for path, found := range expectedFiles {
+		if !found {
+			t.Errorf("expected generated file %s was missing", path)
+		}
+	}
+}
+

@@ -157,6 +157,12 @@ type GamblingBlockConfig struct {
 	RedirectIP string `json:"redirect_ip,omitempty"` // e.g. "172.18.20.234" or empty for NXDOMAIN sinkholing
 }
 
+// FilterBlockConfig controls category-level DNS blocking and sinkholing.
+type FilterBlockConfig struct {
+	Enabled    bool   `json:"enabled"`
+	RedirectIP string `json:"redirect_ip,omitempty"`
+}
+
 // LocalRecord defines custom local DNS authoritative answers.
 type LocalRecord struct {
 	Domain string `json:"domain"`
@@ -199,6 +205,9 @@ type DesiredState struct {
 	SafeSearch       SafeSearchConfig      `json:"safe_search"`
 	ParentalControl  ParentalControlConfig `json:"parental_control"`
 	GamblingBlock    GamblingBlockConfig   `json:"gambling_block"`
+	AdBlock          FilterBlockConfig     `json:"ad_block"`
+	MalwareBlock     FilterBlockConfig     `json:"malware_block"`
+	CustomBlock      FilterBlockConfig     `json:"custom_block"`
 	LocalRecords     []LocalRecord         `json:"local_records"`
 	RemoteControl    RemoteControlConfig   `json:"remote_control"`
 	IncludeFiles     []string              `json:"include_files,omitempty"`
@@ -321,6 +330,18 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 		},
 		GamblingBlock: GamblingBlockConfig{
 			Enabled:    false,
+			RedirectIP: "",
+		},
+		AdBlock: FilterBlockConfig{
+			Enabled:    true,
+			RedirectIP: "",
+		},
+		MalwareBlock: FilterBlockConfig{
+			Enabled:    true,
+			RedirectIP: "",
+		},
+		CustomBlock: FilterBlockConfig{
+			Enabled:    true,
 			RedirectIP: "",
 		},
 		LocalRecords: []LocalRecord{},

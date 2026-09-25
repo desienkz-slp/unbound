@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -37,14 +38,24 @@ type GeneratorContext struct {
 	GeneratedAt          string
 	HasIPv6              bool
 	HasTLSUpstream       bool
-	ActiveListeners      []model.Listener
+	ActiveListeners        []model.Listener
 	ActiveClientNetworks   []model.ClientNetwork
 	ActiveUpstreams        []model.UpstreamServer
 	InsecureDomains        []string
 	AdultBlockedDomains    []string
 	GamblingBlockedDomains []string
+	AdsBlockedDomains      []string
+	MalwareBlockedDomains  []string
+	CustomBlockedDomains   []string
+	WhitelistedDomains     []string
 	IsGamblingBlockActive  bool
 	GamblingRedirectIP     string
+	IsAdBlockActive        bool
+	AdRedirectIP           string
+	IsMalwareBlockActive   bool
+	MalwareRedirectIP      string
+	IsCustomBlockActive    bool
+	CustomRedirectIP       string
 }
 
 // DefaultAdultBlockedDomains provides curated high-confidence adult/pornographic domains.
@@ -111,6 +122,91 @@ var DefaultGamblingBlockedDomains = []string{
 	"w88.com",
 }
 
+// DefaultAdsBlockedDomains provides curated high-confidence advertising & telemetry domains.
+var DefaultAdsBlockedDomains = []string{
+	"doubleclick.net",
+	"googleads.g.doubleclick.net",
+	"pagead2.googlesyndication.com",
+	"adservice.google.com",
+	"adnxs.com",
+	"criteo.com",
+	"outbrain.com",
+	"taboola.com",
+	"popads.net",
+	"popcash.net",
+	"propellerads.com",
+	"exoclick.com",
+	"trafficjunky.com",
+}
+
+// DefaultMalwareBlockedDomains provides curated high-confidence malware, phishing, and C2 domains.
+var DefaultMalwareBlockedDomains = []string{
+	"coinhive.com",
+	"crypto-loot.com",
+	"minr.pw",
+	"redline-stealer.com",
+	"lumma-c2.cc",
+	"asyncrat-c2.net",
+	"njrat-dns.org",
+	"remcos-dns.net",
+	"qakbot-c2.com",
+	"emotet-c2.net",
+}
+
+// DefaultCustomBlockedDomains provides sample ISP-specific blacklist domains.
+var DefaultCustomBlockedDomains = []string{
+	"camcaps.ac",
+	"cin.ac",
+	"rphang.ac",
+	"aptilon.com",
+	"189cube.com",
+}
+
+// DefaultWhitelistedDomains provides common safe domains to always allow.
+var DefaultWhitelistedDomains = []string{
+	"wa.me",
+	"bankmandiri.co.id",
+	"bca.co.id",
+}
+
+// CleanDomain sanitizes and extracts the bare domain name from ABP, hosts, or raw formats.
+func CleanDomain(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(raw, "!") {
+		return ""
+	}
+	if strings.HasPrefix(raw, "@@||") {
+		raw = raw[4:]
+	} else if strings.HasPrefix(raw, "||") {
+		raw = raw[2:]
+	}
+	if idx := strings.IndexAny(raw, "^$/"); idx != -1 {
+		raw = raw[:idx]
+	}
+
+	parts := strings.Fields(raw)
+	if len(parts) >= 2 && (parts[0] == "0.0.0.0" || parts[0] == "127.0.0.1") {
+		raw = parts[1]
+	} else if len(parts) >= 1 {
+		raw = parts[0]
+	}
+
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	raw = strings.TrimSuffix(raw, ".")
+
+	switch raw {
+	case "", "localhost", "localhost.localdomain", "local", "broadcasthost",
+		"0.0.0.0", "127.0.0.1", "255.255.255.255", "ip6-localhost", "ip6-loopback", "::1":
+		return ""
+	}
+
+	if !strings.Contains(raw, ".") {
+		return ""
+	}
+
+	return raw
+}
+
 // loadDomainList reads domains from disk files (if existing) or falls back to defaults.
 func loadDomainList(filePath string, fallback []string) []string {
 	content, err := os.ReadFile(filePath)
@@ -121,16 +217,7 @@ func loadDomainList(filePath string, fallback []string) []string {
 	lines := strings.Split(string(content), "\n")
 	seen := make(map[string]bool)
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Fields(line)
-		domain := parts[0]
-		if len(parts) >= 2 && (parts[0] == "0.0.0.0" || parts[0] == "127.0.0.1") {
-			domain = parts[1]
-		}
-		domain = strings.TrimSuffix(domain, ".")
+		domain := CleanDomain(line)
 		if domain != "" && !seen[domain] {
 			seen[domain] = true
 			domains = append(domains, domain)
@@ -142,6 +229,19 @@ func loadDomainList(filePath string, fallback []string) []string {
 	return domains
 }
 
+func filterOutWhitelisted(domains []string, whitelist map[string]bool) []string {
+	if len(whitelist) == 0 {
+		return domains
+	}
+	var filtered []string
+	for _, d := range domains {
+		if !whitelist[d] {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
 // Generator transforms DesiredState into deterministic Unbound configuration files.
 type Generator struct {
 	mainTmpl       *template.Template
@@ -150,6 +250,10 @@ type Generator struct {
 	safesearchTmpl *template.Template
 	parentalTmpl   *template.Template
 	gamblingTmpl   *template.Template
+	adTmpl         *template.Template
+	malwareTmpl    *template.Template
+	customTmpl     *template.Template
+	whitelistTmpl  *template.Template
 }
 
 // NewGenerator initializes and compiles the configuration templates.
@@ -184,6 +288,26 @@ func NewGenerator() (*Generator, error) {
 		return nil, fmt.Errorf("failed to parse gambling filter template: %w", err)
 	}
 
+	ad, err := template.New("ad").Parse(AdBlockTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse adblock template: %w", err)
+	}
+
+	malware, err := template.New("malware").Parse(MalwareBlockTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse malware template: %w", err)
+	}
+
+	custom, err := template.New("custom").Parse(CustomBlockTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse custom block template: %w", err)
+	}
+
+	whitelist, err := template.New("whitelist").Parse(WhitelistTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse whitelist template: %w", err)
+	}
+
 	return &Generator{
 		mainTmpl:       main,
 		insecureTmpl:   insecure,
@@ -191,6 +315,10 @@ func NewGenerator() (*Generator, error) {
 		safesearchTmpl: safesearch,
 		parentalTmpl:   parental,
 		gamblingTmpl:   gambling,
+		adTmpl:         ad,
+		malwareTmpl:    malware,
+		customTmpl:     custom,
+		whitelistTmpl:  whitelist,
 	}, nil
 }
 
@@ -206,8 +334,26 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 		gamblingRedirect = state.ParentalControl.RedirectIP
 	}
 
-	adultList := loadDomainList("/etc/unbound/blocklist/adult-domains.txt", DefaultAdultBlockedDomains)
-	gamblingList := loadDomainList("/etc/unbound/blocklist/gambling-domains.txt", DefaultGamblingBlockedDomains)
+	loadWithFallback := func(filename string, def []string) []string {
+		p1 := filepath.Join(configDir, "blocklist", filename)
+		p2 := filepath.Join("/etc/unbound/blocklist", filename)
+		if _, err := os.Stat(p1); err == nil {
+			return loadDomainList(p1, def)
+		}
+		return loadDomainList(p2, def)
+	}
+
+	whitelistList := loadWithFallback("whitelist.txt", DefaultWhitelistedDomains)
+	wlMap := make(map[string]bool)
+	for _, w := range whitelistList {
+		wlMap[w] = true
+	}
+
+	adultList := filterOutWhitelisted(loadWithFallback("adult-domains.txt", DefaultAdultBlockedDomains), wlMap)
+	gamblingList := filterOutWhitelisted(loadWithFallback("gambling-domains.txt", DefaultGamblingBlockedDomains), wlMap)
+	adsList := filterOutWhitelisted(loadWithFallback("ads.txt", DefaultAdsBlockedDomains), wlMap)
+	malwareList := filterOutWhitelisted(loadWithFallback("malware.txt", DefaultMalwareBlockedDomains), wlMap)
+	customList := filterOutWhitelisted(loadWithFallback("custom.txt", DefaultCustomBlockedDomains), wlMap)
 
 	// Prepare sorted, deterministic collections
 	ctx := &GeneratorContext{
@@ -216,8 +362,18 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 		GeneratedAt:            time.Now().UTC().Format(time.RFC3339),
 		AdultBlockedDomains:    adultList,
 		GamblingBlockedDomains: gamblingList,
+		AdsBlockedDomains:      adsList,
+		MalwareBlockedDomains:  malwareList,
+		CustomBlockedDomains:   customList,
+		WhitelistedDomains:     whitelistList,
 		IsGamblingBlockActive:  isGamblingActive,
 		GamblingRedirectIP:     gamblingRedirect,
+		IsAdBlockActive:        state.AdBlock.Enabled,
+		AdRedirectIP:           state.AdBlock.RedirectIP,
+		IsMalwareBlockActive:   state.MalwareBlock.Enabled,
+		MalwareRedirectIP:      state.MalwareBlock.RedirectIP,
+		IsCustomBlockActive:    state.CustomBlock.Enabled,
+		CustomRedirectIP:       state.CustomBlock.RedirectIP,
 	}
 
 	// Filter and sort active listeners
@@ -304,7 +460,6 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 	})
 
 	// 2. Render conf.d/domain-insecure.conf (if any)
-	// 2. Render conf.d/domain-insecure.conf
 	if len(ctx.InsecureDomains) > 0 {
 		insecureBuf := new(bytes.Buffer)
 		if err := g.insecureTmpl.Execute(insecureBuf, ctx); err != nil {
@@ -404,6 +559,90 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 		emptyBytes := []byte("# Judi Online / Gambling Filter is DISABLED (Gambling websites allowed)\n")
 		result.Files = append(result.Files, RenderedFile{
 			RelativePath: "conf.d/gambling-filter.conf",
+			Content:      emptyBytes,
+			Checksum:     calculateSHA256(emptyBytes),
+		})
+	}
+
+	// 7. Render conf.d/adblock-filter.conf
+	if ctx.IsAdBlockActive {
+		adBuf := new(bytes.Buffer)
+		if err := g.adTmpl.Execute(adBuf, ctx); err != nil {
+			return nil, fmt.Errorf("failed rendering adblock-filter.conf: %w", err)
+		}
+		adBytes := adBuf.Bytes()
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/adblock-filter.conf",
+			Content:      adBytes,
+			Checksum:     calculateSHA256(adBytes),
+		})
+	} else {
+		emptyBytes := []byte("# AdBlock Filter is DISABLED (Ad networks allowed)\n")
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/adblock-filter.conf",
+			Content:      emptyBytes,
+			Checksum:     calculateSHA256(emptyBytes),
+		})
+	}
+
+	// 8. Render conf.d/malware-filter.conf
+	if ctx.IsMalwareBlockActive {
+		malBuf := new(bytes.Buffer)
+		if err := g.malwareTmpl.Execute(malBuf, ctx); err != nil {
+			return nil, fmt.Errorf("failed rendering malware-filter.conf: %w", err)
+		}
+		malBytes := malBuf.Bytes()
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/malware-filter.conf",
+			Content:      malBytes,
+			Checksum:     calculateSHA256(malBytes),
+		})
+	} else {
+		emptyBytes := []byte("# Malware Filter is DISABLED (Security threat feed bypassed)\n")
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/malware-filter.conf",
+			Content:      emptyBytes,
+			Checksum:     calculateSHA256(emptyBytes),
+		})
+	}
+
+	// 9. Render conf.d/custom-filter.conf
+	if ctx.IsCustomBlockActive {
+		custBuf := new(bytes.Buffer)
+		if err := g.customTmpl.Execute(custBuf, ctx); err != nil {
+			return nil, fmt.Errorf("failed rendering custom-filter.conf: %w", err)
+		}
+		custBytes := custBuf.Bytes()
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/custom-filter.conf",
+			Content:      custBytes,
+			Checksum:     calculateSHA256(custBytes),
+		})
+	} else {
+		emptyBytes := []byte("# Custom Block Filter is DISABLED\n")
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/custom-filter.conf",
+			Content:      emptyBytes,
+			Checksum:     calculateSHA256(emptyBytes),
+		})
+	}
+
+	// 10. Render conf.d/whitelist.conf
+	if len(ctx.WhitelistedDomains) > 0 {
+		wlBuf := new(bytes.Buffer)
+		if err := g.whitelistTmpl.Execute(wlBuf, ctx); err != nil {
+			return nil, fmt.Errorf("failed rendering whitelist.conf: %w", err)
+		}
+		wlBytes := wlBuf.Bytes()
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/whitelist.conf",
+			Content:      wlBytes,
+			Checksum:     calculateSHA256(wlBytes),
+		})
+	} else {
+		emptyBytes := []byte("# No custom whitelist configured\n")
+		result.Files = append(result.Files, RenderedFile{
+			RelativePath: "conf.d/whitelist.conf",
 			Content:      emptyBytes,
 			Checksum:     calculateSHA256(emptyBytes),
 		})

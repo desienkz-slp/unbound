@@ -6,6 +6,8 @@ import {
   NodeRecord,
   AllowlistRecord,
   FilterRecord,
+  AutoUpdateStatus,
+  SyncBlocklistResult,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -165,10 +167,19 @@ class ApiClient {
     });
   }
 
-  async syncBlocklistsFromGitHub(): Promise<{ success: boolean; adult_domains_count: number; gambling_domains_count: number; message: string }> {
-    return this.request('/blocklists/sync', {
+  async syncBlocklists(): Promise<SyncBlocklistResult> {
+    return this.request<SyncBlocklistResult>('/blocklists/sync', {
       method: 'POST',
     });
+  }
+
+  // Alias for backward compatibility
+  async syncBlocklistsFromGitHub(): Promise<SyncBlocklistResult> {
+    return this.syncBlocklists();
+  }
+
+  async getAutoUpdateStatus(): Promise<AutoUpdateStatus> {
+    return this.request<AutoUpdateStatus>('/blocklists/auto-update-status');
   }
 
   // Allowlist

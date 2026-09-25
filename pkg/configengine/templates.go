@@ -223,3 +223,79 @@ server:
 {{- end }}
 `
 
+// AdBlockTemplate renders ad, tracker, and popup blocking rules.
+const AdBlockTemplate = `# ==============================================================================
+# Netora DNS — Ads & Telemetry Filter
+# Generated: {{ .GeneratedAt }}
+# ==============================================================================
+
+server:
+{{- if .IsAdBlockActive }}
+{{- range .AdsBlockedDomains }}
+{{- if $.AdRedirectIP }}
+  local-data: "{{ . }} A {{ $.AdRedirectIP }}"
+  local-data: "www.{{ . }} A {{ $.AdRedirectIP }}"
+{{- else }}
+  local-zone: "{{ . }}." static
+{{- end }}
+{{- end }}
+{{- else }}
+  # AdBlock Filter is DISABLED (Ad networks allowed)
+{{- end }}
+`
+
+// MalwareBlockTemplate renders malware, phishing and C2 botnet blocking rules.
+const MalwareBlockTemplate = `# ==============================================================================
+# Netora DNS — Malware, Phishing & Threat Feed
+# Generated: {{ .GeneratedAt }}
+# ==============================================================================
+
+server:
+{{- if .IsMalwareBlockActive }}
+{{- range .MalwareBlockedDomains }}
+{{- if $.MalwareRedirectIP }}
+  local-data: "{{ . }} A {{ $.MalwareRedirectIP }}"
+  local-data: "www.{{ . }} A {{ $.MalwareRedirectIP }}"
+{{- else }}
+  local-zone: "{{ . }}." static
+{{- end }}
+{{- end }}
+{{- else }}
+  # Malware Filter is DISABLED (Security threat feed bypassed)
+{{- end }}
+`
+
+// CustomBlockTemplate renders custom ISP-specific blacklisted domains.
+const CustomBlockTemplate = `# ==============================================================================
+# Netora DNS — Custom ISP Blacklist Filter
+# Generated: {{ .GeneratedAt }}
+# ==============================================================================
+
+server:
+{{- if .IsCustomBlockActive }}
+{{- range .CustomBlockedDomains }}
+{{- if $.CustomRedirectIP }}
+  local-data: "{{ . }} A {{ $.CustomRedirectIP }}"
+  local-data: "www.{{ . }} A {{ $.CustomRedirectIP }}"
+{{- else }}
+  local-zone: "{{ . }}." static
+{{- end }}
+{{- end }}
+{{- else }}
+  # Custom Block Filter is DISABLED
+{{- end }}
+`
+
+// WhitelistTemplate renders transparent passthrough exceptions for whitelisted domains.
+const WhitelistTemplate = `# ==============================================================================
+# Netora DNS — Whitelist & Transparent Exceptions
+# Generated: {{ .GeneratedAt }}
+# ==============================================================================
+
+server:
+{{- range .WhitelistedDomains }}
+  local-zone: "{{ . }}." transparent
+{{- end }}
+`
+
+

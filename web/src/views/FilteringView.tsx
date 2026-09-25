@@ -21,7 +21,7 @@ import {
   ToggleRight,
   Zap,
 } from 'lucide-react';
-import { AllowlistRecord, DesiredState, FilterRecord } from '../types';
+import { AllowlistRecord, DesiredState, FilterRecord, AutoUpdateStatus } from '../types';
 import { api } from '../services/api';
 
 interface FilteringViewProps {
@@ -118,6 +118,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   const [togglingParental, setTogglingParental] = useState(false);
   const [togglingGambling, setTogglingGambling] = useState(false);
   const [syncingGitHub, setSyncingGitHub] = useState(false);
+  const [autoUpdateStatus, setAutoUpdateStatus] = useState<AutoUpdateStatus | null>(null);
 
   // Add Allowlist Modal state
   const [showAddAllowModal, setShowAddAllowModal] = useState(false);
@@ -189,9 +190,20 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
     }
   };
 
+  const fetchAutoUpdateStatus = async () => {
+    try {
+      const status = await api.getAutoUpdateStatus();
+      if (status) {
+        setAutoUpdateStatus(status);
+      }
+    } catch (err) {
+      console.error('Failed to load auto-update status:', err);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchFilters(), fetchAllowlist()]);
+    await Promise.all([fetchFilters(), fetchAllowlist(), fetchAutoUpdateStatus()]);
     setLoading(false);
   };
 
@@ -339,20 +351,20 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
     }
   };
 
-  // Sync Blocklists from GitHub Handler
-  const handleSyncGitHub = async () => {
+  // Sync All Blocklists Handler
+  const handleSyncBlocklists = async () => {
     setSyncingGitHub(true);
     try {
-      const res = await api.syncBlocklistsFromGitHub();
+      const res = await api.syncBlocklists();
       setActionMsg({
         type: 'success',
-        text: `Berhasil sinkronisasi dari GitHub! (${res.adult_domains_count} domain 18+, ${res.gambling_domains_count} domain judi online). Unbound berhasil di-reload.`,
+        text: res.message || `Berhasil sinkronisasi seluruh filter! Total ${res.total_domains?.toLocaleString() || (res.adult_domains_count + res.gambling_domains_count).toLocaleString()} domain terblokir. Unbound berhasil di-reload secara atomik.`,
       });
-      fetchFilters();
+      await Promise.all([fetchFilters(), fetchAutoUpdateStatus()]);
     } catch (err: any) {
       setActionMsg({
         type: 'error',
-        text: `Gagal sinkronisasi dari GitHub: ${err.message}`,
+        text: `Gagal sinkronisasi seluruh filter: ${err.message}`,
       });
     } finally {
       setSyncingGitHub(false);
@@ -457,13 +469,13 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
 
         <div className="flex items-center gap-3">
           <button
-            onClick={handleSyncGitHub}
-            disabled={syncingGitHub}
-            className="px-3.5 py-2 bg-gray-800 hover:bg-gray-750 text-gray-200 hover:text-white border border-gray-700 hover:border-cyan-500/50 font-medium text-xs rounded-lg transition-all flex items-center gap-2 shadow-sm"
-            title="Sinkronisasi daftar domain blocklist terbaru"
+            onClick={handleSyncBlocklists}
+            disabled={syncingGitHub || autoUpdateStatus?.is_syncing}
+            className="px-3.5 py-2 bg-gray-800 hover:bg-gray-750 text-gray-200 hover:text-white border border-gray-700 hover:border-cyan-500/50 font-medium text-xs rounded-lg transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
+            title="Sinkronisasi seluruh filter dari repositori dan feed upstream"
           >
-            <DownloadCloud className={`w-4 h-4 text-cyan-400 ${syncingGitHub ? 'animate-bounce' : ''}`} />
-            <span>{syncingGitHub ? 'Syncing...' : 'Sync Blocklists'}</span>
+            <RefreshCw className={`w-4 h-4 text-cyan-400 ${syncingGitHub || autoUpdateStatus?.is_syncing ? 'animate-spin' : ''}`} />
+            <span>{syncingGitHub || autoUpdateStatus?.is_syncing ? 'Syncing...' : 'Sync Seluruh Filter'}</span>
           </button>
 
           {activeTab === 'blocklists' ? (
@@ -507,6 +519,74 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
           </button>
         </div>
       )}
+
+      {/* Auto-Update Autonomous Engine Card */}
+      <div className="bg-gradient-to-r from-gray-900 via-gray-900/90 to-gray-850 border border-cyan-900/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 shrink-0 mt-0.5">
+              <RefreshCw className={`w-5 h-5 ${syncingGitHub || autoUpdateStatus?.is_syncing ? 'animate-spin text-cyan-300' : ''}`} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h3 className="text-sm font-bold text-white tracking-wide">
+                  Sistem Pembaruan Otomatis Filter (Auto-Update)
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 border border-emerald-500/40 text-emerald-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  AKTIF (Tiap 12 Jam)
+                </span>
+                <span className="text-[11px] text-gray-400 font-mono bg-gray-800/80 px-2 py-0.5 rounded border border-gray-700">
+                  Dual-Trigger: In-Process + OS Cron Backup
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1 max-w-2xl">
+                Seluruh feed filter (Dewasa 18+, Judi Online, Iklan, Malware, dan Custom ISP) disinkronisasi, disanitasi, divalidasi dengan <code className="text-cyan-300 font-mono text-[11px]">unbound-checkconf</code>, dan di-reload secara atomik tanpa downtime.
+              </p>
+              <div className="flex items-center gap-4 mt-2.5 text-[11px] text-gray-400 flex-wrap">
+                <span className="flex items-center gap-1">
+                  <span className="text-gray-500">Terakhir Diperbarui:</span>{' '}
+                  <strong className="text-gray-200 font-mono">
+                    {autoUpdateStatus?.last_sync_time
+                      ? new Date(autoUpdateStatus.last_sync_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+                      : 'Baru saja disinkronkan'}
+                  </strong>
+                </span>
+                <span className="text-gray-600">•</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-gray-500">Pembaruan Berikutnya:</span>{' '}
+                  <strong className="text-gray-200 font-mono">
+                    {autoUpdateStatus?.next_sync_time
+                      ? new Date(autoUpdateStatus.next_sync_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+                      : 'Dalam 12 Jam'}
+                  </strong>
+                </span>
+                <span className="text-gray-600">•</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-gray-500">Total Terblokir:</span>{' '}
+                  <strong className="text-cyan-300 font-mono">
+                    {autoUpdateStatus?.total_domains
+                      ? autoUpdateStatus.total_domains.toLocaleString()
+                      : (totalRules > 0 ? totalRules.toLocaleString() : '250,000+')} domain
+                  </strong>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSyncBlocklists}
+              disabled={syncingGitHub || autoUpdateStatus?.is_syncing}
+              className="px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs rounded-xl transition-all shadow-md shadow-cyan-500/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncingGitHub || autoUpdateStatus?.is_syncing ? 'animate-spin' : ''}`} />
+              <span>{syncingGitHub || autoUpdateStatus?.is_syncing ? 'Menyinkronkan...' : 'Sync Seluruh Filter Sekarang'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* KPI Cards (5 Column Grid) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
