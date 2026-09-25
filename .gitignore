@@ -14,11 +14,13 @@ logs/
 tmp/
 
 # build
-bin/
-dist/
-build/
+/bin/
+/dist/
+/build/
 node_modules/
 vendor/
+!deploy/bin/
+!deploy/ui/
 
 # IDE
 .vscode/

@@ -1,0 +1,19 @@
+[Unit]
+Description=Netora DNS Control Plane API & NOC Server
+Documentation=https://github.com/desienkz-slp/unbound
+After=network.target postgresql.service unbound.service
+Wants=postgresql.service unbound.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/netora-dns/api.env
+ExecStart=/usr/local/bin/netora-api -listen :8080 -db-url postgres://netora:netora_dev_password@127.0.0.1:5432/netora?sslmode=disable -node-id dns-node
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

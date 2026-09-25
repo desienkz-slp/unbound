@@ -528,3 +528,59 @@ Aset sumber disebarkan ke lokasi-lokasi strategis untuk frontend Web UI, metadat
    * `GET http://127.0.0.1:8080/favicon.png` -> `HTTP/1.1 200 OK` (`Content-Type: image/png`, Content-Length: 1,030,674).
    * `GET http://127.0.0.1:8080/` -> Memuat index.html dengan tautan favicon dan logo aktif.
 
+---
+
+## 15. Autonomous GitHub Auto-Installer & Operator CLI Toolkit
+
+### 15.1. Latar Belakang & Persyaratan
+Untuk mempermudah deployment armada (*fleet deployment*) server DNS baru di lingkungan ISP tanpa konfigurasi manual yang repetitif, dibuatlah script auto-install mandiri (*one-line installer*) di repositori GitHub yang dapat dijalankan secara instan pada server Ubuntu atau Debian baru.
+
+### 15.2. Komponen yang Dibangun
+1. **One-Line Installer Script (`install.sh`):**
+   * Lokasi: Root repositori (`install.sh`).
+   * Dapat dipanggil langsung via `curl` / `wget`:
+     ```bash
+     curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash
+     ```
+   * Mendukung mode non-interaktif (*silent / headless provisioning*):
+     ```bash
+     curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- --silent --node-id "dns-jkt-01" --admin-pass "Rahasia123"
+     ```
+   * Mendukung repositori privat menggunakan Personal Access Token (`GITHUB_TOKEN`).
+2. **Pustaka Distribusi Mandiri (`deploy/`):**
+   * `deploy/ui/`: Bundel statis React/TypeScript Web UI produksi yang siap salin ke `/var/www/netora-ui` tanpa mewajibkan instalasi Node.js/npm di server target.
+   * `deploy/bin/netora-api-linux-amd64`: Binary compiled Netora Control Plane API untuk arsitektur Linux x86_64, dengan fallback auto-compile Go jika arsitektur berbeda.
+   * `deploy/systemd/netora-api.service`: Unit file systemd untuk daemon API control plane.
+3. **NOC Operator CLI Tool (`scripts/netora-cli.sh` -> `/usr/local/bin/netora`):**
+   * Menyediakan perintah manajemen instan untuk operator/NOC:
+     * `netora status`: Monitoring visual status Unbound, API, PostgreSQL, systemd timer, dan rilis Git saat ini.
+     * `netora health`: Validasi real-time kueri DNS lokal (`dig @127.0.0.1`) dan endpoint REST API (`:8080/api/v1/health`).
+     * `netora update`: Menjalankan siklus pembaruan atomik mandiri dari GitHub.
+     * `netora rollback`: Mengembalikan konfigurasi ke backup sebelumnya dalam < 150 ms.
+     * `netora restart`: Graceful restart Unbound & Netora API.
+     * `netora logs [unbound|api|updater]`: Stream log live dari systemd journal.
+     * `netora info`: Menampilkan endpoint URL, topology, dan kredensial default.
+4. **Platform Uninstaller Script (`uninstall.sh`):**
+   * Script penghapus bersih yang menghentikan service, membersihkan unit systemd, merestore `systemd-resolved` dan `/etc/resolv.conf`, serta membersihkan direktori `/opt/netora-dns`.
+5. **Dokumentasi Lengkap Repositori (`README.md`):**
+   * Dokumentasi komprehensif berstandar enterprise yang mencakup:
+     - Header resmi Netora 3D dan status badge.
+     - Perintah cepat instalasi (standar, silent, dan private repo).
+     - Matriks spesifikasi sistem minimum & rekomendasi ISP.
+     - Tabel lengkap parameter CLI options (`--mode`, `--node-id`, `--web-port`, `--admin-pass`, dll.).
+     - Alokasi port jaringan (`53/UDP`, `53/TCP`, `8080/TCP`, `5432/TCP`, `8953/TCP`).
+     - Diagram arsitektur platform & penjaga data-plane independence.
+     - Panduan operasional CLI `netora`.
+     - SOP uninstalasi.
+
+### 15.3. Hasil Pengujian Nyata pada Server `dns-dev` (172.18.20.145)
+* **Syntax Validation:** `bash -n install.sh`, `bash -n uninstall.sh`, `bash -n scripts/netora-cli.sh` -> **PASS (0 errors, LF clean)**.
+* **CLI Health Execution:**
+  ```
+  Checking DNS Data Plane Resolution...
+    DNS Query (127.0.0.1:53): PASS -> 172.253.118.101
+  Checking Netora API Health...
+    API Endpoint (:8080):     PASS -> {"dns_healthy":true,"dns_latency":"429.77µs","node_id":"dns-dev","status":"UP"}
+  ```
+* **CLI Status Execution:** Menampilkan seluruh status service `unbound`, `netora-api`, `postgresql`, timer update berkala, dan revisi Git `0aca0a5`.
+
