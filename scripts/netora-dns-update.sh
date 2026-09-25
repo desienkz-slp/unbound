@@ -286,9 +286,11 @@ validate_candidate_config() {
     fi
 
     # 2. Syntax Validation with unbound-checkconf
+    # Rewrite include paths in temporary test file so candidate conf.d files are validated in staging
+    sed "s|/etc/unbound/conf\.d|${stage_dir}/conf.d|g" "${stage_dir}/unbound.conf" > "${stage_dir}/unbound-test.conf"
     local checkconf_out
-    if ! checkconf_out="$(unbound-checkconf "${stage_dir}/unbound.conf" 2>&1)"; then
-        log_event "ERROR" "validation_failed" "unbound-checkconf syntax error: ${checkconf_out}"
+    if ! checkconf_out="$(unbound-checkconf "${stage_dir}/unbound-test.conf" 2>&1)"; then
+        log_event "ERROR" "validation_failed" "unbound-checkconf syntax error in candidate: ${checkconf_out}"
         return 1
     fi
 
@@ -352,6 +354,8 @@ action_rollback() {
 
     log_event "WARN" "rollback_started" "Restoring configuration from backup: ${backup_target}"
 
+    # Clean out dynamic conf.d to eliminate any orphan broken candidate files
+    rm -rf /etc/unbound/conf.d
     # Atomic restore to /etc/unbound
     cp -r "${backup_target}/"* /etc/unbound/ 2>/dev/null || true
     
