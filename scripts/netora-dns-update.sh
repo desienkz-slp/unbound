@@ -473,6 +473,23 @@ action_update() {
     # Update current symlink
     ln -sfn "$target_release_dir" "${NETORA_BASE}/current"
 
+    # Synchronize Web UI distribution if present in release
+    if [[ -d "${target_release_dir}/deploy/ui" ]] && [[ "$(ls -A "${target_release_dir}/deploy/ui" 2>/dev/null)" ]]; then
+        mkdir -p /var/www/netora-ui
+        cp -r "${target_release_dir}/deploy/ui/"* /var/www/netora-ui/ 2>/dev/null || true
+    fi
+
+    # Update API binary if present
+    if [[ -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" ]]; then
+        cp -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" /usr/local/bin/netora-api 2>/dev/null && chmod +x /usr/local/bin/netora-api || true
+        systemctl restart netora-api 2>/dev/null || true
+    fi
+
+    # Update CLI binary if present
+    if [[ -f "${target_release_dir}/deploy/bin/netora-cli-linux-amd64" ]]; then
+        cp -f "${target_release_dir}/deploy/bin/netora-cli-linux-amd64" /usr/local/bin/netora-cli 2>/dev/null && chmod +x /usr/local/bin/netora-cli || true
+    fi
+
     # Step 6: Unbound Reload
     log_event "INFO" "reloading_unbound" "Reloading Unbound DNS service"
     if ! unbound-control reload >/dev/null 2>&1; then

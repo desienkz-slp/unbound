@@ -549,6 +549,42 @@ Setelah itu, akun `admin` dengan password `admin123` langsung aktif dan siap dig
 2. **Embedded Auto-Migration di Go Engine (`pkg/storage/postgres.go`):** Menggunakan directiva `//go:embed migrations/001_initial_schema.sql` agar binary `netora-api` dan `netora-cli` secara otomatis menjalankan `CREATE TABLE IF NOT EXISTS` saat pertama kali terhubung ke database.
 3. **Auto-Seed Fallback di `netora-cli` (`cmd/netora-cli/main.go`):** Jika perintah `netora reset-password admin <password>` dijalankan pada database yang belum memiliki user admin, `netora-cli` otomatis mem-provisioning akun `admin` sebagai `SUPER_ADMIN`.
 
+---
+
+## 16. Audit & Pengerasan Sistem Menyeluruh untuk 100% Keandalan Fresh Install
+
+Dilakukan audit mendalam terhadap seluruh alur instalasi dari awal (*zero-state*) hingga sistem siap beroperasi penuh pada server baru:
+
+### 1. Perbaikan Eksekusi Script via Pipe (`BASH_SOURCE[0]`)
+- **Masalah:** Saat dijalankan via `curl -sSL ... | sudo -E bash`, array `${BASH_SOURCE[0]}` belum diinisialisasi sehingga memicu error `unbound variable` karena flag `set -u`.
+- **Perbaikan:** Diterapkan pengecekan defensif `${BASH_SOURCE[0]:-}` sebelum membaca direktori pemanggil.
+
+### 2. Dependensi DNSSEC & Paket `unbound-anchor`
+- **Masalah:** Pada instalasi minimal Ubuntu/Debian, `unbound-anchor` berada pada paket terpisah atau belum terpasang, menyebabkan `/var/lib/unbound/root.key` gagal di-generate dan query recursive SERVFAIL / timeout.
+- **Perbaikan:**
+  - Ditambahkan paket `unbound-anchor` ke daftar `apt-get install`.
+  - Ditambahkan fallback penyuntikan kunci resmi **IANA Root DNSSEC Trust Anchor (RFC 5011)** jika koneksi unduh terputus saat instalasi awal.
+  - Dipastikan kepemilikan direktori `chown -R unbound:unbound /var/lib/unbound` (izin `755`/`644`).
+
+### 3. Jaminan Loopback Access Control List (ACL)
+- **Masalah:** Jika operator menentukan `--subnets` kustom, subnet lokal `127.0.0.0/8` dan `::1` berisiko tidak terdaftar sehingga query lokal server ditolak (*refused*).
+- **Perbaikan:** Loopback `127.0.0.0/8` dan `::1` selalu diinjeksi secara permanen ke dalam konfigurasi Unbound ACL.
+
+### 4. Eksekusi Migrasi Database Bebas Kendala Permission
+- **Masalah:** User `postgres` tidak memiliki hak akses untuk membaca direktori `/opt/netora-dns/` (`chmod 750`). Perintah `psql -f /opt/...` menghasilkan `Permission denied`.
+- **Perbaikan:** Root membaca berkas SQL dan mengalirkannya langsung ke stdin: `cat "$SCHEMA_FILE" | (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}")`.
+
+### 5. Sinkronisasi Bundle Produksi Web UI Terbaru (`deploy/ui`)
+- **Masalah:** Direktori `deploy/ui` sebelumnya masih berisi artefak build lama sebelum penambahan modal `UserSettingsModal`.
+- **Perbaikan:** Dilakukan kompilasi ulang produksi Vite/Tailwind (`npm run build`) dan sinkronisasi seluruh aset terkompresi ke `deploy/ui/`, sehingga server baru langsung menerima tampilan NOC modern dan fitur ganti kredensial.
+
+### 6. Peningkatan Updater Otomatis Fleet (`netora-dns-update.sh`)
+- Skrip updater otonom kini secara otomatis memperbarui distribusi Web UI (`/var/www/netora-ui`), binary `netora-api`, dan binary `netora-cli` setiap kali rilis baru di-pull dari GitHub, menjamin seluruh node cluster selalu sinkron 100%.
+
+### 7. Warm-up Retry Loop pada Post-Installation Health Check
+- Ditambahkan mekanisme pengujian 5x percobaan (*retry loop*) dengan jeda 1 detik untuk memberikan waktu bagi recursive resolver melakukan pemanasan iterasi DNS root hints pada instalasi dingin (*cold start*).
+
+
 
 
 

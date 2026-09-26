@@ -66,6 +66,7 @@ echo -e "${CYAN}4. Menghapus Binaries & CLI Helpers...${NC}"
 rm -f /usr/local/bin/netora
 rm -f /usr/local/bin/netora-api
 rm -f /usr/local/bin/netora-cli
+rm -f /usr/local/bin/netora-reset-password
 rm -f /usr/local/bin/netora-bench
 rm -f /usr/local/bin/netora-mcp
 rm -f /usr/local/sbin/netora-dns-update

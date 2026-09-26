@@ -220,6 +220,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y -q
 apt-get install -y -q \
   unbound \
+  unbound-anchor \
   dnsutils \
   curl \
   wget \
@@ -287,9 +288,12 @@ mkdir -p "$INSTALL_DIR" \
 chmod 750 "$INSTALL_DIR" /etc/netora-dns /var/lib/netora-dns /var/log/netora-dns
 
 # Determine Source Location: Local running directory or Git Clone
-SCRIPT_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
+SCRIPT_SOURCE_DIR=""
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  SCRIPT_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
+fi
 
-if [[ -f "${SCRIPT_SOURCE_DIR}/conf/unbound-base.conf" && -d "${SCRIPT_SOURCE_DIR}/pkg" ]]; then
+if [[ -n "$SCRIPT_SOURCE_DIR" && -f "${SCRIPT_SOURCE_DIR}/conf/unbound-base.conf" && -d "${SCRIPT_SOURCE_DIR}/pkg" ]]; then
   log_info "Detected local Netora source repository at: ${SCRIPT_SOURCE_DIR}"
   mkdir -p "$REPO_DIR"
   cp -r "${SCRIPT_SOURCE_DIR}/"* "$REPO_DIR/" 2>/dev/null || true
@@ -307,6 +311,7 @@ else
   fi
   log_success "Repository cloned to: ${REPO_DIR}"
 fi
+ln -sfn "${REPO_DIR}" "${INSTALL_DIR}/current"
 
 # ------------------------------------------------------------------------------
 # Configure Unbound Data Plane
@@ -320,10 +325,29 @@ unbound-control-setup >/dev/null 2>&1 || true
 mkdir -p /var/lib/unbound
 if [[ ! -f /var/lib/unbound/root.hints ]] || [[ ! -s /var/lib/unbound/root.hints ]]; then
   log_info "Downloading latest IANA root.hints..."
-  wget -qO /var/lib/unbound/root.hints https://www.internic.net/domain/named.cache || true
+  wget -qO /var/lib/unbound/root.hints https://www.internic.net/domain/named.cache 2>/dev/null || true
 fi
 
-unbound-anchor -a /var/lib/unbound/root.key || true
+# Run unbound-anchor if available
+if command -v unbound-anchor >/dev/null 2>&1; then
+  unbound-anchor -a /var/lib/unbound/root.key || true
+elif [[ -x /usr/sbin/unbound-anchor ]]; then
+  /usr/sbin/unbound-anchor -a /var/lib/unbound/root.key || true
+fi
+
+# Trust Anchor Fallback: If root.key is missing or empty, inject official IANA root DNSSEC trust anchor
+if [[ ! -f /var/lib/unbound/root.key ]] || [[ ! -s /var/lib/unbound/root.key ]]; then
+  cat > /var/lib/unbound/root.key <<'EOF'
+.	3600	IN	DNSKEY	257 3 8 AwEAAa96jeuknZlaeSrvyAJj6ZHv28hhOKkx3rLGXVaC6rXTsDc449/cidltpkyGwCJNnOAlFNKF2jBosZBU5eeHspaQWOmOElZsjICMQMC3aeHbGiShvZsx4wMYSjH8e7Vrhbu6irwCzVBApESjbUdpWWmEnhathWu1jo+siFUiRAAxm9qyJNg/wOZqqzL/dL/q8PkcRU5oUKEpUge71M3ej2/7CPqpdVwuMoTvoB+ZOT4YeGyxMvHmbrxlFzGOHOijtzN+u1TQNatX2XBuzZNQ1K+s2CXkPIZo7s6JgZyvaBevYtxPvYLw4z9mR7K2vaF18UYH9Z9GNUUeayffKC73PYc= ;{id = 38696 (ksk), size = 2048b} ;;state=2 [  VALID  ]
+.	3600	IN	DNSKEY	257 3 8 AwEAAaz/tAm8yTn4Mfeh5eyI96WSVexTBAvkMgJzkKTOiW1vkIbzxeF3+/4RgWOq7HrxRixHlFlExOLAJr5emLvN7SWXgnLh4+B5xQlNVz8Og8kvArMtNROxVQuCaSnIDdD5LKyWbRd2n9WGe2R8PzgCmr3EgVLrjyBxWezF0jLHwVN8efS3rCj/EWgvIWgb9tarpVUDK/b58Da+sqqls3eNbuv7pr+eoZG+SrDK6nWeL3c6H5Apxz7LjVc1uTIdsIXxuOLYA4/ilBmSVIzuDWfdRUfhHdY6+cn8HFRm+2hM8AnXGXws9555KrUB5qihylGa8subX2Nn6UwNR1AkUTV74bU= ;{id = 20326 (ksk), size = 2048b} ;;state=2 [  VALID  ]
+EOF
+fi
+
+# Ensure Unbound daemon has full read/write access to /var/lib/unbound
+chown -R unbound:unbound /var/lib/unbound 2>/dev/null || true
+chmod 755 /var/lib/unbound
+chmod 644 /var/lib/unbound/root.hints 2>/dev/null || true
+chmod 644 /var/lib/unbound/root.key 2>/dev/null || true
 
 # Calculate Optimal Cache Sizing based on RAM
 CORES="$(nproc 2>/dev/null || echo 1)"
@@ -342,10 +366,12 @@ else
   MSG_CACHE="512m"; RRSET_CACHE="1024m"; KEY_CACHE="256m"; NEG_CACHE="256m"
 fi
 
-# Build ACL Directives
-ACL_DIRECTIVES=""
+# Build ACL Directives (always explicitly allow localhost loopbacks)
+ACL_DIRECTIVES="  access-control: 127.0.0.0/8 allow"$'\n'"  access-control: ::1 allow"$'\n'
 for sub in $CLIENT_SUBNETS; do
-  ACL_DIRECTIVES+="  access-control: ${sub} allow"$'\n'
+  if [[ "$sub" != "127.0.0.0/8" && "$sub" != "::1" ]]; then
+    ACL_DIRECTIVES+="  access-control: ${sub} allow"$'\n'
+  fi
 done
 
 # Mode Specific Config
@@ -474,7 +500,7 @@ fi
 
 if [[ -n "$SCHEMA_FILE" && -f "$SCHEMA_FILE" ]]; then
   log_info "Applying initial database schema migrations..."
-  sudo -u postgres psql -d "${DB_NAME}" -f "$SCHEMA_FILE" >/dev/null 2>&1 || true
+  cat "$SCHEMA_FILE" | (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}") || true
   log_success "Initial database schema applied successfully."
 fi
 
@@ -637,9 +663,16 @@ fi
 # ------------------------------------------------------------------------------
 log_step "Executing Post-Installation Health Checks"
 
-sleep 1
+log_info "Warming up DNS recursive resolution..."
 DNS_TEST_RESULT=""
-if DNS_TEST_RESULT="$(dig @127.0.0.1 -p "$DNS_LISTEN_PORT" google.com +short +time=3 2>/dev/null)" && [[ -n "$DNS_TEST_RESULT" ]]; then
+for attempt in 1 2 3 4 5; do
+  if DNS_TEST_RESULT="$(dig @127.0.0.1 -p "$DNS_LISTEN_PORT" google.com +short +time=3 +tries=2 2>/dev/null)" && [[ -n "$DNS_TEST_RESULT" ]]; then
+    break
+  fi
+  sleep 1
+done
+
+if [[ -n "$DNS_TEST_RESULT" ]]; then
   log_success "DNS Data Plane Resolution: PASS (google.com -> ${DNS_TEST_RESULT})"
 else
   log_warn "DNS resolution test on 127.0.0.1:${DNS_LISTEN_PORT} returned no record. Check 'systemctl status unbound'."
