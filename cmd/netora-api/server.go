@@ -738,12 +738,21 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 				ClientIP: r.RemoteAddr,
 				Status:   "FAILURE",
 			})
-			s.writeJSON(w, http.StatusInternalServerError, res)
+			s.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error":         err.Error(),
+				"error_message": err.Error(),
+				"result":        res,
+			})
 			return
 		}
 
-		log.Printf("[apply] Node %s: apply succeeded! Version %s active in %dms\n", nodeID, res.VersionID, res.DurationMs)
-		_ = s.store.SaveDesiredState(r.Context(), &state)
+		if err := s.store.SaveDesiredState(r.Context(), &state); err != nil {
+			log.Printf("[apply] Node %s: SaveDesiredState failed: %v\n", nodeID, err)
+			s.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": fmt.Sprintf("Applied to Unbound, but failed to save to database: %v", err),
+			})
+			return
+		}
 
 		// Sync core platform filters in database to keep status consistent with Master Cards
 		if filters, err := s.store.ListFilters(r.Context()); err == nil {
@@ -805,7 +814,11 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 				ClientIP: r.RemoteAddr,
 				Status:   "FAILURE",
 			})
-			s.writeJSON(w, http.StatusInternalServerError, res)
+			s.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error":         err.Error(),
+				"error_message": err.Error(),
+				"result":        res,
+			})
 			return
 		}
 		s.writeJSON(w, http.StatusOK, res)

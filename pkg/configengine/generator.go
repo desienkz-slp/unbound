@@ -377,12 +377,27 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 	}
 
 	// Filter and sort active listeners
+	hasWildcardV4 := false
+	for _, l := range state.Listeners {
+		if l.Enabled && !l.IsIPv6 && !model.IsIPv6Address(l.IP) && l.IP == "0.0.0.0" && l.Port == 53 {
+			hasWildcardV4 = true
+			break
+		}
+	}
+
 	for _, l := range state.Listeners {
 		if l.Enabled {
 			if l.IsIPv6 || model.IsIPv6Address(l.IP) {
 				ctx.HasIPv6 = true
+				ctx.ActiveListeners = append(ctx.ActiveListeners, l)
+			} else {
+				// In Linux sockets, binding 0.0.0.0:53 along with 127.0.0.1:53 results in
+				// 'Address already in use for 0.0.0.0 port 53'. Loopback is already covered by 0.0.0.0.
+				if hasWildcardV4 && l.IP == "127.0.0.1" && l.Port == 53 {
+					continue
+				}
+				ctx.ActiveListeners = append(ctx.ActiveListeners, l)
 			}
-			ctx.ActiveListeners = append(ctx.ActiveListeners, l)
 		}
 	}
 	sort.Slice(ctx.ActiveListeners, func(i, j int) bool {

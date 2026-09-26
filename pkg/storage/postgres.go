@@ -226,12 +226,12 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 	}
 	defer tx.Rollback()
 
-	// 0. Update resolution_mode and config_json on node
+	// 0. Update config_json on node
 	cfgBytes, err := json.Marshal(state)
 	if err == nil {
-		_, _ = tx.ExecContext(ctx, `UPDATE nodes SET resolution_mode = $1, config_json = $2, updated_at = NOW() WHERE id = $3`, string(state.ResolutionMode), cfgBytes, state.NodeID)
-	} else if state.ResolutionMode != "" {
-		_, _ = tx.ExecContext(ctx, `UPDATE nodes SET resolution_mode = $1, updated_at = NOW() WHERE id = $2`, string(state.ResolutionMode), state.NodeID)
+		if _, err := tx.ExecContext(ctx, `UPDATE nodes SET config_json = $1, updated_at = NOW() WHERE id = $2`, cfgBytes, state.NodeID); err != nil {
+			return fmt.Errorf("failed updating node config_json: %w", err)
+		}
 	}
 
 	// 1. Sync Listeners (non-destructive UPSERT)
@@ -336,13 +336,9 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 
 	state := model.NewDefaultDesiredState(nodeID, node.CPUCores, node.RAMMB)
 
-	// Fetch resolution_mode and config_json if stored on node
-	var resMode sql.NullString
+	// Fetch config_json if stored on node
 	var cfgJSON []byte
-	if err := p.db.QueryRowContext(ctx, `SELECT resolution_mode, config_json FROM nodes WHERE id = $1`, nodeID).Scan(&resMode, &cfgJSON); err == nil {
-		if resMode.Valid && resMode.String != "" {
-			state.ResolutionMode = model.ResolutionMode(resMode.String)
-		}
+	if err := p.db.QueryRowContext(ctx, `SELECT config_json FROM nodes WHERE id = $1`, nodeID).Scan(&cfgJSON); err == nil {
 		if len(cfgJSON) > 0 {
 			var savedState model.DesiredState
 			if err := json.Unmarshal(cfgJSON, &savedState); err == nil {
