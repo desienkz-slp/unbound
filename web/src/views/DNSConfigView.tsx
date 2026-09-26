@@ -377,7 +377,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
     const newL: Listener = {
       id: `listener-${Date.now()}`,
       name: 'New Listener',
-      ip: '172.18.20.145',
+      ip: '0.0.0.0',
       port: 53,
       role: 'CLIENT',
       is_ipv6: false,

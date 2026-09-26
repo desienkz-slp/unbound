@@ -66,11 +66,17 @@ export const Header: React.FC<HeaderProps> = ({
             onChange={(e) => onSelectNode(e.target.value)}
             className="bg-transparent text-cyan-300 font-medium focus:outline-none cursor-pointer"
           >
-            {nodes.map((n) => (
-              <option key={n.id} value={n.id} className="bg-gray-900 text-gray-200">
-                {n.hostname} ({n.management_ip})
+            {nodes.length > 0 ? (
+              nodes.map((n) => (
+                <option key={n.id} value={n.id} className="bg-gray-900 text-gray-200">
+                  {n.hostname} ({n.management_ip || window.location.hostname})
+                </option>
+              ))
+            ) : (
+              <option value="" className="bg-gray-900 text-gray-200">
+                {window.location.hostname}
               </option>
-            ))}
+            )}
           </select>
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-1" title="Node Online" />
         </div>

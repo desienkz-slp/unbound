@@ -184,7 +184,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
             )}
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            Real-time ISP NOC telemetry & query distribution for node <strong className="text-cyan-400 font-mono">{node?.hostname || 'dns-dev'}</strong>
+            Real-time ISP NOC telemetry & query distribution for node <strong className="text-cyan-400 font-mono">{node?.hostname || nodeId || 'Current Node'}</strong>
           </p>
         </div>
 

@@ -113,7 +113,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ nodeId, node }) 
             Refresh
           </button>
           <a
-            href={`http://${node?.management_ip || '172.18.20.145'}:8080/metrics`}
+            href={`http://${node?.management_ip || window.location.hostname}:8080/metrics`}
             target="_blank"
             rel="noreferrer"
             className="px-3 py-1.5 bg-cyan-950 text-cyan-400 border border-cyan-800 hover:bg-cyan-900 text-xs font-mono font-semibold rounded-lg flex items-center gap-1.5"

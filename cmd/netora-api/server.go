@@ -49,17 +49,22 @@ type Server struct {
 }
 
 // NewServer initializes the API server components.
-func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *policy.PolicyEngine, jwtSecret, nodeID string) *Server {
+func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *policy.PolicyEngine, jwtSecret, nodeID string, optionalMgmtIP ...string) *Server {
 	if policyEngine == nil {
 		policyEngine = policy.NewPolicyEngine()
 	}
+	mgmtIP := detectManagementIP()
+	if len(optionalMgmtIP) > 0 && optionalMgmtIP[0] != "" {
+		mgmtIP = optionalMgmtIP[0]
+	}
+
 	metrics := telemetry.DefaultMetrics
 	alertEngine := telemetry.NewAlertEngine(nodeID, store, metrics)
 	cm := cluster.NewClusterManager(store)
 	cm.RegisterNode(&cluster.ClusterNode{
 		ID:           nodeID,
 		Hostname:     nodeID,
-		ManagementIP: "172.18.20.145",
+		ManagementIP: mgmtIP,
 		Role:         cluster.RolePrimary,
 		State:        cluster.StateOnline,
 		SyncStatus:   cluster.SyncSynchronized,

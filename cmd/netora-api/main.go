@@ -71,16 +71,25 @@ func main() {
 		}
 	}
 
-	// 3. Register Current Node
+	// 3. Register Current Node with Real Dynamic Hardware Specs & IP
+	realIP := detectManagementIP()
+	realCores, realRAM, realUnboundVer := detectSystemSpecs()
+	hostname := *nodeID
+	if h, err := os.Hostname(); err == nil && h != "" && (*nodeID == "dns-dev" || *nodeID == "") {
+		hostname = h
+	}
+
 	nodeMeta := &model.NodeMetadata{
 		NodeID:         *nodeID,
-		Hostname:       *nodeID,
-		UnboundVersion: "1.13.1",
-		CPUCores:       2,
-		TotalRAMMB:     2048,
+		Hostname:       hostname,
+		UnboundVersion: realUnboundVer,
+		CPUCores:       realCores,
+		TotalRAMMB:     realRAM,
 		LastSeenAt:     time.Now().UTC(),
 	}
-	_ = store.UpsertNode(ctx, nodeMeta, "HEALTHY", "172.18.20.145")
+	_ = store.UpsertNode(ctx, nodeMeta, "HEALTHY", realIP)
+	log.Printf("Registered local node '%s' (hostname: %s, mgmt_ip: %s, cpu: %d cores, ram: %d MB, unbound: %s)\n",
+		*nodeID, hostname, realIP, realCores, realRAM, realUnboundVer)
 
 	// 4. Initialize Config Engine
 	gen, err := configengine.NewGenerator()
@@ -116,7 +125,7 @@ func main() {
 	go queryLogTailer.Start(collectorCtx)
 
 	// 7. Setup HTTP Server
-	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID)
+	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID, realIP)
 
 	// 7.1 Start Autonomous Blocklist Auto-Update Scheduler
 	apiServer.blocklistManager.StartScheduler(collectorCtx)
@@ -135,9 +144,9 @@ func main() {
 				UnboundRunning:  probe.Healthy,
 				Port53Listening: probe.Healthy,
 				LatencyMS:       float64(probe.Latency.Milliseconds()),
-				UnboundVersion:  "1.13.1",
-				CPUCores:        2,
-				RAMMB:           2048,
+				UnboundVersion:  realUnboundVer,
+				CPUCores:        realCores,
+				RAMMB:           realRAM,
 			})
 
 			select {

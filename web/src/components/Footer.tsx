@@ -143,8 +143,8 @@ export const Footer: React.FC<FooterProps> = ({ node, unboundHealthy }) => {
           {/* Node Badge */}
           <div className="flex items-center gap-1.5 text-gray-400 text-[11px] font-mono">
             <Server className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-gray-300 font-medium">{node.hostname || node.id}</span>
-            <span className="text-gray-500 hidden md:inline">({node.management_ip})</span>
+            <span className="text-gray-300 font-medium">{node?.hostname || node?.id || window.location.hostname}</span>
+            <span className="text-gray-500 hidden md:inline">({node?.management_ip || window.location.hostname})</span>
           </div>
 
           <span className="text-gray-700 hidden md:inline">|</span>
@@ -152,7 +152,7 @@ export const Footer: React.FC<FooterProps> = ({ node, unboundHealthy }) => {
           {/* Data Plane Resolver */}
           <div className="hidden md:flex items-center gap-1.5 text-gray-400 text-[11px]">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Unbound {node.unbound_version || '1.13.1'}</span>
+            <span>Unbound {node?.unbound_version || '1.x'}</span>
           </div>
         </div>
 

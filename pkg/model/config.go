@@ -237,7 +237,7 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			{
 				ID:      "listen-client-v4",
 				Name:    "Client DNS IPv4",
-				IP:      "172.18.20.145",
+				IP:      "0.0.0.0",
 				Port:    53,
 				Role:    RoleClient,
 				IsIPv6:  false,

@@ -35,7 +35,7 @@ export const WizardView: React.FC<WizardViewProps> = ({
   const totalSteps = 10;
 
   // Wizard state initialized from existing config or defaults
-  const [clientIp, setClientIp] = useState(existingConfig?.listeners[0]?.ip || '172.18.20.145');
+  const [clientIp, setClientIp] = useState(existingConfig?.listeners[0]?.ip || node?.management_ip || '0.0.0.0');
   const [clientPort, setClientPort] = useState(53);
   const [enableIPv6, setEnableIPv6] = useState(false);
   const [clientCIDR, setClientCIDR] = useState(existingConfig?.client_networks[0]?.cidr || '172.18.0.0/16');
@@ -70,7 +70,7 @@ export const WizardView: React.FC<WizardViewProps> = ({
       // Build desired state object
       const wizardState: DesiredState = {
         version_id: `wizard-${Date.now()}`,
-        node_id: nodeId || 'dns-dev',
+        node_id: nodeId || node?.id || 'local-node',
         resolution_mode: resolverMode,
         listeners: [
           {
@@ -218,7 +218,7 @@ export const WizardView: React.FC<WizardViewProps> = ({
             </div>
           </div>
           <span className="text-xs px-2.5 py-1 rounded bg-cyan-950 text-cyan-300 font-mono border border-cyan-800">
-            Node: {node?.hostname || 'dns-dev'}
+            Node: {node?.hostname || nodeId || 'Current Node'}
           </span>
         </div>
 
@@ -247,11 +247,11 @@ export const WizardView: React.FC<WizardViewProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 font-mono text-xs">
               <div className="p-3 bg-gray-950 border border-gray-800 rounded-lg">
                 <span className="text-gray-500 block text-[10px]">HOSTNAME</span>
-                <span className="text-white font-bold">{node?.hostname || 'dns-dev'}</span>
+                <span className="text-white font-bold">{node?.hostname || nodeId || 'Current Node'}</span>
               </div>
               <div className="p-3 bg-gray-950 border border-gray-800 rounded-lg">
                 <span className="text-gray-500 block text-[10px]">MANAGEMENT IP</span>
-                <span className="text-cyan-400 font-bold">{node?.management_ip || '172.18.20.145'}</span>
+                <span className="text-cyan-400 font-bold">{node?.management_ip || window.location.hostname}</span>
               </div>
               <div className="p-3 bg-gray-950 border border-gray-800 rounded-lg">
                 <span className="text-gray-500 block text-[10px]">HARDWARE CORES</span>

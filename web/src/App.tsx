@@ -20,7 +20,7 @@ import { api } from './services/api';
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('overview');
   const [nodes, setNodes] = useState<NodeRecord[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string>('dns-dev');
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [config, setConfig] = useState<DesiredState | null>(null);
   const [currentUser, setCurrentUser] = useState<string>('admin');
   const [showLogin, setShowLogin] = useState<boolean>(false);
@@ -33,16 +33,22 @@ export function App() {
     try {
       const nodeList = await api.getNodes();
       setNodes(nodeList);
-      if (nodeList.length > 0 && !selectedNodeId) {
-        setSelectedNodeId(nodeList[0].id);
+
+      let activeId = selectedNodeId;
+      if (nodeList.length > 0) {
+        if (!activeId || !nodeList.some((n) => n.id === activeId)) {
+          activeId = nodeList[0].id;
+          setSelectedNodeId(activeId);
+        }
       }
 
-      const activeId = selectedNodeId || (nodeList[0]?.id ?? 'dns-dev');
-      const cfg = await api.getDesiredState(activeId);
-      setConfig(cfg);
+      if (activeId) {
+        const cfg = await api.getDesiredState(activeId);
+        setConfig(cfg);
 
-      const health = await api.getNodeHealth(activeId);
-      setUnboundHealthy(health.healthy);
+        const health = await api.getNodeHealth(activeId);
+        setUnboundHealthy(health.healthy);
+      }
     } catch (err: any) {
       if (err.message === 'Unauthorized') {
         setShowLogin(true);
@@ -56,14 +62,14 @@ export function App() {
     loadInitialData();
   }, [selectedNodeId]);
 
-  const activeNode = nodes.find((n) => n.id === selectedNodeId) || {
-    id: 'dns-dev',
-    hostname: 'dns-dev',
-    management_ip: '172.18.20.145',
+  const activeNode = nodes.find((n) => n.id === selectedNodeId) || nodes[0] || {
+    id: selectedNodeId || 'local-node',
+    hostname: window.location.hostname,
+    management_ip: window.location.hostname,
     status: 'ONLINE',
-    unbound_version: '1.13.1',
-    cpu_cores: 2,
-    ram_mb: 2048,
+    unbound_version: '1.x',
+    cpu_cores: 1,
+    ram_mb: 1024,
     last_seen_at: new Date().toISOString(),
   };
 

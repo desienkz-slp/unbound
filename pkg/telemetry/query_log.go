@@ -286,9 +286,6 @@ func ClientNameHelper(ip string) string {
 	if ip == "172.18.20.1" {
 		return "Gateway / NOC Router"
 	}
-	if ip == "172.18.20.145" {
-		return "Netora Primary Server"
-	}
 	if strings.HasPrefix(ip, "172.18.20.") {
 		return "NOC LAN / Infra"
 	}
