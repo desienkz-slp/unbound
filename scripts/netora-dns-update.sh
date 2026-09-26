@@ -532,6 +532,12 @@ EOF
         cp -f "${target_release_dir}/deploy/systemd/netora-dns-updater.service" /etc/systemd/system/netora-dns-updater.service 2>/dev/null && systemctl daemon-reload || true
     fi
 
+    # Update Web UI static assets if present in release
+    if [[ -d "${target_release_dir}/web/dist" ]]; then
+        mkdir -p /var/www/netora-ui
+        cp -r "${target_release_dir}/web/dist/"* /var/www/netora-ui/ 2>/dev/null || true
+    fi
+
     # Step 6: Unbound Reload
     log_event "INFO" "reloading_unbound" "Reloading Unbound DNS service"
     if ! unbound-control reload >/dev/null 2>&1; then
