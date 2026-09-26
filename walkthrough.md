@@ -584,6 +584,24 @@ Dilakukan audit mendalam terhadap seluruh alur instalasi dari awal (*zero-state*
 ### 7. Warm-up Retry Loop pada Post-Installation Health Check
 - Ditambahkan mekanisme pengujian 5x percobaan (*retry loop*) dengan jeda 1 detik untuk memberikan waktu bagi recursive resolver melakukan pemanasan iterasi DNS root hints pada instalasi dingin (*cold start*).
 
+---
+
+## 17. Pembelajaran Sistem: Invarian Wajib Pull dari GitHub untuk Server 145 & Node Produksi
+
+Sesuai perintah eksplisit operator via `/learn`, telah ditetapkan aturan operasional permanen pada [AGENTS.md](file:///c:/xampp/htdocs/auto-install/unbound/AGENTS.md):
+
+### 1. Invarian Kritis Baru (#17):
+> *"Production node updates (including server 172.18.20.145 / dns-dev) must always be deployed by pulling from the canonical GitHub repository (via `netora update` or `git pull`) after committing and pushing changes, never via ad-hoc unversioned manual file transfers."*
+
+### 2. Pedoman Perilaku Rekayasa (*Coding Behavior*):
+> *"- For server updates on target nodes (e.g. 172.18.20.145), always commit and push changes to GitHub first, then trigger `netora update` or git pull on the remote host to maintain absolute parity."*
+
+### 3. Hasil Sinkronisasi Server 145 (`172.18.20.145`):
+- Seluruh commit terbaru (`f23e520`) telah ditarik secara otomatis via `netora update`.
+- Waktu eksekusi: 38 detik (Staging -> Validation -> Reload -> Health Check).
+- Status: `SUCCESS`, resolusi DNS: `PASS` (latensi ~500µs), API: `UP`.
+
+
 
 
 
