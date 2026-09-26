@@ -474,9 +474,9 @@ action_update() {
     ln -sfn "$target_release_dir" "${NETORA_BASE}/current"
 
     # Synchronize Web UI distribution if present in release
-    if [[ -d "${target_release_dir}/deploy/ui" ]] && [[ "$(ls -A "${target_release_dir}/deploy/ui" 2>/dev/null)" ]]; then
+    if [[ -d "${target_release_dir}/deploy/ui" ]]; then
         mkdir -p /var/www/netora-ui
-        cp -r "${target_release_dir}/deploy/ui/"* /var/www/netora-ui/ 2>/dev/null || true
+        cp -r "${target_release_dir}/deploy/ui/." /var/www/netora-ui/ 2>/dev/null || true
     fi
 
     # Ensure dynamic version.json is placed in Web UI and state directory
