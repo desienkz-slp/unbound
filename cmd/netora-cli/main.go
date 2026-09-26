@@ -141,19 +141,41 @@ func main() {
 
 		user, err := store.GetUserByUsername(ctx, targetUser)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: user '%s' not found in database: %v\n", targetUser, err)
-			os.Exit(1)
-		}
+			if targetUser == "admin" {
+				hash, hErr := auth.HashPassword(pass)
+				if hErr != nil {
+					fmt.Fprintf(os.Stderr, "Error hashing password: %v\n", hErr)
+					os.Exit(1)
+				}
+				adminUser := &auth.User{
+					ID:           "usr-superadmin",
+					Username:     "admin",
+					PasswordHash: hash,
+					Role:         auth.RoleSuperAdmin,
+					Email:        "admin@netora.internal",
+					FullName:     "System Administrator",
+					CreatedAt:    time.Now().UTC(),
+				}
+				if cErr := store.CreateUser(ctx, adminUser); cErr != nil {
+					fmt.Fprintf(os.Stderr, "Error creating admin user: %v\n", cErr)
+					os.Exit(1)
+				}
+				user = adminUser
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: user '%s' not found in database: %v\n", targetUser, err)
+				os.Exit(1)
+			}
+		} else {
+			hash, err := auth.HashPassword(pass)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error hashing password: %v\n", err)
+				os.Exit(1)
+			}
 
-		hash, err := auth.HashPassword(pass)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error hashing password: %v\n", err)
-			os.Exit(1)
-		}
-
-		if err := store.UpdateUserCredentials(ctx, user.ID, user.Username, hash); err != nil {
-			fmt.Fprintf(os.Stderr, "Error updating user in PostgreSQL: %v\n", err)
-			os.Exit(1)
+			if err := store.UpdateUserCredentials(ctx, user.ID, user.Username, hash); err != nil {
+				fmt.Fprintf(os.Stderr, "Error updating user in PostgreSQL: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		_ = store.LogAudit(ctx, &model.AuditRecord{

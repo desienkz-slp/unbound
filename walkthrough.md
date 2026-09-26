@@ -522,6 +522,34 @@ curl -H "Authorization: token $GITHUB_TOKEN" -sSL https://raw.githubusercontent.
 
 Setelah `install.sh` selesai dieksekusi, installer secara otomatis mengonfigurasi Unbound sebagai resolver lokal berkecepatan tinggi dengan fallback upstream yang aman.
 
+---
+
+## 15. Root Cause & Solusi: Gagal Login Admin / Error `pq: relation "users" does not exist`
+
+### Akar Masalah:
+Saat node baru (`netora-dns1`) diinstal:
+1. Script `install.sh` membuat database PostgreSQL `netora`, tetapi berkas migrasi skema tabel `pkg/storage/migrations/001_initial_schema.sql` belum dieksekusi ke dalam database.
+2. Akibatnya, database `netora` masih kosong (0 tabel) dan tabel `users` belum terbentuk (`pq: relation "users" does not exist`).
+3. Saat `netora-api` pertama kali aktif, ia mencoba membaca dan membuat akun default `admin`, namun gagal karena tabel `users` belum ada.
+4. Ketika operator mencoba login di Web UI atau mereset password via `netora reset-password`, sistem mengembalikan error `Unauthorized` / `relation "users" does not exist`.
+
+### Solusi Instan di Server (`netora-dns1`):
+Jalankan 2 baris perintah ini di terminal server:
+```bash
+# 1. Eksekusi skema tabel ke database netora
+sudo -u postgres psql -d netora -f /opt/netora-dns/repository/pkg/storage/migrations/001_initial_schema.sql
+
+# 2. Restart layanan Netora API agar akun default admin di-seed otomatis
+systemctl restart netora-api
+```
+Setelah itu, akun `admin` dengan password `admin123` langsung aktif dan siap digunakan untuk login ke Web UI dashboard maupun reset password via CLI.
+
+### Solusi Permanen pada Kode Repositori:
+1. **Auto-Migrate di Installer (`install.sh`):** Ditambahkan eksekusi otomatis `001_initial_schema.sql` saat proses provisioning database.
+2. **Embedded Auto-Migration di Go Engine (`pkg/storage/postgres.go`):** Menggunakan directiva `//go:embed migrations/001_initial_schema.sql` agar binary `netora-api` dan `netora-cli` secara otomatis menjalankan `CREATE TABLE IF NOT EXISTS` saat pertama kali terhubung ke database.
+3. **Auto-Seed Fallback di `netora-cli` (`cmd/netora-cli/main.go`):** Jika perintah `netora reset-password admin <password>` dijalankan pada database yang belum memiliki user admin, `netora-cli` otomatis mem-provisioning akun `admin` sebagai `SUPER_ADMIN`.
+
+
 
 
 

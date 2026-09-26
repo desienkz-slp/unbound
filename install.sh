@@ -464,6 +464,20 @@ EOF
 
 log_success "PostgreSQL database '${DB_NAME}' provisioned for user '${DB_USER}'."
 
+# Apply initial schema migration
+SCHEMA_FILE=""
+if [[ -f "${REPO_DIR}/pkg/storage/migrations/001_initial_schema.sql" ]]; then
+  SCHEMA_FILE="${REPO_DIR}/pkg/storage/migrations/001_initial_schema.sql"
+elif [[ -f "/opt/netora-dns/repository/pkg/storage/migrations/001_initial_schema.sql" ]]; then
+  SCHEMA_FILE="/opt/netora-dns/repository/pkg/storage/migrations/001_initial_schema.sql"
+fi
+
+if [[ -n "$SCHEMA_FILE" && -f "$SCHEMA_FILE" ]]; then
+  log_info "Applying initial database schema migrations..."
+  sudo -u postgres psql -d "${DB_NAME}" -f "$SCHEMA_FILE" >/dev/null 2>&1 || true
+  log_success "Initial database schema applied successfully."
+fi
+
 # ------------------------------------------------------------------------------
 # Install Netora Control Plane API & NOC Web UI
 # ------------------------------------------------------------------------------

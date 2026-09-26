@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,9 @@ import (
 	"netora-dns/pkg/auth"
 	"netora-dns/pkg/model"
 )
+
+//go:embed migrations/001_initial_schema.sql
+var initialSchemaSQL string
 
 // PostgresStore implements the Store interface using PostgreSQL.
 type PostgresStore struct {
@@ -35,6 +39,11 @@ func NewPostgresStore(connStr string) (*PostgresStore, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping postgres database: %w", err)
+	}
+
+	// Auto-migrate: Ensure base schema and all tables exist idempotently
+	if initialSchemaSQL != "" {
+		_, _ = db.Exec(initialSchemaSQL)
 	}
 
 	// Idempotent column check for node resolution_mode
