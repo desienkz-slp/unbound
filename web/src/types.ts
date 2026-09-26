@@ -270,3 +270,19 @@ export interface SystemVersion {
   node_id?: string;
   status?: string;
 }
+
+export interface SystemUpdateStatus {
+  version: string;
+  commit_count: number;
+  build: number;
+  git_commit: string;
+  git_branch: string;
+  node_id?: string;
+  is_updating: boolean;
+  last_error?: string;
+  last_update_time?: string;
+  last_status?: string;
+  remote_commit?: string;
+  update_available: boolean;
+}
+

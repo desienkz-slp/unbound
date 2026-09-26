@@ -14,12 +14,12 @@ User=root
 Group=root
 
 # Security Sandboxing & Isolation
-ProtectSystem=true
+ProtectSystem=false
 ProtectHome=read-only
 PrivateTmp=true
 ProtectControlGroups=true
 NoNewPrivileges=false
-ReadWritePaths=/etc/unbound /etc/netora-dns /opt/netora-dns /var/lib/netora-dns /var/log/netora-dns /run/lock
+ReadWritePaths=/etc/unbound /etc/netora-dns /opt/netora-dns /var/lib/netora-dns /var/log/netora-dns /run/lock /var/www/netora-ui /usr/local/bin /usr/local/sbin
 
 [Install]
 WantedBy=multi-user.target

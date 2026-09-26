@@ -266,11 +266,16 @@ validate_candidate_config() {
         cp -r "${release_dir}/conf/conf.d/"* "${stage_dir}/conf.d/" 2>/dev/null || true
     fi
 
-    # If the release contains an explicit unbound.conf or compiled netora-cli
-    if [[ -f "${release_dir}/conf/unbound.conf" ]]; then
+    # IP & Interface Invariance Guardrail:
+    # Each server node in the fleet has unique IP listeners.
+    # Preserve existing active /etc/unbound/unbound.conf on the node; never clobber with generic repo config.
+    if [[ -f "/etc/unbound/unbound.conf" ]]; then
+        log_event "INFO" "preserving_ip_config" "Preserving local node IP interfaces and unbound.conf"
+        cp -f "/etc/unbound/unbound.conf" "${stage_dir}/unbound.conf"
+    elif [[ -f "${release_dir}/conf/unbound.conf" ]]; then
         cp "${release_dir}/conf/unbound.conf" "${stage_dir}/unbound.conf"
-    elif [[ -x "${release_dir}/bin/netora-cli" ]]; then
-        "${release_dir}/bin/netora-cli" -mode render -write-dir "$stage_dir" -node-id "$NODE_ID" 2>/dev/null || true
+    elif [[ -x "${release_dir}/deploy/bin/netora-cli-linux-amd64" ]]; then
+        "${release_dir}/deploy/bin/netora-cli-linux-amd64" -mode render -write-dir "$stage_dir" -node-id "$NODE_ID" 2>/dev/null || true
     fi
 
     # Apply node-specific overlays (if exists)
@@ -520,6 +525,11 @@ EOF
     fi
     if [[ -f "${target_release_dir}/scripts/netora-cli.sh" ]]; then
         cp -f "${target_release_dir}/scripts/netora-cli.sh" /usr/local/bin/netora 2>/dev/null && chmod +x /usr/local/bin/netora || true
+    fi
+
+    # Update systemd updater service if present in release
+    if [[ -f "${target_release_dir}/deploy/systemd/netora-dns-updater.service" ]]; then
+        cp -f "${target_release_dir}/deploy/systemd/netora-dns-updater.service" /etc/systemd/system/netora-dns-updater.service 2>/dev/null && systemctl daemon-reload || true
     fi
 
     # Step 6: Unbound Reload

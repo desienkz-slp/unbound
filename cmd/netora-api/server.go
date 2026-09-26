@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"netora-dns/pkg/auth"
@@ -39,6 +40,12 @@ type Server struct {
 	clusterManager   *cluster.ClusterManager
 	investigator     *hermes.Investigator
 	queryLogTailer   *telemetry.QueryLogTailer
+
+	updateMu       sync.Mutex
+	isUpdating     bool
+	lastUpdateLog  string
+	lastUpdateErr  string
+	lastUpdateTime time.Time
 }
 
 // NewServer initializes the API server components.
@@ -97,6 +104,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Health & Probe
 	mux.HandleFunc("/api/v1/health", s.handleSystemHealth)
 	mux.HandleFunc("/api/v1/system/version", s.handleSystemVersion)
+	mux.HandleFunc("/api/v1/system/update", s.requireAuth(s.handleSystemUpdate))
+	mux.HandleFunc("/api/v1/system/update/status", s.handleSystemUpdateStatus)
 
 	// Prometheus Telemetry
 	mux.HandleFunc("/metrics", s.metrics.PrometheusHandler())
@@ -263,6 +272,166 @@ func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, versionInfo)
+}
+
+// Handler: System Update Status (/api/v1/system/update/status)
+func (s *Server) handleSystemUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	s.updateMu.Lock()
+	isUpdating := s.isUpdating
+	lastErr := s.lastUpdateErr
+	lastTime := s.lastUpdateTime
+	s.updateMu.Unlock()
+
+	statusInfo := map[string]interface{}{
+		"version":          "v1.0.48",
+		"commit_count":     48,
+		"build":            48,
+		"git_commit":       "bc2988f",
+		"git_branch":       "main",
+		"node_id":          s.nodeID,
+		"is_updating":      isUpdating,
+		"last_error":       lastErr,
+		"update_available": false,
+	}
+
+	if !lastTime.IsZero() {
+		statusInfo["last_update_time"] = lastTime.Format(time.RFC3339)
+	}
+
+	versionCandidates := []string{
+		"/var/www/netora-ui/version.json",
+		"/opt/netora-dns/current/version.json",
+		"/var/lib/netora-dns/version.json",
+		"version.json",
+		"web/src/version.json",
+	}
+
+	for _, cand := range versionCandidates {
+		if data, err := os.ReadFile(cand); err == nil {
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(data, &parsed); err == nil {
+				for k, v := range parsed {
+					statusInfo[k] = v
+				}
+				break
+			}
+		}
+	}
+
+	if data, err := os.ReadFile("/var/lib/netora-dns/update-state.json"); err == nil {
+		var updateState struct {
+			CurrentRevision string `json:"current_revision"`
+			Channel         string `json:"channel"`
+			UpdateTime      string `json:"update_time"`
+			UpdateStatus    string `json:"update_status"`
+			LastError       string `json:"last_error"`
+		}
+		if err := json.Unmarshal(data, &updateState); err == nil {
+			if updateState.CurrentRevision != "" {
+				statusInfo["git_commit"] = updateState.CurrentRevision
+				if len(updateState.CurrentRevision) >= 7 {
+					statusInfo["short_commit"] = updateState.CurrentRevision[:7]
+				}
+			}
+			if updateState.UpdateStatus != "" {
+				statusInfo["last_status"] = updateState.UpdateStatus
+			}
+			if updateState.UpdateTime != "" {
+				statusInfo["last_update_time"] = updateState.UpdateTime
+			}
+			if updateState.LastError != "" && updateState.LastError != "none" {
+				statusInfo["last_error"] = updateState.LastError
+			}
+		}
+	}
+
+	// Fast remote check via git ls-remote if requested
+	if r.URL.Query().Get("check_remote") == "true" {
+		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", "ls-remote", "https://github.com/desienkz-slp/unbound.git", "refs/heads/main")
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		if out, err := cmd.Output(); err == nil {
+			fields := strings.Fields(string(out))
+			if len(fields) > 0 {
+				remoteSHA := fields[0]
+				statusInfo["remote_commit"] = remoteSHA
+				currSHA, _ := statusInfo["git_commit"].(string)
+				if currSHA != "" && remoteSHA != "" {
+					if !strings.HasPrefix(remoteSHA, currSHA) && !strings.HasPrefix(currSHA, remoteSHA) {
+						statusInfo["update_available"] = true
+					}
+				}
+			}
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, statusInfo)
+}
+
+// Handler: Trigger System Update (/api/v1/system/update)
+func (s *Server) handleSystemUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	s.updateMu.Lock()
+	if s.isUpdating {
+		s.updateMu.Unlock()
+		s.writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"status":  "CONFLICT",
+			"message": "Update process is already running in background",
+		})
+		return
+	}
+	s.isUpdating = true
+	s.lastUpdateErr = ""
+	s.lastUpdateTime = time.Now()
+	s.updateMu.Unlock()
+
+	go func() {
+		defer func() {
+			s.updateMu.Lock()
+			s.isUpdating = false
+			s.updateMu.Unlock()
+		}()
+
+		// Locate updater script
+		updaterPath := "/usr/local/sbin/netora-dns-update"
+		if _, err := os.Stat(updaterPath); os.IsNotExist(err) {
+			updaterPath = "/opt/netora-dns/current/scripts/netora-dns-update.sh"
+		}
+		if _, err := os.Stat(updaterPath); os.IsNotExist(err) {
+			s.updateMu.Lock()
+			s.lastUpdateErr = "updater script not found on system"
+			s.updateMu.Unlock()
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, updaterPath, "update", "--force")
+		cmd.Env = os.Environ()
+		out, err := cmd.CombinedOutput()
+		s.updateMu.Lock()
+		s.lastUpdateLog = string(out)
+		if err != nil {
+			s.lastUpdateErr = fmt.Sprintf("update failed: %v", err)
+			log.Printf("[UPDATER] Update failed: %v, output: %s", err, string(out))
+		} else {
+			s.lastUpdateErr = ""
+			log.Printf("[UPDATER] Update completed successfully: %s", string(out))
+		}
+		s.updateMu.Unlock()
+	}()
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "IN_PROGRESS",
+		"message": "Autonomous system update initiated. Node pulling from GitHub...",
+		"node_id": s.nodeID,
+	})
 }
 
 // Handler: Login

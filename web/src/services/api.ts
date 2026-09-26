@@ -10,6 +10,7 @@ import {
   SyncBlocklistResult,
   DetailedStatsReport,
   SystemVersion,
+  SystemUpdateStatus,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -236,13 +237,29 @@ class ApiClient {
     }
 
     return {
-      version: 'v1.0.44',
-      build: 44,
-      commit_count: 44,
-      git_commit: 'de28649',
+      version: 'v1.0.48',
+      build: 48,
+      commit_count: 48,
+      git_commit: 'bc2988f',
       git_branch: 'main',
       build_time: new Date().toISOString(),
     };
+  }
+
+  // System Update Management
+  async getSystemUpdateStatus(checkRemote = false): Promise<SystemUpdateStatus> {
+    const url = checkRemote ? `${API_BASE}/system/update/status?check_remote=true` : `${API_BASE}/system/update/status`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Failed to fetch system update status');
+    }
+    return await response.json();
+  }
+
+  async triggerSystemUpdate(): Promise<{ status: string; message: string }> {
+    return this.request('/system/update', {
+      method: 'POST',
+    });
   }
 }
 
