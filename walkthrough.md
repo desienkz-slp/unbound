@@ -223,3 +223,41 @@ Penyebab di atas berada pada **firewall / NAT router perantara** (`172.18.20.30`
 
 Begitu router meloloskan paket ke server `netora-dns1`, query `nslookup google.com 172.18.20.4` dari PC klien akan langsung dijawab oleh Unbound dan menampilkan record IPv6 (AAAA) secara lengkap.
 
+---
+
+## 6. Cara Mengubah 'Server: UnKnown' Menjadi Nama Node (Reverse DNS PTR)
+
+Saat Anda menjalankan perintah `nslookup` di Windows:
+```text
+C:\Users\desie> nslookup google.com 172.18.20.146
+Server:  UnKnown
+Address:  172.18.20.146
+```
+Teks `Server: UnKnown` muncul karena Windows `nslookup` **selalu melakukan query Reverse DNS (PTR lookup)** terhadap IP server DNS itu sendiri (`146.20.18.172.in-addr.arpa.`) sebelum menanyakan domain yang diminta. Jika server DNS tidak memiliki record PTR untuk IP-nya sendiri, maka server dianggap tidak bernama (`UnKnown`).
+
+### Solusi Otomatis yang Telah Diterapkan di Netora DNS:
+Platform Netora DNS kini **secara otomatis menginjeksi record rDNS PTR dan A** untuk setiap antarmuka listener aktif ke dalam `/etc/unbound/conf.d/local-records.conf`:
+```text
+server:
+  local-data: "netora-dns1 3600 A 172.18.20.146"
+  local-data-ptr: "172.18.20.146 netora-dns1"
+  local-data: "netora-dns1 3600 A 172.18.20.4"
+  local-data-ptr: "172.18.20.4 netora-dns1"
+  local-data: "netora-dns1 3600 A 127.0.0.1"
+  local-data-ptr: "127.0.0.1 netora-dns1"
+```
+
+### Hasil Setelah Diterapkan:
+Saat Anda menjalankan `nslookup` dari PC Windows Anda:
+```text
+C:\Users\desie> nslookup google.com 172.18.20.146
+Server:  netora-dns1
+Address:  172.18.20.146
+
+Name:    google.com
+Addresses:  2404:6800:4003:c06::8a
+          142.250.4.100
+          ...
+```
+Nama server sekarang otomatis terdeteksi sebagai **`Server: netora-dns1`** sesuai dengan nama node Anda!
+
