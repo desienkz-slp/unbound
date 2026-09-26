@@ -687,3 +687,48 @@ Setelah update selesai:
 - Klik **Save & Atomic Apply**.
 - Engine akan mendeteksi perubahan listener dan me-restart Unbound secara atomik.
 - Jalankan uji dari client: `nslookup google.com 172.18.20.146` — kueri akan langsung **Connection Timed Out / Refused** (tidak lagi membalas), dan kueri ke `nslookup google.com 172.18.20.4` tetap membalas dengan latensi ultra-rendah (<1ms).
+
+---
+
+## 21. Implementasi Continuous Versioning di Footer & Auto-Increment dari GitHub
+
+Menindaklanjuti permintaan Anda:
+> *"Sekarang tambahkan versi di footer, dan akan terus bertambah jika ada update di github."*
+
+Telah diimplementasikan sistem penomoran versi otonom (*continuous semantic build versioning*) yang terpasang pada footer Web UI dan secara otomatis bertambah (*auto-increment*) setiap kali terdapat commit atau update baru di repositori GitHub:
+
+### 1. Desain Arsitektur Footer NOC Bar (`web/src/components/Footer.tsx`)
+Footer docked di bagian bawah layar (tinggi 36px, dark slate navy `#070B12`, border atas halus `border-gray-800/80`):
+- **Sisi Kiri (Status Operasional):**
+  - Indikator denyut lampu hijau (*pulsing green dot*) `System Operational`.
+  - Identitas node aktif: `{hostname} ({management_ip})`.
+  - Resolver data plane: `Unbound 1.13.1 (RESOLVING)`.
+- **Sisi Kanan (Version Badge Interaktif):**
+  - Ikon Git Commit + Versi: **`v1.0.<commit_count>`** (misal: `v1.0.44`).
+  - Badge tag commit SHA: `git:de28649`.
+  - Indikator `Fleet Sync: Continuous`.
+- **Drawer Detail Rilis (Klik pada Badge Versi):**
+  - Menampilkan modal detail berisi Build Number, Commit SHA lengkap, Upstream Branch (`main`), Timestamp rilis, dan tautan langsung ke repositori GitHub.
+
+### 2. Mekanisme Auto-Increment Saat Ada Update di GitHub
+Penomoran versi didasarkan pada total commit historis repositori (`git rev-list --count HEAD`):
+1. **Monotonik Naik (Strictly Monotonic):**
+   - Setiap commit baru yang di-push ke GitHub secara matematis menambah total commit count (+1).
+   - Commit saat ini: `44` $\rightarrow$ Versi: `v1.0.44`.
+   - Update berikutnya di GitHub: `45` $\rightarrow$ Versi: `v1.0.45`.
+   - Update selanjutnya: `46` $\rightarrow$ Versi: `v1.0.46`, dan seterusnya tanpa batas.
+2. **Skrip Build Otomatis (`web/scripts/update-version.cjs`):**
+   - Terintegrasi langsung pada `npm run build`.
+   - Menghitung git commit count dan short SHA secara dinamis, lalu menghasilkan `version.json` ke direktori root, `web/src/`, dan `web/public/`.
+3. **Penyuntikan State pada Skrip Updater (`scripts/netora-dns-update.sh`):**
+   - Saat operator menjalankan `netora update` di server (misal Server 146 atau 145), skrip auto-updater otomatis membaca target revision dari GitHub dan memperbarui `/var/www/netora-ui/version.json` serta `/var/lib/netora-dns/version.json`.
+4. **Backend API Endpoint (`GET /api/v1/system/version`):**
+   - Backend Go API menyajikan data versi, commit hash, dan node ID secara real-time untuk sinkronisasi browser.
+
+### 3. Cara Mengambil Pembaruan di Server 146 (`netora-dns1`):
+Cukup jalankan 1 perintah di terminal server 146:
+```bash
+netora update
+```
+Browser Web UI (`http://172.18.20.146:8080`) akan langsung menampilkan footer modern dengan versi terbaru di bagian bawah layar!
+

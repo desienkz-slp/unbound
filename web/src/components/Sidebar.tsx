@@ -1,4 +1,5 @@
 import React from 'react';
+import localVersion from '../version.json';
 import {
   Activity,
   Cpu,
@@ -152,6 +153,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
             Data plane remains fully independent of control plane failures.
           </p>
+          <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-gray-800/60 text-[11px]">
+            <span className="text-gray-400 font-sans">Netora Build</span>
+            <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
+          </div>
         </div>
       </div>
     </aside>

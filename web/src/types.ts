@@ -258,4 +258,15 @@ export interface DetailedStatsReport {
   top_upstreams: UpstreamStat[];
 }
 
-
+export interface SystemVersion {
+  version: string;
+  build?: number;
+  commit_count?: number;
+  git_commit: string;
+  git_branch?: string;
+  build_time?: string;
+  update_time?: string;
+  channel?: string;
+  node_id?: string;
+  status?: string;
+}

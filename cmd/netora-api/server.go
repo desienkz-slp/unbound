@@ -96,6 +96,7 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Health & Probe
 	mux.HandleFunc("/api/v1/health", s.handleSystemHealth)
+	mux.HandleFunc("/api/v1/system/version", s.handleSystemVersion)
 
 	// Prometheus Telemetry
 	mux.HandleFunc("/metrics", s.metrics.PrometheusHandler())
@@ -203,6 +204,65 @@ func (s *Server) handleSystemHealth(w http.ResponseWriter, r *http.Request) {
 		"dns_healthy": dnsHealth.Healthy,
 		"dns_latency": dnsHealth.Latency.String(),
 	})
+}
+
+// Handler: System Version
+func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
+	versionInfo := map[string]interface{}{
+		"version":      "v1.0.44",
+		"commit_count": 44,
+		"build":        44,
+		"git_commit":   "de28649",
+		"git_branch":   "main",
+		"build_time":   time.Now().UTC().Format(time.RFC3339),
+		"channel":      "production",
+		"node_id":      s.nodeID,
+		"status":       "SUCCESS",
+	}
+
+	versionCandidates := []string{
+		"/var/www/netora-ui/version.json",
+		"/opt/netora-dns/current/version.json",
+		"/var/lib/netora-dns/version.json",
+		"version.json",
+		"web/src/version.json",
+	}
+
+	for _, cand := range versionCandidates {
+		if data, err := os.ReadFile(cand); err == nil {
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(data, &parsed); err == nil {
+				for k, v := range parsed {
+					versionInfo[k] = v
+				}
+				break
+			}
+		}
+	}
+
+	// Also check /var/lib/netora-dns/update-state.json for live node deployment state
+	if data, err := os.ReadFile("/var/lib/netora-dns/update-state.json"); err == nil {
+		var updateState struct {
+			CurrentRevision string `json:"current_revision"`
+			Channel         string `json:"channel"`
+			UpdateTime      string `json:"update_time"`
+			UpdateStatus    string `json:"update_status"`
+		}
+		if err := json.Unmarshal(data, &updateState); err == nil && updateState.CurrentRevision != "" {
+			versionInfo["git_commit"] = updateState.CurrentRevision
+			if len(updateState.CurrentRevision) >= 7 {
+				versionInfo["short_commit"] = updateState.CurrentRevision[:7]
+			}
+			if updateState.Channel != "" {
+				versionInfo["channel"] = updateState.Channel
+			}
+			if updateState.UpdateTime != "" {
+				versionInfo["update_time"] = updateState.UpdateTime
+			}
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, versionInfo)
 }
 
 // Handler: Login

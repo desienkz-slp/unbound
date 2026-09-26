@@ -479,6 +479,30 @@ action_update() {
         cp -r "${target_release_dir}/deploy/ui/"* /var/www/netora-ui/ 2>/dev/null || true
     fi
 
+    # Ensure dynamic version.json is placed in Web UI and state directory
+    local version_file="${target_release_dir}/version.json"
+    local version_str="v1.0.44"
+    local commit_cnt=44
+    if [[ -f "$version_file" ]] && command -v jq >/dev/null 2>&1; then
+        version_str="$(jq -r '.version // "v1.0.44"' "$version_file")"
+        commit_cnt="$(jq -r '.commit_count // 44' "$version_file")"
+    fi
+    local short_rev="${target_sha:0:7}"
+
+    mkdir -p /var/www/netora-ui /var/lib/netora-dns
+    cat <<EOF > /var/www/netora-ui/version.json
+{
+  "version": "${version_str}",
+  "commit_count": ${commit_cnt},
+  "build": ${commit_cnt},
+  "git_commit": "${short_rev}",
+  "git_branch": "${GIT_BRANCH}",
+  "node_id": "${NODE_ID}",
+  "update_time": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+    cp -f /var/www/netora-ui/version.json /var/lib/netora-dns/version.json 2>/dev/null || true
+
     # Update API binary if present
     if [[ -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" ]]; then
         cp -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" /usr/local/bin/netora-api 2>/dev/null && chmod +x /usr/local/bin/netora-api || true

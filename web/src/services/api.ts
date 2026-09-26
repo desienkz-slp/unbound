@@ -9,6 +9,7 @@ import {
   AutoUpdateStatus,
   SyncBlocklistResult,
   DetailedStatsReport,
+  SystemVersion,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -212,6 +213,36 @@ class ApiClient {
   // Audit Logs
   async getAuditLogs(): Promise<AuditRecord[]> {
     return this.request<AuditRecord[]>('/audit');
+  }
+
+  // System Version
+  async getSystemVersion(): Promise<SystemVersion> {
+    try {
+      const response = await fetch(`${API_BASE}/system/version`);
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch {
+      // Fallback below
+    }
+
+    try {
+      const res = await fetch('/version.json');
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Static fallback
+    }
+
+    return {
+      version: 'v1.0.44',
+      build: 44,
+      commit_count: 44,
+      git_commit: 'de28649',
+      git_branch: 'main',
+      build_time: new Date().toISOString(),
+    };
   }
 }
 

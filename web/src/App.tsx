@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, NavTab } from './components/Sidebar';
+import { Footer } from './components/Footer';
 import { LoginModal } from './components/LoginModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { OverviewView } from './views/OverviewView';
@@ -160,6 +161,8 @@ export function App() {
           )}
         </main>
       </div>
+
+      <Footer node={activeNode} unboundHealthy={unboundHealthy} />
 
       <LoginModal
         isOpen={showLogin}
