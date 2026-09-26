@@ -1,12 +1,14 @@
 package configengine
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -164,6 +166,11 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 	backupDir := filepath.Join(e.historyDir, fmt.Sprintf("backup-pre-%s", state.VersionID))
 	_ = e.backupCurrentConfig(backupDir)
 
+	// Determine if Unbound daemon restart is needed (e.g. interface listeners, ports changed)
+	// Invariant: 'unbound-control reload' cannot dynamically rebind or unbind network interface sockets.
+	oldConfPath := filepath.Join(e.configDir, "unbound.conf")
+	restartNeeded := requiresDaemonRestart(oldConfPath, stagedMainConf)
+
 	// 6. Atomic File Replacement
 	if err := e.atomicCopyFiles(stageVersionDir, e.configDir, renderRes.Files); err != nil {
 		result.CompletedAt = time.Now().UTC()
@@ -172,12 +179,18 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 		return result, err
 	}
 
-	// 7. Reload Service
+	// 7. Reload or Restart Service
 	if e.supervisor != nil {
-		if err := e.supervisor.Reload(ctx); err != nil {
-			// RELOAD FAILED -> IMMEDIATE ROLLBACK
+		var serviceErr error
+		if restartNeeded {
+			serviceErr = e.supervisor.Restart(ctx)
+		} else {
+			serviceErr = e.supervisor.Reload(ctx)
+		}
+		if serviceErr != nil {
+			// RELOAD/RESTART FAILED -> IMMEDIATE ROLLBACK
 			result.ReloadSuccess = false
-			result.ErrorMessage = fmt.Sprintf("reload failed: %v", err)
+			result.ErrorMessage = fmt.Sprintf("service reload/restart failed: %v", serviceErr)
 			rollbackErr := e.executeRollback(ctx, backupDir, currentActiveVersion)
 			result.RolledBack = true
 			if currentActiveVersion != nil {
@@ -185,7 +198,7 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 			}
 			result.CompletedAt = time.Now().UTC()
 			result.DurationMs = time.Since(result.StartedAt).Milliseconds()
-			return result, fmt.Errorf("reload failed (rolled back): %w (rollback error: %v)", err, rollbackErr)
+			return result, fmt.Errorf("service reload/restart failed (rolled back): %w (rollback error: %v)", serviceErr, rollbackErr)
 		}
 	}
 	result.ReloadSuccess = true
@@ -286,6 +299,10 @@ func (e *Engine) Rollback(ctx context.Context, targetVersionID, actor, reason st
 		return result, fmt.Errorf("%s", result.ErrorMessage)
 	}
 
+	oldConfPath := filepath.Join(e.configDir, "unbound.conf")
+	targetConfPath := filepath.Join(historyDir, "unbound.conf")
+	restartNeeded := requiresDaemonRestart(oldConfPath, targetConfPath)
+
 	// Copy history files directly into config dir
 	if err := e.copyDir(historyDir, e.configDir); err != nil {
 		result.CompletedAt = time.Now().UTC()
@@ -293,12 +310,18 @@ func (e *Engine) Rollback(ctx context.Context, targetVersionID, actor, reason st
 		return result, err
 	}
 
-	// Reload supervisor
+	// Reload or restart supervisor
 	if e.supervisor != nil {
-		if err := e.supervisor.Reload(ctx); err != nil {
+		var serviceErr error
+		if restartNeeded {
+			serviceErr = e.supervisor.Restart(ctx)
+		} else {
+			serviceErr = e.supervisor.Reload(ctx)
+		}
+		if serviceErr != nil {
 			result.CompletedAt = time.Now().UTC()
-			result.ErrorMessage = fmt.Sprintf("failed reload during rollback: %v", err)
-			return result, err
+			result.ErrorMessage = fmt.Sprintf("failed reload/restart during rollback: %v", serviceErr)
+			return result, serviceErr
 		}
 	}
 	result.ReloadSuccess = true
@@ -327,12 +350,18 @@ func (e *Engine) executeRollback(ctx context.Context, backupDir string, prevVers
 		return fmt.Errorf("no backup available for rollback: %w", err)
 	}
 
+	restartNeeded := requiresDaemonRestart(filepath.Join(e.configDir, "unbound.conf"), filepath.Join(backupDir, "unbound.conf"))
+
 	if err := e.copyDir(backupDir, e.configDir); err != nil {
 		return fmt.Errorf("failed copying backup to live config: %w", err)
 	}
 
 	if e.supervisor != nil {
-		_ = e.supervisor.Reload(ctx)
+		if restartNeeded {
+			_ = e.supervisor.Restart(ctx)
+		} else {
+			_ = e.supervisor.Reload(ctx)
+		}
 	}
 
 	if prevVersion != nil {
@@ -458,4 +487,70 @@ func (e *Engine) GetActiveVersion() (*model.ConfigVersion, error) {
 		return nil, err
 	}
 	return &v, nil
+}
+
+// extractRestartDirectives reads directives that require a daemon restart when modified
+// (e.g. network interface listeners, port, threads, system buffers).
+func extractRestartDirectives(confPath string) ([]string, error) {
+	f, err := os.Open(confPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var directives []string
+	restartPrefixes := []string{
+		"interface:",
+		"port:",
+		"num-threads:",
+		"so-rcvbuf:",
+		"so-sndbuf:",
+		"ip-transparent:",
+		"ip-freebind:",
+		"do-ip4:",
+		"do-ip6:",
+	}
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+		for _, prefix := range restartPrefixes {
+			if strings.HasPrefix(line, prefix) {
+				directives = append(directives, line)
+				break
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	sort.Strings(directives)
+	return directives, nil
+}
+
+// requiresDaemonRestart compares socket-level directives between two configuration files.
+// Unbound's 'unbound-control reload' cannot dynamically rebind or unbind network interface sockets.
+// When interface listeners, ports, or thread counts change, a daemon restart is required.
+func requiresDaemonRestart(oldConfPath, newConfPath string) bool {
+	oldDirectives, err := extractRestartDirectives(oldConfPath)
+	if err != nil {
+		// If old config does not exist or cannot be read, restart daemon to ensure clean binding
+		return true
+	}
+	newDirectives, err := extractRestartDirectives(newConfPath)
+	if err != nil {
+		return true
+	}
+	if len(oldDirectives) != len(newDirectives) {
+		return true
+	}
+	for i := range oldDirectives {
+		if oldDirectives[i] != newDirectives[i] {
+			return true
+		}
+	}
+	return false
 }

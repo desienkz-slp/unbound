@@ -14,10 +14,11 @@ import (
 
 // MockSupervisor implements SupervisorInterface for testing.
 type MockSupervisor struct {
-	ReloadFail   bool
-	CheckFail    bool
-	RestartFail  bool
-	ReloadCalled int
+	ReloadFail    bool
+	CheckFail     bool
+	RestartFail   bool
+	ReloadCalled  int
+	RestartCalled int
 }
 
 func (m *MockSupervisor) Reload(ctx context.Context) error {
@@ -29,6 +30,7 @@ func (m *MockSupervisor) Reload(ctx context.Context) error {
 }
 
 func (m *MockSupervisor) Restart(ctx context.Context) error {
+	m.RestartCalled++
 	if m.RestartFail {
 		return fmt.Errorf("simulated restart failure")
 	}
@@ -208,5 +210,73 @@ func TestEngine_RollbackOnHealthCheckFailure(t *testing.T) {
 	}
 	if res2.RolledBackToVersion != "v-10" {
 		t.Errorf("expected rolled back to v-10, got %s", res2.RolledBackToVersion)
+	}
+}
+
+func TestEngine_RestartOnListenerChange(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "netora-engine-restart-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sup := &MockSupervisor{}
+	health := &MockHealthChecker{ShouldFail: false}
+
+	engine, err := NewEngine(EngineOptions{
+		ConfigDir:     tempDir,
+		Supervisor:    sup,
+		HealthChecker: health,
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	// 1. Initial state (no previous unbound.conf exists -> requires restart)
+	state1 := model.NewDefaultDesiredState("node-01", 2, 2048)
+	state1.VersionID = "v-1"
+	_, err = engine.Apply(context.Background(), state1, "admin", "Initial apply")
+	if err != nil {
+		t.Fatalf("v1 apply failed: %v", err)
+	}
+	if sup.RestartCalled != 1 {
+		t.Errorf("expected Restart to be called on first apply, got %d", sup.RestartCalled)
+	}
+	if sup.ReloadCalled != 0 {
+		t.Errorf("expected Reload NOT to be called on first apply, got %d", sup.ReloadCalled)
+	}
+
+	// 2. Second apply with identical listeners (e.g. only toggling a feature) -> should only Reload
+	state2 := model.NewDefaultDesiredState("node-01", 2, 2048)
+	state2.VersionID = "v-2"
+	state2.Features.HideVersion = !state2.Features.HideVersion
+	_, err = engine.Apply(context.Background(), state2, "admin", "Toggle feature")
+	if err != nil {
+		t.Fatalf("v2 apply failed: %v", err)
+	}
+	if sup.RestartCalled != 1 {
+		t.Errorf("expected Restart NOT to be called again for non-socket change, got %d", sup.RestartCalled)
+	}
+	if sup.ReloadCalled != 1 {
+		t.Errorf("expected Reload to be called once for non-socket change, got %d", sup.ReloadCalled)
+	}
+
+	// 3. Third apply changing listeners -> should trigger Restart
+	state3 := model.NewDefaultDesiredState("node-01", 2, 2048)
+	state3.VersionID = "v-3"
+	state3.Listeners = append(state3.Listeners, model.Listener{
+		ID:      "extra-lis",
+		Name:    "ens20",
+		IP:      "10.0.0.1",
+		Port:    53,
+		Role:    model.RoleClient,
+		Enabled: true,
+	})
+	_, err = engine.Apply(context.Background(), state3, "admin", "Add listener")
+	if err != nil {
+		t.Fatalf("v3 apply failed: %v", err)
+	}
+	if sup.RestartCalled != 2 {
+		t.Errorf("expected Restart to be called for listener change, got %d", sup.RestartCalled)
 	}
 }

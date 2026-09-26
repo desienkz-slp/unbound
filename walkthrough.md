@@ -627,12 +627,63 @@ netora reset-password admin admin123
 2. **Pembaruan Installer (`install.sh`):** Ditambahkan penegasan pemberian hak akses (`GRANT ALL`) pada tabel dan sequence tepat setelah eksekusi migrasi skema.
 3. **Pembaruan Binary Rilis:** Binary `netora-api` dan `netora-cli` dikompilasi ulang dengan skema terbaru yang menyertakan perizinan tabel otomatis.
 
+---
 
+## 19. Multi-IP Listener Invariant: Penjelasan Mengapa IP Hapus Masih Menjawab DNS (Socket Reload vs Restart) dan Solusi Otomatisnya
 
+### Pertanyaan & Temuan Operasional:
+1. **Apakah IP Role "MANAGEMENT" bisa me-resolve DNS?**
+   - **Bisa.** Di Unbound, setiap IP yang dideklarasikan pada direktif `interface:` di `/etc/unbound/unbound.conf` akan membuka socket listener pada port DNS (UDP & TCP 53).
+   - Perbedaan peran di Netora:
+     - **Role MANAGEMENT:** Ditujukan untuk loopback server (`127.0.0.1`), monitoring telemetry Prometheus, health check lokal engine, dan akses internal node. Secara default dilindungi oleh ACL agar tidak dapat diakses bebas oleh pelanggan dari luar.
+     - **Role CLIENT:** Ditujukan untuk melayani kueri DNS ribuan pelanggan ISP dari interface jaringan LAN/VLAN/PPPoE.
+     - **Role INTERNET:** Ditujukan untuk interface uplink publik (hanya membuka port jika resolver dibuka selektif dengan ACL ketat).
+   - Jika suatu IP tidak didaftarkan sebagai `interface:` di Unbound, socket port 53 pada IP tersebut sama sekali tidak akan dibuka (*closed / connection refused*).
 
+2. **Kenapa Setelah Menghapus Listener `172.18.20.146` di Web UI, `nslookup` ke IP Tersebut Masih Menjawab (Replay)?**
+   - **Akar Masalah Fundamental Arsitektur Unbound:**
+     Sesuai dokumentasi resmi Unbound (`unbound-control(8)` dan `unbound.conf(5)`):
+     > *"Some options cannot be reloaded: the interface, port, incoming-num-tcp, outgoing-range, and num-threads. To change these options, a restart of the daemon is needed."*
+   - Perintah `unbound-control reload` yang dipanggil engine secara default hanya me-reload zona, cache, dan ACL. Perintah tersebut **TIDAK PERNAH menutup socket lama atau membuka socket listener baru** pada level kernel Linux.
+   - Selain itu, saat `install.sh` pertama kali berjalan, Unbound awalnya di-binding ke wildcard `0.0.0.0`. Ketika Netora engine menerapkan konfigurasi spesifik listener hanya dengan *reload*, socket `0.0.0.0` masih tetap hidup di dalam memori proses Unbound sehingga semua IP lokal server (termasuk `172.18.20.146`) tetap menjawab kueri DNS!
 
+### Solusi Rekayasa pada Netora Engine (`pkg/configengine/engine.go`):
+1. **Smart Detection Socket Directives:**
+   Engine kini memiliki fungsi `requiresDaemonRestart(oldConfPath, newConfPath string) bool` yang menganalisis perbedaan direktif socket sebelum menerapkan konfigurasi baru:
+   - `interface:` (IP listener & port)
+   - `port:` (port listening global)
+   - `num-threads:` (alokasi thread CPU)
+   - `so-rcvbuf:` & `so-sndbuf:` (buffer socket OS)
+   - `ip-transparent:` & `ip-freebind:`
+   - `do-ip4:` & `do-ip6:`
 
+2. **Branching Lifecycle Cerdas:**
+   - **Jika direktif socket berubah (misal listener dihapus/ditambah):** Engine secara otomatis memanggil `supervisor.Restart(ctx)` (`systemctl restart unbound`). Ini memaksa kernel Linux menutup socket lama dan hanya mengikat socket baru yang dipilih di Web UI.
+   - **Jika hanya aturan keamanan, blocklist, atau ACL yang berubah:** Engine tetap menggunakan `supervisor.Reload(ctx)` super-cepat (<150ms) agar cache DNS ribuan pelanggan ISP tetap terjaga (*warm cache*).
 
+3. **Pengujian Unit Otomatis:**
+   Ditambahkan suite pengujian `TestEngine_RestartOnListenerChange` pada `pkg/configengine/engine_test.go` untuk menjamin invarian ini tidak akan pernah regresi di masa depan.
 
+---
 
+## 20. Panduan Update Server 146 (`netora-dns1`) via GitHub
 
+Setelah commit dipush ke GitHub, server 146 (`netora-dns1`) dapat langsung ditarik pembaruannya dengan menjalankan 1 baris perintah:
+
+```bash
+# Jalankan di terminal server 146 (netora-dns1)
+netora update
+```
+
+Skrip otonom `netora update` akan:
+1. Melakukan `git pull` dari repositori utama.
+2. Memperbarui binary `netora-api` dan `netora-cli` dengan rilis terbaru yang telah dilengkapi deteksi auto-restart socket.
+3. Memperbarui Web UI dashboard.
+4. Me-restart service `netora-api`.
+
+Setelah update selesai:
+- Buka Web UI Netora di browser (`http://172.18.20.146:8080`).
+- Pastikan tab **Listeners** hanya berisi interface yang diinginkan (misal `127.0.0.1` dan `172.18.20.4`).
+- Klik **Save & Atomic Apply**.
+- Engine akan mendeteksi perubahan listener dan me-restart Unbound secara atomik.
+- Jalankan uji dari client: `nslookup google.com 172.18.20.146` — kueri akan langsung **Connection Timed Out / Refused** (tidak lagi membalas), dan kueri ke `nslookup google.com 172.18.20.4` tetap membalas dengan latensi ultra-rendah (<1ms).
