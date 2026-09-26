@@ -381,5 +381,97 @@ Pengujian fungsionalitas end-to-end langsung pada server produksi:
 6. Status Akun Produksi        : Normal & Siap Digunakan
 ```
 
+---
+
+## 12. Panduan Reset Password Operator via CLI Langsung di Server
+
+Untuk keperluan pemulihan bencana (*disaster recovery*), situasi darurat saat administrator lupa password, atau akun terkunci, telah disediakan utilitas CLI native dan script praktis yang dapat dijalankan langsung di server via SSH:
+
+### Metode 1: Menggunakan Perintah Cepat `netora-reset-password` (Direkomendasikan)
+Perintah ini terpasang secara global di `/usr/local/bin/netora-reset-password`:
+
+#### A. Mode 1-Baris Langsung (Non-Interaktif):
+```bash
+netora-reset-password <username> <password_baru>
+```
+*Contoh:*
+```bash
+netora-reset-password admin MyNewPassword123
+```
+
+#### B. Mode Interaktif (Prompt Rahasia):
+Jika Anda tidak menyertakan password di baris perintah, script akan meminta input password dengan karakter tersembunyi demi keamanan:
+```bash
+netora-reset-password admin
+# Output:
+# Enter new password for 'admin' (min 6 characters): [Ketik Password]
+# Confirm new password: [Ketik Ulang Password]
+```
+
+---
+
+### Metode 2: Menggunakan Native Binary `netora-cli`
+Binary engine `netora-cli` (`/usr/local/bin/netora-cli`) mendukung manajemen akun langsung ke database PostgreSQL:
+
+#### A. Reset Password:
+```bash
+netora-cli -mode reset-password -username admin -new-password MyNewPassword123
+```
+
+#### B. Melihat Daftar Operator Terdaftar:
+```bash
+netora-cli -mode list-users
+```
+*Contoh Output:*
+```text
+=========================================================================================
+  Netora DNS - Registered Operators
+=========================================================================================
+  USER ID          USERNAME         ROLE           LAST UPDATED          
+-----------------------------------------------------------------------------------------
+  usr-superadmin   admin            SUPER_ADMIN    2026-09-26 13:26:17   
+=========================================================================================
+```
+
+#### C. Membuat Operator / Akun Baru:
+```bash
+netora-cli -mode create-user -username noc_operator -new-password PassOperator123 -role OPERATOR
+```
+
+---
+
+### Metode 3: Emergency Rescue Fallback (Direct Database / Python)
+Jika dalam skenario darurat binary belum terkompilasi, password dapat di-reset langsung menggunakan script python bawaan server:
+```bash
+python3 -c "
+import bcrypt, subprocess
+pw = b'MyNewPassword123'
+hashed = bcrypt.hashpw(pw, bcrypt.gensalt(10)).decode('utf-8')
+subprocess.run(['sudo', '-u', 'postgres', 'psql', '-d', 'netora', '-c', f\"UPDATE users SET password_hash = '{hashed}', updated_at = NOW() WHERE username = 'admin';\"])
+print('Password successfully updated!')
+"
+```
+
+---
+
+### Verifikasi Hasil Pengujian Langsung di Server (172.18.20.145)
+Pengujian eksekusi `netora-reset-password` di terminal server `172.18.20.145`:
+```text
+root@dns-dev:~# netora-reset-password admin admin123
+
+========================================================
+  Netora DNS - Password Reset Successful
+========================================================
+  User ID   : usr-superadmin
+  Username  : admin
+  Role      : SUPER_ADMIN
+  Status    : Password successfully updated in PostgreSQL
+  Timestamp : 2026-09-26T06:26:17Z
+========================================================
+You can now sign in to the Netora NOC Web UI with your new password.
+```
+*Status: Database ter-update seketika, audit trail `CLI_PASSWORD_RESET` tercatat, dan login Web UI langsung aktif.*
+
+
 
 
