@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { Footer } from './components/Footer';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoginModal } from './components/LoginModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { OverviewView } from './views/OverviewView';
@@ -97,68 +98,70 @@ export function App() {
         />
 
         <main className="flex-1 overflow-y-auto min-h-0 p-6 md:p-8 custom-scrollbar">
-          {currentTab === 'overview' && (
-            <OverviewView
-              nodeId={selectedNodeId}
-              config={config}
-              node={activeNode}
-              onNavigate={(tab) => setCurrentTab(tab)}
-            />
-          )}
+          <ErrorBoundary key={currentTab}>
+            {currentTab === 'overview' && (
+              <OverviewView
+                nodeId={selectedNodeId}
+                config={config}
+                node={activeNode}
+                onNavigate={(tab) => setCurrentTab(tab)}
+              />
+            )}
 
-          {currentTab === 'diagnostics' && (
-            <DiagnosticsView initialDomain={diagnoseDomain} />
-          )}
+            {currentTab === 'diagnostics' && (
+              <DiagnosticsView initialDomain={diagnoseDomain} />
+            )}
 
-          {currentTab === 'dns-config' && (
-            <DNSConfigView
-              nodeId={selectedNodeId}
-              config={config}
-              onConfigUpdated={(newCfg) => setConfig(newCfg)}
-            />
-          )}
+            {currentTab === 'dns-config' && (
+              <DNSConfigView
+                nodeId={selectedNodeId}
+                config={config}
+                onConfigUpdated={(newCfg) => setConfig(newCfg)}
+              />
+            )}
 
-          {currentTab === 'filtering' && (
-            <FilteringView
-              config={config}
-              nodeId={selectedNodeId}
-              onConfigUpdated={(newCfg) => setConfig(newCfg)}
-            />
-          )}
+            {currentTab === 'filtering' && (
+              <FilteringView
+                config={config}
+                nodeId={selectedNodeId}
+                onConfigUpdated={(newCfg) => setConfig(newCfg)}
+              />
+            )}
 
-          {currentTab === 'performance' && (
-            <PerformanceView
-              config={config}
-              node={activeNode}
-              nodeId={selectedNodeId}
-              onConfigUpdated={(newCfg) => setConfig(newCfg)}
-            />
-          )}
+            {currentTab === 'performance' && (
+              <PerformanceView
+                config={config}
+                node={activeNode}
+                nodeId={selectedNodeId}
+                onConfigUpdated={(newCfg) => setConfig(newCfg)}
+              />
+            )}
 
-          {currentTab === 'monitoring' && (
-            <MonitoringView nodeId={selectedNodeId} node={activeNode} />
-          )}
+            {currentTab === 'monitoring' && (
+              <MonitoringView nodeId={selectedNodeId} node={activeNode} />
+            )}
 
-          {currentTab === 'history' && (
-            <HistoryView
-              nodeId={selectedNodeId}
-              onRollbackComplete={loadInitialData}
-            />
-          )}
+            {currentTab === 'history' && (
+              <HistoryView
+                nodeId={selectedNodeId}
+                onRollbackComplete={loadInitialData}
+              />
+            )}
 
-          {currentTab === 'audit' && <AuditView />}
+            {currentTab === 'audit' && <AuditView />}
 
-          {currentTab === 'wizard' && (
-            <WizardView
-              node={activeNode}
-              nodeId={selectedNodeId}
-              existingConfig={config}
-              onFinish={() => {
-                loadInitialData();
-                setCurrentTab('overview');
-              }}
-            />
-          )}
+            {currentTab === 'wizard' && (
+              <WizardView
+                node={activeNode}
+                nodeId={selectedNodeId}
+                existingConfig={config}
+                onFinish={() => {
+                  loadInitialData();
+                  setCurrentTab('overview');
+                }}
+              />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 

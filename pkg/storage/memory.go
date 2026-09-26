@@ -89,7 +89,7 @@ func (m *MemoryStore) UpdateUserCredentials(ctx context.Context, id string, newU
 func (m *MemoryStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var list []auth.User
+	list := make([]auth.User, 0)
 	for _, u := range m.users {
 		list = append(list, *u)
 	}
@@ -204,7 +204,7 @@ func (m *MemoryStore) UpsertPolicy(ctx context.Context, p *PolicyRecord) error {
 func (m *MemoryStore) ListFilters(ctx context.Context) ([]FilterRecord, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var list []FilterRecord
+	list := make([]FilterRecord, 0)
 	for _, f := range m.filters {
 		list = append(list, *f)
 	}
@@ -228,7 +228,7 @@ func (m *MemoryStore) DeleteFilter(ctx context.Context, id string) error {
 func (m *MemoryStore) ListAllowlist(ctx context.Context) ([]AllowlistRecord, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var list []AllowlistRecord
+	list := make([]AllowlistRecord, 0)
 	for _, a := range m.allowlists {
 		list = append(list, *a)
 	}

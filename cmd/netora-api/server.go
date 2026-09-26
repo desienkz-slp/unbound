@@ -1189,6 +1189,9 @@ func (s *Server) handleAllowlist(w http.ResponseWriter, r *http.Request) {
 			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		if al == nil {
+			al = []storage.AllowlistRecord{}
+		}
 		s.writeJSON(w, http.StatusOK, al)
 		return
 	}
@@ -1237,6 +1240,9 @@ func (s *Server) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if logs == nil {
+		logs = []model.AuditRecord{}
 	}
 	s.writeJSON(w, http.StatusOK, logs)
 }

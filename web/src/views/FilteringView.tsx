@@ -143,7 +143,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   const fetchFilters = async () => {
     try {
       const data = await api.getFilters();
-      if (data && data.length > 0) {
+      if (Array.isArray(data) && data.length > 0) {
         setFilters(data);
       } else {
         // Fallback default seeds if database empty
@@ -182,15 +182,17 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
       }
     } catch (err) {
       console.error('Failed to load filters:', err);
+      setFilters((prev) => (Array.isArray(prev) ? prev : []));
     }
   };
 
   const fetchAllowlist = async () => {
     try {
       const records = await api.getAllowlist();
-      setAllowlist(records);
+      setAllowlist(Array.isArray(records) ? records : []);
     } catch (err) {
       console.error('Failed to load allowlist:', err);
+      setAllowlist([]);
     }
   };
 
@@ -219,17 +221,17 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   const handleToggleFeed = async (id: string, currentEnabled: boolean) => {
     const nextVal = !currentEnabled;
     // Optimistic UI update
-    setFilters((prev) => prev.map((f) => (f.id === id ? { ...f, enabled: nextVal } : f)));
+    setFilters((prev) => (prev || []).map((f) => (f.id === id ? { ...f, enabled: nextVal } : f)));
     try {
       await api.toggleFilter(id, nextVal);
-      const feed = filters.find((f) => f.id === id);
+      const feed = (filters || []).find((f) => f.id === id);
       setActionMsg({
         type: 'success',
         text: `Feed "${feed?.name || id}" berhasil di-${nextVal ? 'aktifkan' : 'nonaktifkan'}.`,
       });
     } catch (err: any) {
       // Revert on failure
-      setFilters((prev) => prev.map((f) => (f.id === id ? { ...f, enabled: currentEnabled } : f)));
+      setFilters((prev) => (prev || []).map((f) => (f.id === id ? { ...f, enabled: currentEnabled } : f)));
       setActionMsg({
         type: 'error',
         text: `Gagal mengubah status feed: ${err.message}`,
@@ -239,10 +241,10 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
 
   // Bulk Toggle All Table Feeds (Excludes 18+ and Judi Online)
   const handleToggleAllFeeds = async (enableAll: boolean) => {
-    const targetFeeds = filters.filter((f) => f.id !== 'feed-adult' && f.id !== 'feed-gambling');
+    const targetFeeds = (filters || []).filter((f) => f.id !== 'feed-adult' && f.id !== 'feed-gambling');
     // Optimistic UI update
     setFilters((prev) =>
-      prev.map((f) => (f.id !== 'feed-adult' && f.id !== 'feed-gambling' ? { ...f, enabled: enableAll } : f))
+      (prev || []).map((f) => (f.id !== 'feed-adult' && f.id !== 'feed-gambling' ? { ...f, enabled: enableAll } : f))
     );
     try {
       await Promise.all(targetFeeds.map((f) => api.toggleFilter(f.id, enableAll)));
@@ -402,7 +404,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
     try {
       await api.deleteFilter(id);
       setActionMsg({ type: 'success', text: `Filter feed "${name}" removed.` });
-      setFilters(filters.filter((f) => f.id !== id));
+      setFilters((prev) => (prev || []).filter((f) => f.id !== id));
     } catch (err: any) {
       setActionMsg({ type: 'error', text: `Error deleting feed: ${err.message}` });
     }
@@ -440,26 +442,29 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
     }
   };
 
+  const safeFilters = Array.isArray(filters) ? filters : [];
+  const safeAllowlist = Array.isArray(allowlist) ? allowlist : [];
+
   // Feeds in the table should EXCLUDE 18+ and Judi Online as they are handled exclusively by Master Cards above
-  const tableFeeds = filters.filter((f) => f.id !== 'feed-adult' && f.id !== 'feed-gambling');
+  const tableFeeds = safeFilters.filter((f) => f && f.id !== 'feed-adult' && f.id !== 'feed-gambling');
 
   const filteredFilters = tableFeeds.filter(
     (f) =>
-      f.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      f.category.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      f.source_url?.toLowerCase().includes(searchFilter.toLowerCase())
+      (f.name || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+      (f.category || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+      (f.source_url || '').toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const filteredAllowlist = allowlist.filter(
+  const filteredAllowlist = safeAllowlist.filter(
     (a) =>
-      a.domain.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      a.reason?.toLowerCase().includes(searchFilter.toLowerCase())
+      (a.domain || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+      (a.reason || '').toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  const activeTableFeeds = tableFeeds.filter((f) => f.enabled);
+  const activeTableFeeds = tableFeeds.filter((f) => f && f.enabled);
   const activeTableRules = activeTableFeeds.reduce((acc, f) => acc + (f.rule_count || 0), 0);
   const totalTableRules = tableFeeds.reduce((acc, f) => acc + (f.rule_count || 0), 0);
-  const totalAllRules = filters.reduce((acc, f) => acc + (f.rule_count || 0), 0);
+  const totalAllRules = safeFilters.reduce((acc, f) => acc + (f.rule_count || 0), 0);
 
   const isSafeSearchActive = Boolean(config?.safe_search?.enabled ?? true);
   const isParentalActive = Boolean(config?.parental_control?.enabled);

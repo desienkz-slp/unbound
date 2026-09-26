@@ -203,7 +203,7 @@ func (p *PostgresStore) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 	}
 	defer rows.Close()
 
-	var nodes []NodeRecord
+	nodes := make([]NodeRecord, 0)
 	for rows.Next() {
 		var n NodeRecord
 		var lastSeen sql.NullTime
@@ -444,7 +444,7 @@ func (p *PostgresStore) ListConfigVersions(ctx context.Context, nodeID string, l
 	}
 	defer rows.Close()
 
-	var versions []model.ConfigVersion
+	versions := make([]model.ConfigVersion, 0)
 	for rows.Next() {
 		var v model.ConfigVersion
 		var applied sql.NullTime
@@ -491,7 +491,7 @@ func (p *PostgresStore) ListAuditLogs(ctx context.Context, limit int) ([]model.A
 	}
 	defer rows.Close()
 
-	var logs []model.AuditRecord
+	logs := make([]model.AuditRecord, 0)
 	for rows.Next() {
 		var a model.AuditRecord
 		var details, clientIP sql.NullString
@@ -514,7 +514,7 @@ func (p *PostgresStore) ListPolicies(ctx context.Context) ([]PolicyRecord, error
 	}
 	defer rows.Close()
 
-	var policies []PolicyRecord
+	policies := make([]PolicyRecord, 0)
 	for rows.Next() {
 		var pol PolicyRecord
 		var desc sql.NullString
@@ -552,7 +552,7 @@ func (p *PostgresStore) ListFilters(ctx context.Context) ([]FilterRecord, error)
 	}
 	defer rows.Close()
 
-	var filters []FilterRecord
+	filters := make([]FilterRecord, 0)
 	for rows.Next() {
 		var f FilterRecord
 		var lastUp sql.NullTime
@@ -601,7 +601,7 @@ func (p *PostgresStore) ListAllowlist(ctx context.Context) ([]AllowlistRecord, e
 	}
 	defer rows.Close()
 
-	var records []AllowlistRecord
+	records := make([]AllowlistRecord, 0)
 	for rows.Next() {
 		var a AllowlistRecord
 		var cat, rsn sql.NullString
