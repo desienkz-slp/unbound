@@ -166,3 +166,14 @@ INSERT INTO roles_permissions (role, permission) VALUES
 ('AUDITOR', 'audit:read'), ('AUDITOR', 'config:read'),
 ('READONLY', 'nodes:read'), ('READONLY', 'config:read'), ('READONLY', 'policy:read')
 ON CONFLICT (role, permission) DO NOTHING;
+
+-- Grant table & sequence privileges to netora application role
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'netora') THEN
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO netora;
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO netora;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO netora;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO netora;
+  END IF;
+END $$;

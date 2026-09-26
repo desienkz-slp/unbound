@@ -501,7 +501,8 @@ fi
 if [[ -n "$SCHEMA_FILE" && -f "$SCHEMA_FILE" ]]; then
   log_info "Applying initial database schema migrations..."
   cat "$SCHEMA_FILE" | (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}") || true
-  log_success "Initial database schema applied successfully."
+  (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${DB_USER}; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DB_USER}; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${DB_USER};") || true
+  log_success "Initial database schema applied and privileges granted."
 fi
 
 # ------------------------------------------------------------------------------
