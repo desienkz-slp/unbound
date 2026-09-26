@@ -347,6 +347,39 @@ Untuk melengkapi pertahanan keamanan setara ISP Tier-1, telah ditambahkan direkt
 - **0x20 Bit Encoding (`use-caps-for-id: yes`):** Mengacak huruf besar-kecil pada nama domain saat query keluar (misal: `gOoGlE.cOm`). Jika jawaban dari penyerang tidak mempertahankan pola huruf yang sama, Unbound langsung membuang paket tersebut sebagai respon palsu.
 - **Harden Below NXDOMAIN & Referral Path:** Menolak injeksi delegasi palsu dan mencegah caching negatif di bawah domain NXDOMAIN.
 
+---
+
+## 10. Fitur Pengaturan Urutan Upstream (Primary / Secondary / Reorder) & Optimasi CDN Terdekat
+
+Untuk mempermudah penataan hierarki resolver upstream dan memastikan rute ke server CDN (Shopee, Netflix, YouTube, TikTok) selalu paling dekat dengan pelanggan, platform Netora DNS kini dilengkapi dengan fitur:
+
+### A. Hierarki Prioritas Otomatis (Badges)
+Tabel Upstream kini secara cerdas menampilkan peran masing-masing resolver:
+- **`⭐ PRIMARY (MAIN)`**: Baris aktif paling atas (dicoba pertama kali oleh Unbound).
+- **`🥈 SECONDARY`**: Baris aktif kedua (failover instan).
+- **`🛡️ BACKUP #N`**: Baris aktif ketiga dan seterusnya (redundansi darurat).
+- **`OFF (Standby)`**: Resolver yang sedang dinonaktifkan tanpa perlu dihapus.
+
+### B. Tombol Geser Naik / Turun (Move Up & Move Down)
+Pada kolom Actions, disediakan tombol panah:
+- ⬆️ **Move Up:** Menaikkan posisi resolver menjadi prioritas lebih tinggi.
+- ⬇️ **Move Down:** Menurunkan posisi resolver menjadi prioritas lebih rendah.
+- Backend generator Unbound kini **mempertahankan urutan persis seperti di tabel UI**, tidak lagi mengacak urutan berdasarkan abjad IP.
+
+### C. Label Cerdas Kemampuan CDN & Peringatan Risiko
+- **`⚡ CDN Optimal (ECS Enabled)`**: Ditampilkan pada Google DoT (`8.8.8.8`) dan Quad9 ECS (`9.9.9.11`) karena meneruskan subnet IP ISP klien ke server CDN (Akamai, Fastly, Netflix Open Connect) untuk menyajikan cache lokal di Indonesia.
+- **`⚡ Fast Anycast (Jakarta POP)`**: Ditampilkan pada Cloudflare DoT (`1.1.1.1`).
+- **`⚠️ Rawan Dibajak ISP (Non-TLS Port 53)`**: Ditampilkan jika pengguna memasang port 53 UDP standar yang rawan dicegat ISP uplink.
+
+### D. Tombol Preset 1-Klik Rekomendasi ISP
+Disediakan tombol **"Terapkan Rekomendasi CDN Terdekat (1-Klik)"** di atas tabel yang secara otomatis menyusun:
+1. `8.8.8.8:853` (Google DoT) &rarr; **PRIMARY** (CDN Optimal via ECS)
+2. `1.1.1.1:853` (Cloudflare DoT) &rarr; **SECONDARY** (Fast Anycast Jakarta)
+3. `8.8.4.4:853` (Google Secondary) &rarr; **BACKUP #1**
+4. `1.0.0.1:853` (Cloudflare Secondary) &rarr; **BACKUP #2**
+*(Dan otomatis menonaktifkan port 53 UDP yang rentan dibajak).*
+
+
 
 
 

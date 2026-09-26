@@ -312,7 +312,7 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 			return fmt.Errorf("failed clearing upstreams: %w", err)
 		}
 	}
-	for _, u := range state.Upstreams {
+	for idx, u := range state.Upstreams {
 		query := `
 			INSERT INTO upstreams (id, node_id, name, ip, port, type, tls_name, weight, enabled, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
@@ -326,7 +326,8 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 				weight = EXCLUDED.weight,
 				enabled = EXCLUDED.enabled;
 		`
-		if _, err := tx.ExecContext(ctx, query, u.ID, state.NodeID, u.Name, u.IP, u.Port, string(u.Type), u.TLSName, u.Weight, u.Enabled); err != nil {
+		weight := idx
+		if _, err := tx.ExecContext(ctx, query, u.ID, state.NodeID, u.Name, u.IP, u.Port, string(u.Type), u.TLSName, weight, u.Enabled); err != nil {
 			return fmt.Errorf("failed saving upstream %s: %w", u.ID, err)
 		}
 	}
@@ -409,7 +410,7 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 	}
 
 	// Fetch Upstreams
-	uRows, err := p.db.QueryContext(ctx, `SELECT id, name, ip, port, type, COALESCE(tls_name, ''), COALESCE(weight, 100), enabled FROM upstreams WHERE node_id = $1 ORDER BY created_at ASC`, nodeID)
+	uRows, err := p.db.QueryContext(ctx, `SELECT id, name, ip, port, type, COALESCE(tls_name, ''), COALESCE(weight, 100), enabled FROM upstreams WHERE node_id = $1 ORDER BY weight ASC, created_at ASC`, nodeID)
 	if err == nil {
 		defer uRows.Close()
 		var upstreams []model.UpstreamServer

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Check,
   CheckCircle2,
   Copy,
@@ -18,6 +20,8 @@ import {
   Server,
   Shield,
   ShieldCheck,
+  Sparkles,
+  Star,
   Trash2,
   Zap,
 } from 'lucide-react';
@@ -446,6 +450,66 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
       ...localState,
       upstreams: [...localState.upstreams, newUp],
       resolution_mode: localState.resolution_mode === 'RECURSIVE' ? 'HYBRID' : localState.resolution_mode,
+    });
+  };
+
+  const moveUpstream = (index: number, direction: 'up' | 'down') => {
+    const list = [...localState.upstreams];
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIdx];
+    list[targetIdx] = temp;
+    setLocalState({ ...localState, upstreams: list });
+  };
+
+  const applyISPRecommendedPresets = () => {
+    const recommended: UpstreamServer[] = [
+      {
+        id: `up-goog-dot-1`,
+        name: 'Google Public DNS Primary (ECS CDN)',
+        ip: '8.8.8.8',
+        port: 853,
+        type: 'DOT',
+        tls_name: 'dns.google',
+        enabled: true,
+      },
+      {
+        id: `up-cf-dot-1`,
+        name: 'Cloudflare Standard (Jakarta Anycast)',
+        ip: '1.1.1.1',
+        port: 853,
+        type: 'DOT',
+        tls_name: 'cloudflare-dns.com',
+        enabled: true,
+      },
+      {
+        id: `up-goog-dot-2`,
+        name: 'Google Public DNS Secondary',
+        ip: '8.8.4.4',
+        port: 853,
+        type: 'DOT',
+        tls_name: 'dns.google',
+        enabled: true,
+      },
+      {
+        id: `up-cf-dot-2`,
+        name: 'Cloudflare Secondary',
+        ip: '1.0.0.1',
+        port: 853,
+        type: 'DOT',
+        tls_name: 'cloudflare-dns.com',
+        enabled: true,
+      },
+    ];
+    setLocalState({
+      ...localState,
+      upstreams: recommended,
+      resolution_mode: localState.resolution_mode === 'RECURSIVE' ? 'HYBRID' : localState.resolution_mode,
+    });
+    setMessage({
+      type: 'success',
+      text: 'Rekomendasi ISP CDN Terdekat berhasil diterapkan! Google DoT (8.8.8.8) diatur sebagai PRIMARY (ECS), dan Cloudflare DoT (1.1.1.1) sebagai SECONDARY. Klik "Save & Atomic Apply" di kanan atas.',
     });
   };
 
@@ -1224,127 +1288,241 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-gray-800">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
-                    <tr>
-                      <th className="py-2.5 px-3">Status / Toggle</th>
-                      <th className="py-2.5 px-3">Provider / Name</th>
-                      <th className="py-2.5 px-3">IP Address</th>
-                      <th className="py-2.5 px-3">Port</th>
-                      <th className="py-2.5 px-3">Protocol</th>
-                      <th className="py-2.5 px-3">TLS SNI Name</th>
-                      <th className="py-2.5 px-3">Latency Probe</th>
-                      <th className="py-2.5 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800/60 bg-gray-900/40">
-                    {localState.upstreams.map((up, idx) => {
-                      const test = testStatus[up.id];
-                      return (
-                        <tr key={up.id} className="hover:bg-gray-800/30 transition-colors">
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-2">
-                              <ToggleSwitch
-                                checked={up.enabled}
-                                onChange={(val) => updateUpstream(idx, { enabled: val })}
-                                size="sm"
+              <div className="space-y-3">
+                {/* Priority Guidance Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-gradient-to-r from-gray-950 via-slate-900 to-blue-950/40 rounded-xl border border-cyan-900/30 shadow-md">
+                  <div className="flex items-center gap-2.5 text-xs">
+                    <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-white flex items-center gap-1.5">
+                        Hierarki Prioritas & Optimasi CDN Terdekat
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-0.5 font-sans">
+                        Baris paling atas otomatis menjadi <strong className="text-amber-300">PRIMARY (Main DNS)</strong>. Gunakan tombol panah <span className="text-cyan-400 font-mono">⬆ / ⬇</span> untuk mengatur urutan. Gunakan Google DoT untuk rute CDN terdekat (Shopee, Netflix, YouTube) via ECS.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyISPRecommendedPresets}
+                    className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black text-xs font-bold rounded-lg shadow-md transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-black" />
+                    Terapkan Rekomendasi CDN Terdekat (1-Klik)
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-gray-800">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
+                      <tr>
+                        <th className="py-2.5 px-3">Prioritas / Role</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3">Provider / Name & CDN Info</th>
+                        <th className="py-2.5 px-3">IP Address</th>
+                        <th className="py-2.5 px-3">Port</th>
+                        <th className="py-2.5 px-3">Protocol</th>
+                        <th className="py-2.5 px-3">TLS SNI Name</th>
+                        <th className="py-2.5 px-3">Latency Probe</th>
+                        <th className="py-2.5 px-3 text-right">Urutan & Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/60 bg-gray-900/40">
+                      {localState.upstreams.map((up, idx) => {
+                        const test = testStatus[up.id];
+                        let enabledRank = 0;
+                        if (up.enabled) {
+                          for (let i = 0; i <= idx; i++) {
+                            if (localState.upstreams[i].enabled) enabledRank++;
+                          }
+                        }
+
+                        const isGoogleOrECS = up.ip.startsWith('8.8.') || up.ip === '9.9.9.11';
+                        const isCloudflare = up.ip === '1.1.1.1' || up.ip === '1.0.0.1';
+                        const isPlainUDP53 = up.port === 53 && up.type === 'UDP';
+
+                        return (
+                          <tr key={up.id} className="hover:bg-gray-800/30 transition-colors">
+                            {/* Prioritas / Role */}
+                            <td className="py-2.5 px-3">
+                              {up.enabled ? (
+                                enabledRank === 1 ? (
+                                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-sans font-bold flex items-center gap-1 w-max shadow-sm">
+                                    ⭐ PRIMARY (MAIN)
+                                  </span>
+                                ) : enabledRank === 2 ? (
+                                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-600 text-[10px] font-sans font-bold flex items-center gap-1 w-max">
+                                    🥈 SECONDARY
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60 text-[10px] font-sans font-medium flex items-center gap-1 w-max">
+                                    🛡️ BACKUP #{enabledRank - 2}
+                                  </span>
+                                )
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-gray-900 text-gray-500 border border-gray-800 text-[10px] font-sans">
+                                  OFF (Standby)
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Status Toggle */}
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-2">
+                                <ToggleSwitch
+                                  checked={up.enabled}
+                                  onChange={(val) => updateUpstream(idx, { enabled: val })}
+                                  size="sm"
+                                />
+                                <span
+                                  className={`text-[10px] font-sans font-bold px-1.5 py-0.5 rounded ${
+                                    up.enabled
+                                      ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/80'
+                                      : 'bg-gray-800 text-gray-400'
+                                  }`}
+                                >
+                                  {up.enabled ? 'AKTIF' : 'OFF'}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Provider / Name & CDN Info */}
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="text"
+                                value={up.name}
+                                onChange={(e) => updateUpstream(idx, { name: e.target.value })}
+                                className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-52 font-sans focus:border-cyan-500"
+                                placeholder="Provider Name"
                               />
-                              <span
-                                className={`text-[10px] font-sans font-bold px-1.5 py-0.5 rounded ${
-                                  up.enabled
-                                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/80'
-                                    : 'bg-gray-800 text-gray-400'
-                                }`}
+                              <div className="mt-1">
+                                {isGoogleOrECS ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-sans">
+                                    <Sparkles className="w-2.5 h-2.5 text-emerald-400" /> CDN Optimal (ECS Enabled)
+                                  </span>
+                                ) : isCloudflare ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-cyan-400 font-sans">
+                                    ⚡ Fast Anycast (Jakarta POP)
+                                  </span>
+                                ) : isPlainUDP53 ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-sans">
+                                    ⚠️ Rawan Dibajak ISP (Non-TLS Port 53)
+                                  </span>
+                                ) : null}
+                              </div>
+                            </td>
+
+                            {/* IP Address */}
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="text"
+                                value={up.ip}
+                                onChange={(e) => updateUpstream(idx, { ip: e.target.value })}
+                                className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-cyan-300 text-xs w-36 font-mono focus:border-cyan-500"
+                                placeholder="1.1.1.1"
+                              />
+                            </td>
+
+                            {/* Port */}
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="number"
+                                value={up.port}
+                                onChange={(e) => updateUpstream(idx, { port: parseInt(e.target.value, 10) || 53 })}
+                                className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-16 font-mono focus:border-cyan-500"
+                              />
+                            </td>
+
+                            {/* Protocol */}
+                            <td className="py-2.5 px-3">
+                              <select
+                                value={up.type}
+                                onChange={(e) => updateUpstream(idx, { type: e.target.value })}
+                                className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 font-mono focus:border-cyan-500"
                               >
-                                {up.enabled ? 'AKTIF' : 'OFF'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <input
-                              type="text"
-                              value={up.name}
-                              onChange={(e) => updateUpstream(idx, { name: e.target.value })}
-                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-44 font-sans focus:border-cyan-500"
-                              placeholder="Provider Name"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <input
-                              type="text"
-                              value={up.ip}
-                              onChange={(e) => updateUpstream(idx, { ip: e.target.value })}
-                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-cyan-300 text-xs w-36 font-mono focus:border-cyan-500"
-                              placeholder="1.1.1.1"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <input
-                              type="number"
-                              value={up.port}
-                              onChange={(e) => updateUpstream(idx, { port: parseInt(e.target.value, 10) || 53 })}
-                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-white text-xs w-16 font-mono focus:border-cyan-500"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <select
-                              value={up.type}
-                              onChange={(e) => updateUpstream(idx, { type: e.target.value })}
-                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 font-mono focus:border-cyan-500"
-                            >
-                              <option value="DOT">DoT (TLS)</option>
-                              <option value="DOH">DoH (HTTPS)</option>
-                              <option value="UDP">UDP (Standard)</option>
-                              <option value="TCP">TCP</option>
-                            </select>
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <input
-                              type="text"
-                              value={up.tls_name || ''}
-                              onChange={(e) => updateUpstream(idx, { tls_name: e.target.value })}
-                              className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-gray-300 text-xs w-44 font-mono focus:border-cyan-500"
-                              placeholder="e.g. cloudflare-dns.com"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3">
-                            {test?.status === 'testing' ? (
-                              <span className="text-[11px] text-cyan-400 flex items-center gap-1 font-sans">
-                                <RefreshCw className="w-3 h-3 animate-spin" /> Testing...
-                              </span>
-                            ) : test?.status === 'ok' ? (
-                              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono">
-                                ✔ {test.latency}ms
-                              </span>
-                            ) : test?.status === 'fail' ? (
-                              <span className="px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 text-[10px] font-mono">
-                                ✖ Timeout
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => testUpstream(up)}
-                                className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] font-sans border border-gray-700 transition-colors"
-                              >
-                                Test Ping
-                              </button>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <button
-                              onClick={() => removeUpstream(idx)}
-                              disabled={localState.upstreams.length <= 1}
-                              className="p-1 text-gray-500 hover:text-red-400 disabled:opacity-30 transition-colors"
-                              title="Hapus Upstream"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                <option value="DOT">DoT (TLS)</option>
+                                <option value="DOH">DoH (HTTPS)</option>
+                                <option value="UDP">UDP (Standard)</option>
+                                <option value="TCP">TCP</option>
+                              </select>
+                            </td>
+
+                            {/* TLS SNI Name */}
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="text"
+                                value={up.tls_name || ''}
+                                onChange={(e) => updateUpstream(idx, { tls_name: e.target.value })}
+                                className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-gray-300 text-xs w-44 font-mono focus:border-cyan-500"
+                                placeholder="e.g. cloudflare-dns.com"
+                              />
+                            </td>
+
+                            {/* Latency Probe */}
+                            <td className="py-2.5 px-3">
+                              {test?.status === 'testing' ? (
+                                <span className="text-[11px] text-cyan-400 flex items-center gap-1 font-sans">
+                                  <RefreshCw className="w-3 h-3 animate-spin" /> Testing...
+                                </span>
+                              ) : test?.status === 'ok' ? (
+                                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono">
+                                  ✔ {test.latency}ms
+                                </span>
+                              ) : test?.status === 'fail' ? (
+                                <span className="px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 text-[10px] font-mono">
+                                  ✖ Timeout
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => testUpstream(up)}
+                                  className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-[10px] font-sans border border-gray-700 transition-colors"
+                                >
+                                  Test Ping
+                                </button>
+                              )}
+                            </td>
+
+                            {/* Actions & Reordering */}
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => moveUpstream(idx, 'up')}
+                                  disabled={idx === 0}
+                                  className="p-1 rounded bg-gray-950 border border-gray-800 text-gray-400 hover:text-cyan-400 hover:border-cyan-600 disabled:opacity-20 disabled:hover:text-gray-400 transition-colors"
+                                  title="Geser Naik (Prioritas Lebih Tinggi)"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveUpstream(idx, 'down')}
+                                  disabled={idx === localState.upstreams.length - 1}
+                                  className="p-1 rounded bg-gray-950 border border-gray-800 text-gray-400 hover:text-cyan-400 hover:border-cyan-600 disabled:opacity-20 disabled:hover:text-gray-400 transition-colors"
+                                  title="Geser Turun (Prioritas Lebih Rendah)"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeUpstream(idx)}
+                                  disabled={localState.upstreams.length <= 1}
+                                  className="p-1 rounded bg-gray-950 border border-gray-800 text-gray-500 hover:text-red-400 hover:border-red-600 disabled:opacity-30 transition-colors ml-1"
+                                  title="Hapus Upstream"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

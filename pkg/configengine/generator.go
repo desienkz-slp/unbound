@@ -417,7 +417,7 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 		return ctx.ActiveClientNetworks[i].CIDR < ctx.ActiveClientNetworks[j].CIDR
 	})
 
-	// Filter and sort active upstreams
+	// Collect active upstreams in exact user-configured priority order
 	for _, up := range state.Upstreams {
 		if up.Enabled {
 			ctx.ActiveUpstreams = append(ctx.ActiveUpstreams, up)
@@ -426,12 +426,6 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 			}
 		}
 	}
-	sort.Slice(ctx.ActiveUpstreams, func(i, j int) bool {
-		if ctx.ActiveUpstreams[i].IP != ctx.ActiveUpstreams[j].IP {
-			return ctx.ActiveUpstreams[i].IP < ctx.ActiveUpstreams[j].IP
-		}
-		return ctx.ActiveUpstreams[i].Port < ctx.ActiveUpstreams[j].Port
-	})
 
 	// Deduplicate and sort insecure domains
 	domainSet := make(map[string]struct{})
