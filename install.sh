@@ -540,13 +540,22 @@ else
   fi
 fi
 
-# 2. Deploy Web UI static files
+# 2. Deploy Web UI static files (POSIX-safe directory copy avoids glob failure under set -euo pipefail)
 if [[ -d "${REPO_DIR}/deploy/ui" && "$(ls -A "${REPO_DIR}/deploy/ui")" ]]; then
-  cp -r "${REPO_DIR}/deploy/ui/"* /var/www/netora-ui/
+  cp -r "${REPO_DIR}/deploy/ui/." /var/www/netora-ui/
   log_success "Deployed Web UI distribution from deploy/ui to /var/www/netora-ui"
 elif [[ -d "${REPO_DIR}/web/dist" && "$(ls -A "${REPO_DIR}/web/dist")" ]]; then
-  cp -r "${REPO_DIR}/web/dist/"* /var/www/netora-ui/
+  cp -r "${REPO_DIR}/web/dist/." /var/www/netora-ui/
   log_success "Deployed Web UI distribution from web/dist to /var/www/netora-ui"
+fi
+
+# 2b. Seed version.json to state directory for backend API (/api/v1/system/version)
+if [[ -f "${REPO_DIR}/deploy/ui/version.json" ]]; then
+  cp -f "${REPO_DIR}/deploy/ui/version.json" /var/lib/netora-dns/version.json
+  log_success "Seeded version.json to /var/lib/netora-dns/version.json"
+elif [[ -f "${REPO_DIR}/version.json" ]]; then
+  cp -f "${REPO_DIR}/version.json" /var/lib/netora-dns/version.json
+  log_success "Seeded version.json to /var/lib/netora-dns/version.json"
 fi
 
 # 3. Configure API Environment & Systemd Service
@@ -614,9 +623,10 @@ if [[ -n "$GITHUB_TOKEN" ]]; then
   chmod 600 /etc/netora-dns/github.token
 fi
 
-# Install systemd timer
+# Install systemd updater service (ProtectSystem=false + /var/www/netora-ui in ReadWritePaths for full update scope)
 if [[ -f "${REPO_DIR}/deploy/systemd/netora-dns-updater.service" ]]; then
   cp "${REPO_DIR}/deploy/systemd/netora-dns-updater.service" /etc/systemd/system/
+  log_success "Installed netora-dns-updater.service (sandbox: ProtectSystem=false, full ReadWritePaths)"
 fi
 if [[ -f "${REPO_DIR}/deploy/systemd/netora-dns-updater.timer" ]]; then
   cp "${REPO_DIR}/deploy/systemd/netora-dns-updater.timer" /etc/systemd/system/
