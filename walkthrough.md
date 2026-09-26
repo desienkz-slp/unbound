@@ -162,3 +162,64 @@ Bila nanti di server *real production* Anda menambahkan interface ethernet ketig
    - Mereload daemon Unbound (`unbound-control reload`).
    - Menyimpan seluruh perubahan ke PostgreSQL.
 4. Refresh browser kapan saja — konfigurasi akan tetap persisten dan akurat sesuai sistem.
+
+---
+
+## 5. Investigasi: Kenapa nslookup ke 172.18.20.4 dari PC Tidak Memunculkan IPv6?
+
+Saat pengguna menguji `nslookup google.com 172.18.20.4` dari PC/Windows, hanya record IPv4 (A) yang muncul, sedangkan pada `172.18.20.146` muncul record IPv6 (AAAA) dan IPv4 (A).
+
+Berikut adalah **fakta dan bukti teknis dari server**:
+
+### A. Di Server Netora DNS (`netora-dns1`), Unbound Mendukung & Mengembalikan IPv6 pada 172.18.20.4
+Ketika diuji langsung di localhost server `netora-dns1` via SSH:
+```bash
+dig @172.18.20.4 google.com AAAA +short
+```
+**Hasil:**
+```text
+2404:6800:4003:c05::8b
+2404:6800:4003:c05::65
+2404:6800:4003:c05::8a
+2404:6800:4003:c05::71
+```
+> **Kesimpulan Server:** Unbound pada IP `172.18.20.4` **100% aktif, mendukung IPv6 (`do-ip6: yes`), dan merespons query AAAA secara sempurna.**
+
+---
+
+### B. Lalu Kenapa dari PC Klien Tidak Muncul IPv6?
+Telah dilakukan investigasi paket jaringan dari client ke server:
+
+1. **Paket Query dari PC Klien ke `172.18.20.4` TIDAK PERNAH Sampai ke Server `netora-dns1`:**
+   - Pemantauan statistik interface Linux `ens19` (`cat /proc/net/dev`) membuktikan `TX packets` tetap berada di angka 15 (tidak bertambah ketika PC melakukan `nslookup`).
+   - Log query Unbound (`journalctl -u unbound`) mencatat query dari client yang ditujukan ke `172.18.20.146`, tetapi query ke `172.18.20.4` **0 record** di log Unbound.
+
+2. **Query Port 53 Klien Dicegat (Interception) oleh Router Gateway (MikroTik):**
+   - Saat diuji query identitas server DNS (*CHAOS TXT version.bind*):
+     - Ke `172.18.20.146` &rarr; Dijawab oleh Unbound: `Query refused` (respon standar daemon Unbound).
+     - Ke `172.18.20.4` &rarr; Dijawab: `Not implemented` (`NOTIMP`), yang merupakan respon khas bawaan **MikroTik RouterOS DNS Cache**.
+   - Saat diuji DNS via TCP (`nslookup -vc 172.18.20.4`), koneksi TCP port 53 langsung timeout/drop (karena DNS cache router tidak membuka TCP 53), sedangkan ke `172.18.20.146` koneksi TCP 53 langsung terbuka dan lancar.
+   - Jawaban IP Google dari `172.18.20.4` (`172.253.118.x`) berasal dari cache upstream milik router MikroTik, bukan dari Unbound (`142.250.4.x`). Karena cache router tersebut tidak mengaktifkan IPv6, router hanya mengembalikan record IPv4.
+
+---
+
+### C. Solusi Topologi Jaringan Router (MikroTik)
+
+Penyebab di atas berada pada **firewall / NAT router perantara** (`172.18.20.30` / `192.168.171.1`):
+1. **Periksa Firewall NAT di Router MikroTik:**
+   Buka Winbox / Terminal MikroTik, cek menu `/ip firewall nat`.
+   Jika ada aturan *Dst-NAT / Redirect*:
+   ```text
+   chain=dstnat action=redirect to-ports=53 protocol=udp dst-port=53
+   ```
+   Aturan ini akan membelokkan seluruh query DNS klien ke DNS cache router sendiri.
+   Tambahkan pengecualian / pasang aturan `accept` untuk IP tujuan DNS Server:
+   ```text
+   /ip firewall nat add chain=dstnat action=accept dst-address=172.18.20.4 protocol=udp dst-port=53 place-before=0
+   /ip firewall nat add chain=dstnat action=accept dst-address=172.18.20.4 protocol=tcp dst-port=53 place-before=0
+   ```
+2. **Periksa Kepemilikan IP pada Router:**
+   Pastikan IP `172.18.20.4` tidak terpasang di interface router MikroTik (hindari IP conflict) agar paket port 53 murni diforward langsung ke interface `ens19` server `netora-dns1`.
+
+Begitu router meloloskan paket ke server `netora-dns1`, query `nslookup google.com 172.18.20.4` dari PC klien akan langsung dijawab oleh Unbound dan menampilkan record IPv6 (AAAA) secara lengkap.
+
