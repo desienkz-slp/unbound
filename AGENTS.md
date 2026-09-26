@@ -62,6 +62,9 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 15. Performance claims must be benchmarked, not guessed.
 16. ISP recursive resolvers must prioritize real-world CDN compatibility (e.g. disable strict qname-minimisation if upstream authoritative CDNs return non-compliant NXDOMAIN on intermediate labels).
 17. Production node updates (including server 172.18.20.145 / dns-dev) must always be deployed by pulling from the canonical GitHub repository (via `netora update` or `git pull`) after committing and pushing changes, never via ad-hoc unversioned manual file transfers.
+18. Multi-Node IP Config Invariance: Auto-update releases must never distribute hardcoded node IP listeners, unbound interface bindings, or overwrite local database configurations. Each node's unique IP topology and PostgreSQL state must remain immutable across updates.
+19. Environment Access Boundary: Respect access tiers — dev nodes (e.g., 172.18.20.145) allow SSH root access for end-to-end automation, whereas production nodes (e.g., 172.18.20.146) are Web UI / HTTP API only. Never attempt direct SSH on production; validate via HTTP endpoints and Web UI.
+20. Dual-Path Auto-Update: Fleet nodes must support both scheduled background auto-updates (systemd timer) and instant on-demand updates via the NOC Web UI / API (`POST /api/v1/system/update`).
 
 ## Coding behavior
 
