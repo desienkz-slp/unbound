@@ -498,6 +498,31 @@ Ditambahkan section khusus **"🔑 Panduan Reset Password Operator via CLI Langs
 - Binary Linux AMD64 `deploy/bin/netora-cli-linux-amd64` telah dikompilasi dan disertakan dalam paket rilis agar installer dapat langsung memasang `/usr/local/bin/netora-cli` tanpa ketergantungan instalasi Go compiler di server produksi.
 - Script [install.sh](file:///c:/xampp/htdocs/auto-install/unbound/install.sh) diperbarui untuk secara otomatis menginstal utilitas `netora`, `netora-reset-password`, dan `netora-cli` saat deployment node baru.
 
+---
+
+## 14. Troubleshooting: Mengatasi `curl: (6) Could not resolve host: raw.githubusercontent.com` saat Bootstrap Server Baru
+
+### Akar Masalah:
+Error `curl: (6) Could not resolve host: raw.githubusercontent.com` pada server baru (`netora-dns1`) terjadi karena sistem operasi server belum memiliki DNS nameserver upstream yang aktif pada `/etc/resolv.conf` (atau konfigurasi DNS sebelumnya mengarah ke `127.0.0.1` / `127.0.0.53` di mana Unbound belum berjalan sebelum di-install).
+
+### Solusi Pemulihan 1-Baris:
+Cukup set nameserver resolver publik sementara (Cloudflare `1.1.1.1` dan Google `8.8.8.8`) di `/etc/resolv.conf`:
+
+```bash
+# 1. Set resolver sementara
+echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" > /etc/resolv.conf
+
+# 2. Uji koneksi DNS
+ping -c 2 raw.githubusercontent.com
+
+# 3. Jalankan kembali script auto-install
+export GITHUB_TOKEN="ghp_yourPersonalAccessTokenHere"
+curl -H "Authorization: token $GITHUB_TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo -E bash
+```
+
+Setelah `install.sh` selesai dieksekusi, installer secara otomatis mengonfigurasi Unbound sebagai resolver lokal berkecepatan tinggi dengan fallback upstream yang aman.
+
+
 
 
 
