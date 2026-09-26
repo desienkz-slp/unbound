@@ -886,6 +886,57 @@ Pemeriksaan langsung via Browser Subagent menemukan:
   - Kartu SafeSearch, Parental Control (18+), dan Judi Online beroperasi dengan baik.
   - Tabel blocklists dan allowlists ter-render rapi dengan 0 error console.
 
+---
+
+## 25. Resolusi Dynamic Hardware Specs & Real Server IP Detection (Penghapusan Hardcoded IP 145)
+
+### 1. Masalah & Temuan Awal
+Pada Web UI Server 146 (`http://172.18.20.146:8080`), dropdown node di header dan badge footer menampilkan nama dan IP milik Server 145: `netora-dns1 (172.18.20.145)`.
+
+### 2. Akar Masalah (Root Cause)
+1. **Hardcoded IP & Specs di Backend (`cmd/netora-api/main.go` & `server.go`):**
+   - Saat registrasi node di startup: `store.UpsertNode(ctx, nodeMeta, "HEALTHY", "172.18.20.145")`.
+   - Spesifikasi hardware di-hardcode: `CPUCores: 2`, `TotalRAMMB: 2048`, `UnboundVersion: "1.13.1"`.
+   - Akibatnya, pada database PostgreSQL milik server mana pun, record node terisi dengan IP `172.18.20.145`.
+2. **Hardcoded State Fallback di Frontend (`web/src/App.tsx`):**
+   - State `selectedNodeId` diinisialisasi `'dns-dev'`. Ketika Server 146 mengembalikan node `netora-dns1`, logic pencarian node aktif jatuh ke objek cadangan dummy `{ id: 'dns-dev', hostname: 'dns-dev', management_ip: '172.18.20.145' }`.
+   - Komponen `WizardView`, `MonitoringView`, dan `DNSConfigView` memiliki fallback hardcoded ke `172.18.20.145`.
+
+### 3. Solusi & Perbaikan Komprehensif
+1. **Mesin Auto-Deteksi Otonom di Backend Go (`cmd/netora-api/system_detect.go`):**
+   - `detectManagementIP()`:
+     - Melakukan kernel routing table lookup via socket UDP connect (`net.Dial("udp", "8.8.8.8:80")`) tanpa mengirim traffic keluar.
+     - Menginspeksi interface jaringan lokal aktif untuk menemukan IPv4 non-loopback primer.
+     - Otomatis menghasilkan `172.18.20.146` di Server 146, dan `172.18.20.145` di Server 145.
+   - `detectSystemSpecs()`:
+     - Membaca jumlah core CPU riil via `runtime.NumCPU()`.
+     - Membaca memori RAM fisik riil dari `/proc/meminfo` (Linux).
+     - Menjalankan `unbound -V` secara terisolasi untuk mendeteksi versi Unbound riil terpasang.
+   - Panggilan `store.UpsertNode()` dan heartbeat kini selalu mengirimkan data riil server.
+2. **Dinamisasi Total di Frontend React:**
+   - Inisialisasi `selectedNodeId` diubah menjadi `''` dan otomatis mengunci ke `nodeList[0].id` yang dilaporkan API.
+   - Menghapus seluruh objek dummy fallback `'dns-dev'` dan IP `'172.18.20.145'`.
+   - Menggunakan `window.location.hostname` dan `node?.management_ip` secara konsisten pada Header, Footer, Monitoring, DNSConfig, dan Wizard.
+
+### 4. Hasil Verifikasi Lapangan (Bukti Nyata Dua Server)
+
+#### Server 146 (`http://172.18.20.146:8080`) — Node: `netora-dns1`
+- **Management IP:** `172.18.20.146` (100% Real IP)
+- **Unbound Version:** `1.19.2` (100% Real Installed Version)
+- **Hardware Cores:** `4 vCPUs` (100% Real Hardware)
+- **Total RAM:** `15,615 MB (~16 GB)` (100% Real RAM)
+- **Header Dropdown:** `netora-dns1 (172.18.20.146)`
+- **Footer Badge:** `netora-dns1 (172.18.20.146) | Unbound 1.19.2`
+- **Overview Target:** `netora-dns1`
+
+#### Server 145 (`http://172.18.20.145:8080`) — Node: `dns-dev`
+- **Management IP:** `172.18.20.145` (100% Real IP)
+- **Unbound Version:** `1.13.1` (100% Real Installed Version)
+- **Hardware Cores:** `2 vCPUs` (100% Real Hardware)
+- **Total RAM:** `2,048 MB` (100% Real RAM)
+- **Header Dropdown:** `DNS-dev (172.18.20.145)`
+
+
 
 
 
