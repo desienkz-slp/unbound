@@ -704,8 +704,8 @@ Footer docked di bagian bawah layar (tinggi 36px, dark slate navy `#070B12`, bor
   - Identitas node aktif: `{hostname} ({management_ip})`.
   - Resolver data plane: `Unbound 1.13.1 (RESOLVING)`.
 - **Sisi Kanan (Version Badge Interaktif):**
-  - Ikon Git Commit + Versi: **`v1.0.<commit_count>`** (misal: `v1.0.44`).
-  - Badge tag commit SHA: `git:de28649`.
+  - Ikon Git Commit + Versi: **`v1.0.<commit_count>`** (Rilis saat ini: `v1.0.46`).
+  - Badge tag commit SHA: `git:07eca2c`.
   - Indikator `Fleet Sync: Continuous`.
 - **Drawer Detail Rilis (Klik pada Badge Versi):**
   - Menampilkan modal detail berisi Build Number, Commit SHA lengkap, Upstream Branch (`main`), Timestamp rilis, dan tautan langsung ke repositori GitHub.
@@ -714,9 +714,9 @@ Footer docked di bagian bawah layar (tinggi 36px, dark slate navy `#070B12`, bor
 Penomoran versi didasarkan pada total commit historis repositori (`git rev-list --count HEAD`):
 1. **Monotonik Naik (Strictly Monotonic):**
    - Setiap commit baru yang di-push ke GitHub secara matematis menambah total commit count (+1).
-   - Commit saat ini: `44` $\rightarrow$ Versi: `v1.0.44`.
-   - Update berikutnya di GitHub: `45` $\rightarrow$ Versi: `v1.0.45`.
-   - Update selanjutnya: `46` $\rightarrow$ Versi: `v1.0.46`, dan seterusnya tanpa batas.
+   - Rilis saat ini di GitHub: Commit `#46` $\rightarrow$ Versi: **`v1.0.46`**.
+   - Update berikutnya di GitHub: Commit `#47` $\rightarrow$ Versi: **`v1.0.47`**.
+   - Update selanjutnya: Commit `#48` $\rightarrow$ Versi: **`v1.0.48`**, dan seterusnya secara otonom tanpa batas.
 2. **Skrip Build Otomatis (`web/scripts/update-version.cjs`):**
    - Terintegrasi langsung pada `npm run build`.
    - Menghitung git commit count dan short SHA secara dinamis, lalu menghasilkan `version.json` ke direktori root, `web/src/`, dan `web/public/`.
