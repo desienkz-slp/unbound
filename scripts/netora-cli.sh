@@ -126,6 +126,42 @@ cmd_info() {
     echo -e "  Password: ${GREEN}admin123${NC} (or as configured in /etc/netora-dns/api.env)"
 }
 
+cmd_reset_password() {
+    if [[ -x /usr/local/bin/netora-reset-password ]]; then
+        /usr/local/bin/netora-reset-password "$@"
+    elif [[ -x /usr/local/bin/netora-cli ]]; then
+        local user="${1:-}"
+        local pass="${2:-}"
+        if [[ -z "$user" ]]; then
+            read -rp "Enter username to reset [admin]: " user
+            user="${user:-admin}"
+        fi
+        if [[ -z "$pass" ]]; then
+            read -rsp "Enter new password for '${user}' (min 6 characters): " pass
+            echo ""
+            read -rsp "Confirm new password: " confirm_pass
+            echo ""
+            if [[ "$pass" != "$confirm_pass" ]]; then
+                echo -e "${RED}Error: Passwords do not match!${NC}" >&2
+                exit 1
+            fi
+        fi
+        /usr/local/bin/netora-cli -mode reset-password -username "$user" -new-password "$pass"
+    else
+        echo -e "${RED}Error: /usr/local/bin/netora-cli or /usr/local/bin/netora-reset-password not found!${NC}" >&2
+        exit 1
+    fi
+}
+
+cmd_users() {
+    if [[ -x /usr/local/bin/netora-cli ]]; then
+        /usr/local/bin/netora-cli -mode list-users
+    else
+        echo -e "${RED}Error: /usr/local/bin/netora-cli not found!${NC}" >&2
+        exit 1
+    fi
+}
+
 usage() {
     echo "Netora DNS Carrier CLI Utility"
     echo "Usage: netora <command> [options]"
@@ -138,16 +174,20 @@ usage() {
     echo "  restart              Restart Unbound and Netora API services gracefully"
     echo "  logs [svc]           Follow live logs (unbound, api, or updater)"
     echo "  info                 Display Web UI URL, node endpoints, and credentials"
+    echo "  reset-password [u]   Reset NOC operator password directly on server"
+    echo "  users                List all operator accounts and database status"
     exit 1
 }
 
 case "${1:-}" in
-    status)   cmd_status ;;
-    update)   shift; cmd_update "$@" ;;
-    rollback) shift; cmd_rollback "$@" ;;
-    restart)  cmd_restart ;;
-    health)   cmd_health ;;
-    logs)     shift; cmd_logs "$@" ;;
-    info)     cmd_info ;;
-    *)        usage ;;
+    status)         cmd_status ;;
+    update)         shift; cmd_update "$@" ;;
+    rollback)       shift; cmd_rollback "$@" ;;
+    restart)        cmd_restart ;;
+    health)         cmd_health ;;
+    logs)           shift; cmd_logs "$@" ;;
+    info)           cmd_info ;;
+    reset-password) shift; cmd_reset_password "$@" ;;
+    users)          shift; cmd_users "$@" ;;
+    *)              usage ;;
 esac

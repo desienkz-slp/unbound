@@ -170,7 +170,120 @@ netora logs updater
 
 # 7. Print access endpoints, IP topology, and operator credentials
 netora info
+
+# 8. Reset operator password interactively or via parameters
+netora reset-password
+netora reset-password admin "MyNewPassword123"
+
+# 9. List registered NOC operator accounts and database status
+netora users
 ```
+
+---
+
+## 🔑 Panduan Reset Password Operator via CLI Langsung di Server
+
+Untuk keperluan pemulihan darurat (*disaster recovery*), situasi saat administrator lupa password Web UI, atau akun NOC terkunci, Netora DNS menyediakan utilitas CLI native dan script otomatis yang dapat dijalankan langsung di server via SSH dengan **Zero-Downtime** (tanpa perlu restart Unbound maupun Netora API):
+
+### 1. Metode Cepat: Menggunakan Perintah `netora reset-password` (Direkomendasikan)
+Perintah ini terintegrasi langsung dalam utility `/usr/local/bin/netora`:
+
+#### A. Mode Interaktif (Paling Aman — Password Tidak Tersimpan di History Shell)
+Cukup ketik perintah berikut tanpa argumen password:
+```bash
+netora reset-password
+```
+Sistem akan menampilkan prompt rahasia:
+```text
+========================================================
+  Netora DNS - CLI Password Reset Utility
+========================================================
+Enter username to reset [admin]: admin
+Enter new password for 'admin' (min 6 characters): [Ketik Password]
+Confirm new password: [Ketik Ulang Password]
+```
+
+#### B. Mode Non-Interaktif / 1-Baris (Cocok untuk Script & Otomatisasi)
+```bash
+netora reset-password <username> "<password_baru>"
+```
+*Contoh:*
+```bash
+netora reset-password admin "SuperSecretNocPass123"
+```
+
+---
+
+### 2. Metode Skrip Dedicated: `netora-reset-password`
+Tersedia juga script eksekusi langsung di `/usr/local/bin/netora-reset-password`:
+```bash
+# Mode interaktif
+netora-reset-password
+
+# Mode langsung dengan parameter
+netora-reset-password admin "SuperSecretNocPass123"
+```
+
+---
+
+### 3. Metode Native Binary: `netora-cli`
+Binary engine `/usr/local/bin/netora-cli` berkomunikasi langsung dengan database PostgreSQL dan menyediakan kontrol akun yang lengkap:
+
+#### A. Reset Password Akun Tertentu:
+```bash
+netora-cli -mode reset-password -username admin -new-password "SuperSecretNocPass123"
+```
+*Output:*
+```text
+========================================================
+  Netora DNS - Password Reset Successful
+========================================================
+  User ID   : usr-superadmin
+  Username  : admin
+  Role      : SUPER_ADMIN
+  Status    : Password successfully updated in PostgreSQL
+  Timestamp : 2026-09-26T06:26:17Z
+========================================================
+You can now sign in to the Netora NOC Web UI with your new password.
+```
+
+#### B. Menampilkan Daftar Operator Terdaftar:
+```bash
+netora-cli -mode list-users
+```
+*Output:*
+```text
+=========================================================================================
+  Netora DNS - Registered Operators
+=========================================================================================
+  USER ID          USERNAME         ROLE           LAST UPDATED          
+-----------------------------------------------------------------------------------------
+  usr-superadmin   admin            SUPER_ADMIN    2026-09-26 13:26:17   
+=========================================================================================
+```
+
+#### C. Membuat Akun Operator / Admin Baru Secara Darurat:
+```bash
+netora-cli -mode create-user -username noc_operator -new-password "PassOperator123" -role OPERATOR
+```
+
+---
+
+### 4. Metode Emergency Rescue Fallback (Direct PostgreSQL)
+Jika dalam skenario bencana (*disaster*) binary belum tersedia, Anda dapat langsung meng-update hash password melalui Python / PostgreSQL CLI bawaan server:
+```bash
+python3 -c "
+import bcrypt, subprocess
+pw = b'SuperSecretNocPass123'
+hashed = bcrypt.hashpw(pw, bcrypt.gensalt(10)).decode('utf-8')
+subprocess.run(['sudo', '-u', 'postgres', 'psql', '-d', 'netora', '-c', f\"UPDATE users SET password_hash = '{hashed}', updated_at = NOW() WHERE username = 'admin';\"])
+print('Password successfully updated!')
+"
+```
+
+> [!NOTE]
+> **Keamanan & Konsistensi Database:**  
+> Seluruh password di-hash secara aman menggunakan algoritma **bcrypt** (cost 10) standar industri. Setiap perubahan kredensial via CLI otomatis dicatat ke tabel Audit Log (`audit_logs`) untuk keperluan kepatuhan (*compliance*) keamanan jaringan ISP.
 
 ---
 

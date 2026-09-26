@@ -588,12 +588,34 @@ if [[ "$ENABLE_AUTO_UPDATE" == "true" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Install Netora CLI Helper
+# Install Netora CLI Helper & Password Reset Utilities
 # ------------------------------------------------------------------------------
 if [[ -f "${REPO_DIR}/scripts/netora-cli.sh" ]]; then
   cp "${REPO_DIR}/scripts/netora-cli.sh" /usr/local/bin/netora
   chmod +x /usr/local/bin/netora
   log_success "Installed Netora CLI to /usr/local/bin/netora"
+fi
+
+if [[ -f "${REPO_DIR}/scripts/netora-reset-password.sh" ]]; then
+  cp "${REPO_DIR}/scripts/netora-reset-password.sh" /usr/local/bin/netora-reset-password
+  chmod +x /usr/local/bin/netora-reset-password
+  log_success "Installed password reset script to /usr/local/bin/netora-reset-password"
+fi
+
+CLI_BIN_SOURCE=""
+if [[ -f "${REPO_DIR}/deploy/bin/netora-cli-linux-amd64" ]]; then
+  CLI_BIN_SOURCE="${REPO_DIR}/deploy/bin/netora-cli-linux-amd64"
+elif [[ -f "${REPO_DIR}/bin/netora-cli-linux" ]]; then
+  CLI_BIN_SOURCE="${REPO_DIR}/bin/netora-cli-linux"
+fi
+
+if [[ -n "$CLI_BIN_SOURCE" && -f "$CLI_BIN_SOURCE" ]]; then
+  cp "$CLI_BIN_SOURCE" /usr/local/bin/netora-cli
+  chmod +x /usr/local/bin/netora-cli
+  log_success "Installed netora-cli binary to /usr/local/bin/netora-cli"
+elif command -v go >/dev/null 2>&1; then
+  log_info "Building netora-cli from Go source..."
+  (cd "$REPO_DIR" && go build -o /usr/local/bin/netora-cli cmd/netora-cli/main.go) 2>/dev/null && chmod +x /usr/local/bin/netora-cli && log_success "Built netora-cli from source." || true
 fi
 
 # ------------------------------------------------------------------------------

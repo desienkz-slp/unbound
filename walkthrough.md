@@ -472,6 +472,33 @@ You can now sign in to the Netora NOC Web UI with your new password.
 ```
 *Status: Database ter-update seketika, audit trail `CLI_PASSWORD_RESET` tercatat, dan login Web UI langsung aktif.*
 
+---
+
+## 13. Integrasi Panduan CLI Password Reset ke README.md & Command `netora reset-password`
+
+Panduan lengkap pemulihan kredensial via CLI kini telah didokumentasikan secara resmi pada dokumentasi utama [README.md](file:///c:/xampp/htdocs/auto-install/unbound/README.md) repositori:
+
+### 1. Perluasan Utility CLI `netora` (`/usr/local/bin/netora`)
+Perintah `netora` yang biasa digunakan operator NOC kini dilengkapi dua sub-command baru:
+1. `netora reset-password [username] [new_password]`:
+   - Jika dijalankan tanpa parameter: Otomatis masuk ke mode interaktif dengan prompt password bertopeng (*hidden input*) dan konfirmasi ganda.
+   - Jika dijalankan dengan parameter: Mengeksekusi reset langsung secara instan (*one-liner*).
+2. `netora users`:
+   - Menampilkan tabel akun operator terdaftar, peran akses (*role*), dan waktu pembaruan kredensial terakhir.
+
+### 2. Penambahan Section Baru pada [README.md](file:///c:/xampp/htdocs/auto-install/unbound/README.md)
+Ditambahkan section khusus **"🔑 Panduan Reset Password Operator via CLI Langsung di Server"** yang mencakup:
+- **Metode 1 (Rekomendasi NOC):** Menggunakan `netora reset-password` (mode interaktif & one-liner).
+- **Metode 2:** Menggunakan script eksekusi dedicated `netora-reset-password`.
+- **Metode 3:** Menggunakan native Go binary `netora-cli` (`-mode reset-password`, `-mode list-users`, `-mode create-user`).
+- **Metode 4:** Emergency rescue fallback (direct database via Python/psql).
+- **Catatan Keamanan:** Bcrypt cost 10, database persistence atomik non-destruktif, dan audit logging.
+
+### 3. Distribusi Precompiled Binary & Update `install.sh`
+- Binary Linux AMD64 `deploy/bin/netora-cli-linux-amd64` telah dikompilasi dan disertakan dalam paket rilis agar installer dapat langsung memasang `/usr/local/bin/netora-cli` tanpa ketergantungan instalasi Go compiler di server produksi.
+- Script [install.sh](file:///c:/xampp/htdocs/auto-install/unbound/install.sh) diperbarui untuk secara otomatis menginstal utilitas `netora`, `netora-reset-password`, dan `netora-cli` saat deployment node baru.
+
+
 
 
 
