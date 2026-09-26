@@ -283,4 +283,42 @@ Sesuai instruksi dan kesepakatan:
 2. **Dilarang Transfer File via SCP:** Tidak diperbolehkan menyalin file secara manual via SCP ke server 146 untuk pembaruan sistem.
 3. **Dilarang Manual CLI Update:** Tidak diperbolehkan menjalankan build atau command update manual langsung di CLI server, guna mencegah desinkronisasi versi, rusaknya permission, dan hilangnya riwayat rilis.
 
+---
+
+## 8. Resolusi Masalah SERVFAIL pada Domain Bebas (Bypass Intersepsi ISP via DoT Upstream)
+
+### A. Gejala yang Ditemukan
+Saat toggle **18+ Dewasa** dan **Judi Online** disetel ke **ALLOWED** di Web UI, pengujian `nslookup xhamster.com 172.18.20.146` awalnya menghasilkan:
+```text
+*** netora-dns1 can't find xhamster.com: Server failed
+```
+
+### B. Akar Masalah Teknis
+1. **Filtering Netora DNS Bekerja Normal:**
+   Di file `/etc/unbound/conf.d/parental-control.conf`, status Parental Control tertulis `# Parental Control is DISABLED (Adult websites allowed)`.
+2. **Transparent DNS Spoofing oleh ISP Uplink (PT Aplikanusa Lintasarta):**
+   Pada mode rekursif biasa atau forward port 53 biasa, ISP Lintasarta mencegat (hijack) query UDP/TCP port 53 dalam 0 ms dan menyuntikkan IP Trustpositif (`182.23.79.195`).
+3. **Penolakan oleh Validator DNSSEC Unbound:**
+   Karena jawaban dari ISP Lintasarta tidak memiliki tanda tangan DNSSEC (RRSIG) yang valid dari TLD `.com`, validator Unbound mendeteksinya sebagai data palsu (BOGUS) dan menolak memberikan IP Trustpositif ke klien, sehingga menghasilkan status **`SERVFAIL`**.
+
+### C. Solusi & Verifikasi Akhir
+Dengan mengaktifkan resolver upstream terenkripsi **DoT (DNS-over-TLS pada Port 853)** di tab **Upstream Resolvers**:
+```text
+forward-zone:
+  name: "."
+  forward-first: yes
+  forward-tls-upstream: yes
+  forward-addr: 1.1.1.1@853#cloudflare-dns.com
+  forward-addr: 8.8.8.8@853#dns.google
+```
+- Query keluar via port 853 dengan enkripsi TLS, sehingga **kebal dari pembajakan port 53 oleh ISP uplink**.
+- **Hasil Verifikasi Langsung:**
+  ```text
+  > dig @172.18.20.146 xhamster.com +short
+  104.16.3.81
+  104.16.4.81
+  ```
+  Domain ter-resolve secara instan ke IP CDN aslinya dengan status **`NOERROR`**, tanpa terkena Trustpositif dan tanpa kegagalan DNSSEC!
+
+
 
