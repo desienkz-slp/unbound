@@ -601,6 +601,33 @@ Sesuai perintah eksplisit operator via `/learn`, telah ditetapkan aturan operasi
 - Waktu eksekusi: 38 detik (Staging -> Validation -> Reload -> Health Check).
 - Status: `SUCCESS`, resolusi DNS: `PASS` (latensi ~500µs), API: `UP`.
 
+---
+
+## 18. Penanganan Error PostgreSQL `permission denied for table users (42501)`
+
+### Akar Masalah:
+Saat berkas `001_initial_schema.sql` dieksekusi dengan akun superuser `postgres`, tabel-tabel di skema `public` dibuat dengan kepemilikan (*owner*) `postgres`. Akun operasional aplikasi (`netora`) yang digunakan oleh backend API dan CLI tidak memiliki izin akses `SELECT`, `INSERT`, atau `UPDATE` pada tabel tersebut secara default, sehingga memicu error:
+```text
+Error: user 'admin' not found in database: pq: permission denied for table users (42501)
+```
+
+### Solusi Instan di Server (`netora-dns1`):
+Berikan izin penuh atas semua tabel dan sequence di skema `public` kepada role `netora`:
+
+```bash
+sudo -u postgres psql -d netora -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO netora; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO netora; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO netora;"
+```
+Lalu jalankan kembali perintah reset password:
+```bash
+netora reset-password admin admin123
+```
+
+### Solusi Permanen pada Kode Repositori:
+1. **Pembaruan Migrasi Skema (`pkg/storage/migrations/001_initial_schema.sql`):** Ditambahkan blok deklarasi otomatis `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO netora` dan `ALTER DEFAULT PRIVILEGES`.
+2. **Pembaruan Installer (`install.sh`):** Ditambahkan penegasan pemberian hak akses (`GRANT ALL`) pada tabel dan sequence tepat setelah eksekusi migrasi skema.
+3. **Pembaruan Binary Rilis:** Binary `netora-api` dan `netora-cli` dikompilasi ulang dengan skema terbaru yang menyertakan perizinan tabel otomatis.
+
+
 
 
 
