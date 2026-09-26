@@ -320,5 +320,33 @@ forward-zone:
   ```
   Domain ter-resolve secara instan ke IP CDN aslinya dengan status **`NOERROR`**, tanpa terkena Trustpositif dan tanpa kegagalan DNSSEC!
 
+---
+
+## 9. Penambahan Proteksi Carrier-Grade: Anti-DNS Rebinding & 0x20 Randomization
+
+Untuk melengkapi pertahanan keamanan setara ISP Tier-1, telah ditambahkan direktif proteksi lanjutan ke dalam generator template Unbound (`pkg/configengine/templates.go`):
+
+### A. Anti-DNS Rebinding (RFC 1918 / RFC 4193 / RFC 3927)
+```text
+  private-address: 10.0.0.0/8
+  private-address: 172.16.0.0/12
+  private-address: 192.168.0.0/16
+  private-address: 169.254.0.0/16
+  private-address: fd00::/8
+  private-address: fe80::/10
+```
+- **Fungsi:** Memblokir seluruh domain publik dari internet yang mencoba membalas dengan alamat IP lokal privat milik pelanggan Anda.
+- **Dampak Keamanan:** Menutup celah eksploitasi di mana website berbahaya mencoba meretas modem, router Wi-Fi, atau perangkat smart home (IoT) pelanggan dari jarak jauh melalui browser.
+
+### B. Anti-Cache Poisoning Ekstra (0x20 Randomization & NXDOMAIN Hardening)
+```text
+  harden-below-nxdomain: yes
+  harden-referral-path: yes
+  use-caps-for-id: yes
+```
+- **0x20 Bit Encoding (`use-caps-for-id: yes`):** Mengacak huruf besar-kecil pada nama domain saat query keluar (misal: `gOoGlE.cOm`). Jika jawaban dari penyerang tidak mempertahankan pola huruf yang sama, Unbound langsung membuang paket tersebut sebagai respon palsu.
+- **Harden Below NXDOMAIN & Referral Path:** Menolak injeksi delegasi palsu dan mencegah caching negatif di bawah domain NXDOMAIN.
+
+
 
 

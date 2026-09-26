@@ -38,11 +38,22 @@ server:
   qname-minimisation: {{ if .Features.QnameMinimisation }}yes{{ else }}no{{ end }}
   harden-glue: {{ if .DNSSEC.HardenGlue }}yes{{ else }}no{{ end }}
   harden-dnssec-stripped: {{ if .DNSSEC.HardenDNSSECStripped }}yes{{ else }}no{{ end }}
+  harden-below-nxdomain: yes
+  harden-referral-path: yes
+  use-caps-for-id: yes
   use-syslog: no
   logfile: "/var/log/unbound/unbound.log"
   log-queries: yes
   log-replies: yes
   verbosity: 1
+
+  # --- Anti-DNS Rebinding Protection (RFC 1918 / RFC 4193 / RFC 3927) ---
+  private-address: 10.0.0.0/8
+  private-address: 172.16.0.0/12
+  private-address: 192.168.0.0/16
+  private-address: 169.254.0.0/16
+  private-address: fd00::/8
+  private-address: fe80::/10
 
   # --- 5. Cache & Resilience ---
   prefetch: {{ if .Features.Prefetch }}yes{{ else }}no{{ end }}
