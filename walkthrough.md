@@ -261,3 +261,26 @@ Addresses:  2404:6800:4003:c06::8a
 ```
 Nama server sekarang otomatis terdeteksi sebagai **`Server: netora-dns1`** sesuai dengan nama node Anda!
 
+---
+
+## 7. Kebijakan & Alur Update Server 146 (Git Pull Otomatis via Web UI Footer Button)
+
+### A. Apakah Server 146 Update Pull dari Git?
+**Ya.** Seluruh node Netora DNS (termasuk server 146 / `netora-dns1`) menggunakan mekanisme pembaruan berbasis **Git pull otomatis** dari repositori GitHub resmi (`https://github.com/desienkz-slp/unbound.git` pada branch `main`).
+
+Alur kerja update:
+1. Kode sumber diperbarui, diuji, di-commit, dan di-push ke GitHub `origin/main`.
+2. Tombol **"Update"** pada footer Web UI (`http://172.18.20.146:8080/`) diklik (atau memicu `POST /api/v1/system/update`).
+3. Server memanggil script `/usr/local/sbin/netora-dns-update` yang menjalankan:
+   - `git ls-remote` untuk memeriksa ketersediaan commit baru di GitHub.
+   - `git clone` versi rilis baru ke direktori staging `/opt/netora-dns/releases/<commit_sha>`.
+   - Menjalankan build binary dan pengujian integritas staging tanpa mematikan Unbound.
+   - Melakukan penggantian symlink atomic `/opt/netora-dns/current` dan restart daemon secara seamless.
+
+### B. Aturan Baku Operasional Pembaruan Server 146
+Sesuai instruksi dan kesepakatan:
+1. **Wajib Tombol Update Footer:** Seluruh update ke server 146 **WAJIB** dieksekusi melalui tombol **"Update"** di footer Web UI (atau melalui API/browser subagent).
+2. **Dilarang Transfer File via SCP:** Tidak diperbolehkan menyalin file secara manual via SCP ke server 146 untuk pembaruan sistem.
+3. **Dilarang Manual CLI Update:** Tidak diperbolehkan menjalankan build atau command update manual langsung di CLI server, guna mencegah desinkronisasi versi, rusaknya permission, dan hilangnya riwayat rilis.
+
+
