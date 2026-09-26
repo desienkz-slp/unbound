@@ -732,3 +732,28 @@ netora update
 ```
 Browser Web UI (`http://172.18.20.146:8080`) akan langsung menampilkan footer modern dengan versi terbaru di bagian bawah layar!
 
+---
+
+## 22. Penanganan: Versi Footer Belum Muncul Setelah Update di Server 146
+
+### Akar Masalah:
+Saat Anda menjalankan `netora update` pada server 146:
+1. Script `/usr/local/sbin/netora-dns-update` yang terpasang di server saat instalasi awal adalah versi rilis pertama.
+2. Script versi awal tersebut hanya memperbarui direktori konfigurasi Unbound `/etc/unbound/` dan mengunduh rilis baru ke `/opt/netora-dns/releases/` (symlink `/opt/netora-dns/current`). Script lama tersebut **belum memiliki baris perintah untuk menyalin build UI terbaru ke `/var/www/netora-ui`** serta belum memperbarui binary `netora-api` ke `/usr/local/bin/`.
+3. Akibatnya, `/var/www/netora-ui` di server 146 masih memuat file build UI lama.
+4. Selain itu, browser web (Chrome/Edge) menyimpan cache file JavaScript lama.
+
+### Solusi 1-Langkah di Server 146:
+Jalankan 1 baris perintah sinkronisasi ini di terminal SSH server 146:
+
+```bash
+cp -r /opt/netora-dns/current/deploy/ui/. /var/www/netora-ui/ && cp -f /opt/netora-dns/current/deploy/bin/netora-api-linux-amd64 /usr/local/bin/netora-api && cp -f /opt/netora-dns/current/scripts/netora-dns-update.sh /usr/local/sbin/netora-dns-update && cp -f /opt/netora-dns/current/scripts/netora-cli.sh /usr/local/bin/netora && chmod +x /usr/local/bin/netora-api /usr/local/sbin/netora-dns-update /usr/local/bin/netora && systemctl restart netora-api
+```
+
+### Langkah Terakhir di Browser:
+1. Buka kembali dashboard Web UI Netora (`http://172.18.20.146:8080`).
+2. Tekan **`Ctrl + F5`** (atau `Ctrl + Shift + R` pada Mac `Cmd + Shift + R`) untuk membersihkan cache browser lama.
+3. Footer status bar dan versi build (`Netora Build v1.0.46`) langsung muncul di layar.
+4. Karena `/usr/local/sbin/netora-dns-update` kini telah diperbarui, semua perintah `netora update` selanjutnya akan **otomatis menyalin UI dan binary baru tanpa perlu perintah manual lagi**.
+
+
