@@ -61,6 +61,7 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 14. Tests must include failure and rollback scenarios, not only happy paths.
 15. Performance claims must be benchmarked, not guessed.
 16. ISP recursive resolvers must prioritize real-world CDN compatibility (e.g. disable strict qname-minimisation if upstream authoritative CDNs return non-compliant NXDOMAIN on intermediate labels).
+17. Production node updates (including server 172.18.20.145 / dns-dev) must always be deployed by pulling from the canonical GitHub repository (via `netora update` or `git pull`) after committing and pushing changes, never via ad-hoc unversioned manual file transfers.
 
 ## Coding behavior
 
@@ -75,6 +76,7 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 - Use structured logs.
 - Return actionable errors.
 - For DNS validation, use browser subagent testing against real media-heavy websites (e-commerce, video) to verify CDN and streaming asset delivery alongside CLI benchmarks.
+- For server updates on target nodes (e.g. 172.18.20.145), always commit and push changes to GitHub first, then trigger `netora update` or git pull on the remote host to maintain absolute parity.
 - Document operational assumptions.
 
 ## Definition of done
