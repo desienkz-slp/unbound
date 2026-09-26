@@ -756,4 +756,80 @@ cp -r /opt/netora-dns/current/deploy/ui/. /var/www/netora-ui/ && cp -f /opt/neto
 3. Footer status bar dan versi build (`Netora Build v1.0.46`) langsung muncul di layar.
 4. Karena `/usr/local/sbin/netora-dns-update` kini telah diperbarui, semua perintah `netora update` selanjutnya akan **otomatis menyalin UI dan binary baru tanpa perlu perintah manual lagi**.
 
+---
+
+## 23. Tombol Manual Update di Web UI, Perlindungan IP Multi-Server, & Pemulihan Server 146
+
+### 1. Tombol Manual Update di Web UI (On-Demand Fleet Update)
+Menjawab kebutuhan Anda:
+> *"Tambahkan button update jika schedule auto update belum running secara auto. Karena kamu hanya memiliki akses via web di server production, pastikan auto update jalan, dan tidak merusak config ip, karena banyak server nantinya yang akan berbeda ip."*
+
+Telah diimplementasikan tombol **"Update Platform"** langsung pada antarmuka Web UI (tanpa harus menunggu jadwal 5 menit atau membuka terminal SSH):
+1. **Di Footer Bar (Sisi Kanan):**
+   - Tombol **`Update Platform`** dengan ikon sync `RefreshCw`.
+   - Mengubah status secara real-time menjadi spinning `Updating...` saat ditekan.
+2. **Di Modal Rilis (Drawer Detail):**
+   - Panel khusus **"Pembaruan Platform Fleet"**.
+   - Tombol **"Perbarui Platform Sekarang"** (Pull GitHub).
+   - Menampilkan status proses secara bertahap:
+     - `Menghubungi server dan menarik kode terbaru dari GitHub...`
+     - `Mengunduh commit, memvalidasi Unbound, dan memperbarui aset...`
+     - `Netora service sedang restart dengan binary baru...`
+     - `Pembaruan berhasil! Diperbarui ke versi terbaru. Memuat ulang...`
+   - Halaman otomatis me-refresh dirinya sendiri dalam 2 detik sehingga tampilan versi dan fitur langsung aktif.
+3. **Backend API Endpoints (`cmd/netora-api/server.go`):**
+   - `POST /api/v1/system/update`: Memeriksa apakah update sedang berjalan (mutex guard), lalu mengeksekusi `/usr/local/sbin/netora-dns-update update --force` secara aman di latar belakang.
+   - `GET /api/v1/system/update/status`: Mengembalikan status proses update, commit lokal, commit remote GitHub, dan pesan error jika ada.
+
+---
+
+### 2. Garansi Perlindungan Konfigurasi IP Multi-Server (IP Invariance)
+Setiap node DNS di jaringan ISP memiliki IP listener dan network topology yang berbeda (misal Server 145 di `172.18.20.145`, Server 146 di `172.18.20.146` dan `172.18.20.4`, node selanjutnya di IP lain).
+
+**Guardrail yang Diterapkan di Updater (`scripts/netora-dns-update.sh`):**
+1. **Tidak Pernah Menimpa `unbound.conf` Lokal:**
+   ```bash
+   # IP & Interface Invariance Guardrail:
+   if [[ -f "/etc/unbound/unbound.conf" ]]; then
+       log_event "INFO" "preserving_ip_config" "Preserving local node IP interfaces and unbound.conf"
+       cp -f "/etc/unbound/unbound.conf" "${stage_dir}/unbound.conf"
+   ```
+   File `unbound.conf` aktif yang menyimpan binding IP spesifik milik server lokal tetap dipertahankan utuh dan tidak pernah digantikan oleh template umum dari repository.
+2. **Database PostgreSQL Lokal Tetap Utuh:**
+   Tabel `nodes` dan `listeners` di database lokal PostgreSQL tidak pernah di-reset, di-drop, atau di-truncate saat update berlangsung.
+3. **Konfigurasi Identitas Node Aman:**
+   File `/etc/netora-dns/node-id` dan `/etc/netora-dns/api.env` tetap mempertahankan IP manajemen dan listener lokal masing-masing node.
+
+---
+
+### 3. Perbaikan Sandbox Systemd Timer (`netora-dns-updater.service`)
+Ditemukan bahwa pada instalasi awal, unit systemd `netora-dns-updater.service` memiliki konfigurasi isolasi `ProtectSystem=true` dan belum memasukkan `/var/www/netora-ui` ke dalam `ReadWritePaths`. Akibatnya, saat timer 5 menit berjalan di background, systemd secara diam-diam memblokir penulisan ke folder UI dan `/usr/local/bin`.
+
+**Perbaikan:**
+- `ProtectSystem=false`
+- `ReadWritePaths` diperluas mencakup `/var/www/netora-ui /usr/local/bin /usr/local/sbin`
+- Skrip updater kini secara otomatis memperbarui unit systemd ini pada setiap update.
+
+---
+
+### 4. Perintah Satu-Kali untuk Server 146 (`netora-dns1`)
+Karena saat ini Server 146 masih menjalankan script installer awal yang belum memiliki rilis baru, jalankan perintah satu-kali berikut di terminal SSH server 146:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/scripts/netora-dns-update.sh | bash -s -- update --force
+```
+
+*Atau jika ingin mengeksekusi langsung dari file lokal yang sudah ter-clone di `/opt/netora-dns/`:*
+```bash
+cp -r /opt/netora-dns/current/deploy/ui/. /var/www/netora-ui/ && cp -f /opt/netora-dns/current/deploy/bin/netora-api-linux-amd64 /usr/local/bin/netora-api && cp -f /opt/netora-dns/current/scripts/netora-dns-update.sh /usr/local/sbin/netora-dns-update && cp -f /opt/netora-dns/current/scripts/netora-cli.sh /usr/local/bin/netora && cp -f /opt/netora-dns/current/deploy/systemd/netora-dns-updater.service /etc/systemd/system/ && systemctl daemon-reload && systemctl restart netora-api
+```
+
+### Hasil yang Didapatkan:
+1. Web UI di `http://172.18.20.146:8080/` langsung menampilkan footer, badge versi (`v1.0.49`), dan tombol **"Update Platform"**.
+2. Service `netora-api` di server 146 aktif dengan API endpoints pembaruan.
+3. Seluruh pembaruan di masa depan akan:
+   - Berjalan secara otomatis setiap 5 menit via systemd timer, ATAU
+   - Dijalankan seketika melalui tombol **"Update Platform"** di Web UI kapan saja operator menginginkannya!
+
+
 
