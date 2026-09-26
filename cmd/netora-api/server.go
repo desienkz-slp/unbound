@@ -725,6 +725,16 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if strings.TrimSpace(state.NodeID) == "" {
+			state.NodeID = nodeID
+		}
+		if strings.TrimSpace(state.VersionID) == "" {
+			state.VersionID = fmt.Sprintf("v-%d", time.Now().Unix())
+		}
+		if strings.TrimSpace(string(state.ResolutionMode)) == "" {
+			state.ResolutionMode = model.ModeRecursive
+		}
+
 		claims := r.Context().Value("user_claims").(*auth.Claims)
 		log.Printf("[apply] Node %s: starting apply for version %s (actor: %s)\n", nodeID, state.VersionID, claims.Username)
 		res, err := s.engine.Apply(r.Context(), &state, claims.Username, "REST API Apply")

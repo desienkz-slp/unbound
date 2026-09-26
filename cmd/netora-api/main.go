@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -90,6 +91,73 @@ func main() {
 	_ = store.UpsertNode(ctx, nodeMeta, "HEALTHY", realIP)
 	log.Printf("Registered local node '%s' (hostname: %s, mgmt_ip: %s, cpu: %d cores, ram: %d MB, unbound: %s)\n",
 		*nodeID, hostname, realIP, realCores, realRAM, realUnboundVer)
+
+	// 3.1 Ensure Initial Node Listeners & DesiredState Exist with Real Detected Host IPs
+	existingState, err := store.GetDesiredState(ctx, *nodeID)
+	hasConcreteListeners := false
+	if err == nil && existingState != nil {
+		for _, l := range existingState.Listeners {
+			if l.IP != "0.0.0.0" && l.IP != "" {
+				hasConcreteListeners = true
+				break
+			}
+		}
+	}
+	if !hasConcreteListeners {
+		activeIPs := detectActiveIPv4Addresses()
+		initListeners := []model.Listener{
+			{
+				ID:      "listen-mgmt",
+				Name:    "Management Loopback",
+				IP:      "127.0.0.1",
+				Port:    53,
+				Role:    model.RoleManagement,
+				IsIPv6:  false,
+				UDP:     true,
+				TCP:     true,
+				Enabled: true,
+			},
+		}
+		for i, ip := range activeIPs {
+			role := model.RoleClient
+			name := fmt.Sprintf("Client DNS (%s)", ip)
+			if ip == realIP {
+				name = fmt.Sprintf("Uplink / Management (%s)", ip)
+			}
+			initListeners = append(initListeners, model.Listener{
+				ID:      fmt.Sprintf("listen-nic-%d", i+1),
+				Name:    name,
+				IP:      ip,
+				Port:    53,
+				Role:    role,
+				IsIPv6:  false,
+				UDP:     true,
+				TCP:     true,
+				Enabled: true,
+			})
+		}
+		if len(activeIPs) == 0 {
+			initListeners = append(initListeners, model.Listener{
+				ID:      "listen-client-v4",
+				Name:    "Client DNS IPv4",
+				IP:      "0.0.0.0",
+				Port:    53,
+				Role:    model.RoleClient,
+				IsIPv6:  false,
+				UDP:     true,
+				TCP:     true,
+				Enabled: true,
+			})
+		}
+
+		baseState := model.NewDefaultDesiredState(*nodeID, realCores, realRAM)
+		baseState.Listeners = initListeners
+		if err := store.SaveDesiredState(ctx, baseState); err != nil {
+			log.Printf("Warning: failed saving initial desired state: %v\n", err)
+		} else {
+			log.Printf("Initialized default node '%s' configuration with %d active listener(s)\n", *nodeID, len(initListeners))
+		}
+	}
 
 	// 4. Initialize Config Engine
 	gen, err := configengine.NewGenerator()

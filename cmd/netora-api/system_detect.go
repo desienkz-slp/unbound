@@ -56,6 +56,44 @@ func detectManagementIP() string {
 	return "127.0.0.1"
 }
 
+// detectActiveIPv4Addresses returns all non-loopback IPv4 addresses assigned to UP network interfaces.
+func detectActiveIPv4Addresses() []string {
+	var ips []string
+	seen := make(map[string]bool)
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ips
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip != nil && !ip.IsLoopback() && ip.To4() != nil {
+				ipStr := ip.String()
+				if !seen[ipStr] {
+					seen[ipStr] = true
+					ips = append(ips, ipStr)
+				}
+			}
+		}
+	}
+	return ips
+}
+
 // detectSystemSpecs probes real CPU cores, total physical RAM, and installed Unbound version.
 func detectSystemSpecs() (cores int, ramMB int, unboundVer string) {
 	cores = runtime.NumCPU()

@@ -356,9 +356,16 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
     setSaving(true);
     setMessage(null);
     try {
-      const res = await api.applyConfig(nodeId, localState, 'Updated via Netora Web UI');
+      const payload: DesiredState = {
+        ...localState,
+        node_id: nodeId || localState.node_id,
+        version_id: `v-${Date.now()}`,
+        resolution_mode: localState.resolution_mode || 'RECURSIVE',
+        listeners: localState.listeners || [],
+      };
+      const res = await api.applyConfig(nodeId, payload, 'Updated via Netora Web UI');
       setMessage({ type: 'success', text: `Configuration applied atomically! Version ID: ${res.version_id}` });
-      onConfigUpdated(localState);
+      onConfigUpdated(payload);
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Failed to apply configuration' });
     } finally {
@@ -368,7 +375,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
 
   // Helper updates
   const updateListener = (index: number, updated: Partial<Listener>) => {
-    const list = [...localState.listeners];
+    const list = [...(localState.listeners || [])];
     list[index] = { ...list[index], ...updated };
     setLocalState({ ...localState, listeners: list });
   };
@@ -385,11 +392,11 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
       tcp: true,
       enabled: true,
     };
-    setLocalState({ ...localState, listeners: [...localState.listeners, newL] });
+    setLocalState({ ...localState, listeners: [...(localState.listeners || []), newL] });
   };
 
   const removeListener = (index: number) => {
-    const list = localState.listeners.filter((_, i) => i !== index);
+    const list = (localState.listeners || []).filter((_, i) => i !== index);
     setLocalState({ ...localState, listeners: list });
   };
 

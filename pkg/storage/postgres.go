@@ -220,6 +220,10 @@ func (p *PostgresStore) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 
 // SaveDesiredState synchronizes a node's full desired state transactionally.
 func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.DesiredState) error {
+	if strings.TrimSpace(state.NodeID) == "" {
+		return fmt.Errorf("cannot SaveDesiredState: nodeID is empty")
+	}
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -250,6 +254,7 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 			INSERT INTO listeners (id, node_id, name, ip, port, role, is_ipv6, udp, tcp, enabled, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 			ON CONFLICT (id) DO UPDATE SET
+				node_id = EXCLUDED.node_id,
 				name = EXCLUDED.name,
 				ip = EXCLUDED.ip,
 				port = EXCLUDED.port,
@@ -280,6 +285,7 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 			INSERT INTO client_networks (id, node_id, cidr, description, action, policy_group, enabled, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 			ON CONFLICT (id) DO UPDATE SET
+				node_id = EXCLUDED.node_id,
 				cidr = EXCLUDED.cidr,
 				description = EXCLUDED.description,
 				action = EXCLUDED.action,
@@ -311,6 +317,7 @@ func (p *PostgresStore) SaveDesiredState(ctx context.Context, state *model.Desir
 			INSERT INTO upstreams (id, node_id, name, ip, port, type, tls_name, weight, enabled, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 			ON CONFLICT (id) DO UPDATE SET
+				node_id = EXCLUDED.node_id,
 				name = EXCLUDED.name,
 				ip = EXCLUDED.ip,
 				port = EXCLUDED.port,
@@ -339,12 +346,23 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 	// Fetch config_json if stored on node
 	var cfgJSON []byte
 	if err := p.db.QueryRowContext(ctx, `SELECT config_json FROM nodes WHERE id = $1`, nodeID).Scan(&cfgJSON); err == nil {
-		if len(cfgJSON) > 0 {
+		if len(cfgJSON) > 2 {
 			var savedState model.DesiredState
-			if err := json.Unmarshal(cfgJSON, &savedState); err == nil {
+			if err := json.Unmarshal(cfgJSON, &savedState); err == nil && savedState.NodeID != "" && savedState.ResolutionMode != "" {
 				state = &savedState
 			}
 		}
+	}
+
+	// Always ensure required fields are valid
+	if state.NodeID == "" {
+		state.NodeID = nodeID
+	}
+	if state.ResolutionMode == "" {
+		state.ResolutionMode = model.ModeRecursive
+	}
+	if state.VersionID == "" {
+		state.VersionID = fmt.Sprintf("v-%d", time.Now().Unix())
 	}
 
 	// Fetch Listeners
