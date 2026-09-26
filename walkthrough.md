@@ -831,5 +831,61 @@ cp -r /opt/netora-dns/current/deploy/ui/. /var/www/netora-ui/ && cp -f /opt/neto
    - Berjalan secara otomatis setiap 5 menit via systemd timer, ATAU
    - Dijalankan seketika melalui tombol **"Update Platform"** di Web UI kapan saja operator menginginkannya!
 
+---
+
+## 24. Resolusi Blank Screen Menu Filtering & Safety pada Server 146
+
+### 1. Masalah & Gejala Lapangan
+Saat mengakses menu **Filtering & Safety** (`http://172.18.20.146:8080/filters`), tampilan web seketika berubah menjadi layar putih/blank total (`<div id="root"></div>` kosong).
+
+### 2. Hasil Investigasi Browser & Network
+Pemeriksaan langsung via Browser Subagent menemukan:
+- **Error Console:**
+  ```text
+  Uncaught TypeError: Cannot read properties of null (reading 'filter')
+      at FilteringView (index-D9U2I-Eg.js:145:1584)
+  ```
+- **Network Response:**
+  `GET /api/v1/allowlist` mengembalikan HTTP `200 OK` dengan body `null`.
+
+### 3. Akar Masalah (Root Cause)
+1. **Backend Go:**
+   Pada server 146 (fresh setup), tabel PostgreSQL `allowlists` masih kosong (0 baris). Slice Go yang dideklarasikan dengan `var records []AllowlistRecord` bernilai `nil`, yang kemudian diserialisasi oleh `json.Marshal` menjadi literal `null`. Handler `handleAllowlist` di `cmd/netora-api/server.go` belum memiliki guard slice kosong.
+2. **Frontend React:**
+   Fungsi `fetchAllowlist()` menerima nilai `null` dan menyimpannya ke state `allowlist`. Pada saat render, kode mengeksekusi `allowlist.filter(...)` sehingga memicu fatal `TypeError`.
+3. **Absennya React Error Boundary:**
+   Tanpa error boundary, satu error rendering pada komponen anak menyebabkan seluruh pohon DOM React unmount dan layar menjadi blank total.
+
+### 4. Solusi & Perbaikan Komprehensif
+1. **Hardening Backend (`cmd/netora-api/server.go` & `pkg/storage/postgres.go`):**
+   - Inisialisasi seluruh slice query list di `postgres.go` dan `memory.go` menggunakan `make([]Type, 0)` sehingga selalu menghasilkan array JSON kosong `[]` (bukan `null`).
+   - Penambahan guard slice pada handler `handleAllowlist` dan `handleAuditLogs`:
+     ```go
+     if al == nil {
+         al = []storage.AllowlistRecord{}
+     }
+     ```
+2. **Hardening Frontend (`web/src/views/FilteringView.tsx`):**
+   - Validasi array pada `fetchAllowlist` dan `fetchFilters`:
+     ```typescript
+     setAllowlist(Array.isArray(records) ? records : []);
+     ```
+   - Defensive chaining pada seluruh filter dan map operasi:
+     ```typescript
+     const safeFilters = Array.isArray(filters) ? filters : [];
+     const safeAllowlist = Array.isArray(allowlist) ? allowlist : [];
+     ```
+3. **Pemasangan React Error Boundary (`web/src/components/ErrorBoundary.tsx` & `App.tsx`):**
+   - Membungkus seluruh tampilan view di `App.tsx` dengan `<ErrorBoundary key={currentTab}>`. Jika terjadi kendala rendering di kemudian hari, sistem menampilkan kartu error terisolasi beserta tombol *Retry* dan *Reload* tanpa membuat antarmuka blank.
+
+### 5. Validasi Lapangan (Server 146)
+- Sistem server 146 diperbarui ke versi `v1.0.53` (commit `4cb5bb6`).
+- Endpoint `/api/v1/allowlist` kini mengembalikan `[]`.
+- Browser Subagent memverifikasi menu **Filtering & Safety**:
+  - Halaman tampil sempurna tanpa blank.
+  - Kartu SafeSearch, Parental Control (18+), dan Judi Online beroperasi dengan baik.
+  - Tabel blocklists dan allowlists ter-render rapi dengan 0 error console.
+
+
 
 
