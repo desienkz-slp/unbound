@@ -50,6 +50,10 @@ cmd_status() {
 }
 
 cmd_update() {
+    # If a newer netora-dns-update script is available in current release, sync it first
+    if [[ -f /opt/netora-dns/current/scripts/netora-dns-update.sh ]]; then
+        cp -f /opt/netora-dns/current/scripts/netora-dns-update.sh /usr/local/sbin/netora-dns-update 2>/dev/null && chmod +x /usr/local/sbin/netora-dns-update || true
+    fi
     if [[ ! -x /usr/local/sbin/netora-dns-update ]]; then
         echo -e "${RED}Error: /usr/local/sbin/netora-dns-update not found!${NC}"
         exit 1

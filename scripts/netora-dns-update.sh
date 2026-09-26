@@ -514,6 +514,14 @@ EOF
         cp -f "${target_release_dir}/deploy/bin/netora-cli-linux-amd64" /usr/local/bin/netora-cli 2>/dev/null && chmod +x /usr/local/bin/netora-cli || true
     fi
 
+    # Update self-updater agent and CLI scripts if present in release
+    if [[ -f "${target_release_dir}/scripts/netora-dns-update.sh" ]]; then
+        cp -f "${target_release_dir}/scripts/netora-dns-update.sh" /usr/local/sbin/netora-dns-update 2>/dev/null && chmod +x /usr/local/sbin/netora-dns-update || true
+    fi
+    if [[ -f "${target_release_dir}/scripts/netora-cli.sh" ]]; then
+        cp -f "${target_release_dir}/scripts/netora-cli.sh" /usr/local/bin/netora 2>/dev/null && chmod +x /usr/local/bin/netora || true
+    fi
+
     # Step 6: Unbound Reload
     log_event "INFO" "reloading_unbound" "Reloading Unbound DNS service"
     if ! unbound-control reload >/dev/null 2>&1; then
