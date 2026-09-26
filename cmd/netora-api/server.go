@@ -764,6 +764,19 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Record config version in history for NOC rollback
+		now := time.Now().UTC()
+		_ = s.store.SaveConfigVersion(r.Context(), &model.ConfigVersion{
+			NodeID:    nodeID,
+			VersionID: state.VersionID,
+			Checksum:  fmt.Sprintf("sha256-%d", now.Unix()),
+			Actor:     claims.Username,
+			Reason:    "Applied via REST API / Web UI",
+			Status:    model.StatusActive,
+			AppliedAt: &now,
+			CreatedAt: now,
+		})
+
 		// Sync core platform filters in database to keep status consistent with Master Cards
 		if filters, err := s.store.ListFilters(r.Context()); err == nil {
 			for _, f := range filters {
