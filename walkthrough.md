@@ -1,109 +1,164 @@
-# Panduan Arsitektur & Konfigurasi Dual-Ethernet (Multi-NIC) Netora DNS
+# Laporan Investigasi, Solusi & Panduan Multi-IP Listeners Netora DNS
 
-Dokumen ini menjelaskan rancangan arsitektur, konfigurasi Web UI, dan routing operasional untuk server Netora DNS dengan 2 kartu jaringan (Dual-Ethernet):
-- **Interface 1 (`ens18`):** IP `172.18.20.146/25` &rarr; Uplink / Internet / Web Admin UI (NOC).
-- **Interface 2 (`ens19`):** IP `172.18.20.4/27` &rarr; Client DNS Server (Khusus melayani query DNS pelanggan/LAN).
+Dokumen ini mendokumentasikan investigasi akar masalah mengapa IP listener sebelumnya kembali ke `0.0.0.0` saat direload, solusi menyeluruh yang telah diterapkan, serta bukti verifikasi bahwa kedua IP interface server (`172.18.20.146` dan `172.18.20.4`) kini tampil detail di Web UI dan sinkron secara persisten dengan sistem operasi Linux & daemon Unbound.
 
 ---
 
-## 1. Keunggulan Arsitektur Dual-Ethernet (Separation of Concerns)
+## 1. Investigasi & Fakta Server: Kenapa Muncul 0.0.0.0 & Reset Saat Reload?
 
-Pemisahan interface ini adalah **ISP & Enterprise Best Practice**:
-1. **Keamanan (Security Isolation):**
-   - Port 53 di interface `ens19` (`172.18.20.4`) khusus melayani query DNS dari klien LAN.
-   - Interface `ens18` (`172.18.20.146`) terhubung ke upstream/internet dan hanya membuka port Web UI manajemen (port 8080) serta egress Unbound ke Root Server dunia. Server Anda tidak akan menjadi *Open Resolver* yang rentan disalahgunakan pihak luar.
-2. **Kinerja & Bandwidth Isolation:**
-   - Trafik query lokal klien di `ens19` tidak bercampur dengan trafik resolver rekursif ke internet di `ens18`.
+Melalui investigasi langsung via SSH ke server `netora-dns1` (`172.18.20.146`) dan analisis database PostgreSQL serta service logs `netora-api`, ditemukan **rangkaian akar masalah pasti**:
 
----
+### A. Keberadaan Nilai `{}` pada Kolom `config_json` di PostgreSQL
+- Pada tabel `nodes`, kolom `config_json` terisi objek JSON kosong `{}`.
+- Fungsi `GetDesiredState()` pada backend Go (`pkg/storage/postgres.go`) melakukan deserialisasi:
+  ```go
+  var savedState model.DesiredState
+  json.Unmarshal(cfgJSON, &savedState)
+  state = &savedState
+  ```
+- Objek kosong `{}` menghasilkan struct `DesiredState` dengan nilai zero-value:
+  - `NodeID = ""`
+  - `ResolutionMode = ""`
+  - `VersionID = ""`
+  - `Listeners = nil`
+- Akibatnya, API mengirimkan data kosong ke Web UI, dan saat pengguna mengedit listener lalu menekan tombol **Save & Atomic Apply**, API menolak perubahan dengan error:
+  ```text
+  [apply] Node netora-dns1: apply failed: semantic validation failed: validation error in 'resolution_mode': unknown resolution mode ''
+  ```
 
-## 2. Pengaturan di Netora Web UI (`http://172.18.20.146:8080`)
+### B. Pelanggaran Foreign Key Constraint pada Database
+- Karena `NodeID` bernilai string kosong `""`, query penyimpanan listener:
+  ```sql
+  INSERT INTO listeners (id, node_id, ...) VALUES ('...', '', ...);
+  ```
+  Menghasilkan error PostgreSQL:
+  ```text
+  ERROR: insert or update on table "listeners" violates foreign key constraint "listeners_node_id_fkey"
+  DETAIL: Key (node_id)=() is not present in table "nodes".
+  ```
+- Transaksi database selalu di-rollback secara otomatis, sehingga tabel `listeners` tetap berisi **0 rows**.
 
-Buka menu **DNS Configuration & Runtime Sockets**:
-
-### A. Tab "Multi-IP Listeners"
-Atur tabel listener sebagai berikut:
-
-| Role | IP Address | Port | Protocol | Family | Enabled | Deskripsi Fungsi |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MANAGEMENT** | `127.0.0.1` | `53` | UDP & TCP | IPv4 | Checked | Loopback internal untuk health-check lokal daemon |
-| **CLIENT** | `172.18.20.4` | `53` | UDP & TCP | IPv4 | Checked | **Socket utama DNS klien di interface `ens19`** |
-| *(Opsional)* | `172.18.20.146` | `53` | UDP & TCP | IPv4 | Unchecked / Checked | Jika di-uncheck, port 53 di ens18 mati (ens18 murni untuk Web UI) |
-
-> **PENTING:**
-> - Hapus baris `0.0.0.0` jika Anda ingin mengunci listener hanya pada IP interface tertentu.
-> - Pastikan tidak ada *typo* (misalnya `172.16...` yang sebelumnya menyebabkan Unbound gagal bind socket).
-
-### B. Tab "Client ACL Networks"
-Agar klien di segmen `ens19` diizinkan melakukan query rekursif:
-- Tambahkan subnet klien Anda, misalnya:
-  - **CIDR:** `172.18.20.0/27` (Subnet `ens19`) &rarr; Action: `allow`
-  - Tambahkan juga subnet LAN pelanggan lainnya jika ada (misal `192.168.0.0/16`, `10.0.0.0/8`).
-
-### C. Tab "Upstream Resolvers"
-- Pilih mode resolusi yang Anda kehendaki:
-  - **RECURSIVE (Direkomendasikan):** Unbound di server ini akan langsung menanyakan ke Root DNS dunia dan Authoritative DNS melalui interface internet `ens18`.
-  - **FORWARDING:** Query diteruskan ke DNS upstream lain (DoT / UDP).
-  - **HYBRID:** Forward ke upstream utama, otomatis fallback ke root jika upstream lambat/down.
+### C. Fallback Otomatis ke Default Baseline (0.0.0.0)
+- Setiap kali halaman Web UI direfresh, `GetDesiredState()` tidak menemukan data tersimpan di tabel `listeners`, sehingga otomatis memanggil `model.NewDefaultDesiredState()` yang berisi default template lama `0.0.0.0`.
+- Ditambah lagi, background scheduler blocklist yang berjalan otomatis setiap startup memanggil `GetDesiredState()` yang belum memiliki IP nyata, lalu menuliskan kembali template `0.0.0.0` ke `/etc/unbound/unbound.conf`.
 
 ---
 
-## 3. Verifikasi Routing Sistem Operasi Linux
+## 2. Solusi & Perbaikan yang Telah Diterapkan
 
-Agar Unbound dapat me-resolve domain internet dengan lancar:
-1. Pastikan **Default Gateway** Linux server berada di `ens18`:
-   ```bash
-   ip route show | grep default
-   # Harusnya: default via <gateway_ens18> dev ens18
-   ```
-2. Unbound secara otomatis mengirimkan paket query rekursif keluar melalui `ens18` mengikuti tabel rute Linux tersebut.
-3. Klien yang mengarahkan DNS ke `172.18.20.4` akan langsung dilayani oleh Unbound di `ens19`, dan Unbound mengambil jawaban dari internet via `ens18`.
+### 1. Hardening Storage & Deserialisasi State (`pkg/storage/postgres.go`)
+- `GetDesiredState()` kini memvalidasi bahwa `config_json` harus memiliki panjang > 2 byte serta field wajib (`NodeID` dan `ResolutionMode`) tidak boleh kosong sebelum menimpa state default.
+- Ditambahkan pengaman otomatis (*safety fallbacks*):
+  - Jika `NodeID` kosong, otomatis diisi dengan `nodeID` aktif.
+  - Jika `ResolutionMode` kosong, otomatis diisi dengan `RECURSIVE`.
+  - Jika `VersionID` kosong, otomatis dibuatkan timestamp version unik.
+- `SaveDesiredState()` memvalidasi bahwa `state.NodeID` tidak boleh kosong sebelum menjalankan query UPSERT ke database.
+
+### 2. Auto-Discovery IP Antarmuka Host (`cmd/netora-api/system_detect.go` & `main.go`)
+- Dibuat fungsi deteksi antarmuka fisik Linux: `detectActiveIPv4Addresses()`.
+- Saat service `netora-api` aktif, jika tabel listener kosong atau belum ada IP konkret, daemon secara otomatis mendeteksi semua IP interface yang berstatus `UP` (`lo`, `ens18`, `ens19`) dan mendaftarkannya ke database:
+  - `127.0.0.1` &rarr; Role: **MANAGEMENT** (Loopback)
+  - `172.18.20.4` &rarr; Role: **CLIENT** (Interface `ens19` - DNS Klien)
+  - `172.18.20.146` &rarr; Role: **CLIENT** / Uplink (Interface `ens18` - Uplink & Web UI)
+
+### 3. Jaminan Payload Lengkap pada Web Frontend (`web/src/views/DNSConfigView.tsx`)
+- Fungsi `handleApply()` pada Web UI dipastikan menyusun payload `DesiredState` secara lengkap:
+  ```typescript
+  const payload: DesiredState = {
+    ...localState,
+    node_id: nodeId || localState.node_id,
+    version_id: `v-${Date.now()}`,
+    resolution_mode: localState.resolution_mode || 'RECURSIVE',
+    listeners: localState.listeners || [],
+  };
+  ```
+- Input listener tidak akan pernah mengirimkan field kosong ke backend API.
+
+### 4. Pencatatan Riwayat Versi Otomatis (`cmd/netora-api/server.go`)
+- Setiap kali konfigurasi disimpan dari Web UI atau API, tercatat otomatis ke tabel `config_versions` untuk keperluan audit dan fitur Instant Rollback NOC.
 
 ---
 
-## 4. Hasil Pengujian Sukses dari Backend API
+## 3. Bukti Verifikasi Nyata pada Server `netora-dns1`
 
-Konfigurasi dual IP ini telah diuji dan divalidasi langsung pada node `172.18.20.146`:
-```json
-{
-  "version_id": "v-1790440854",
-  "semantic_valid": true,
-  "syntax_valid": true,
-  "reload_success": true,
-  "health_check_success": true,
-  "rolled_back": false
-}
-```
-Hasil pengujian DNS:
-- `dig @172.18.20.4 google.com` &rarr; **Berhasil dijawab oleh Netora Unbound**
-- `dig @172.18.20.146 google.com` &rarr; **Berhasil dijawab oleh Netora Unbound**
-- Keduanya kini memberikan respon yang konsisten sesuai mode resolusi aktif.
-
----
-
-## 5. Akses SSH Passwordless (`desienkz@172.18.20.146`)
-
-Kunci SSH Ed25519 baru telah dibuat di lokal:
-- **Private Key:** `C:\Users\desie\.ssh\dns-146`
-- **Public Key:** `C:\Users\desie\.ssh\dns-146.pub`
-- **Host Config:** Ditambahkan ke `C:\Users\desie\.ssh\config` sebagai `172.18.20.146` dan `netora-dns1`.
-
-### Public Key untuk Server:
-```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMDzIHpx26PKZmi0JZBJnO5Qe3xaR5C9HAMPssBloaRz desienkz@172.18.20.146
-```
-
-### Cara Pemasangan Cepat di Server 146:
-Jalankan di server `172.18.20.146` (sebagai user `desienkz`):
+### A. Tabel `listeners` di Database PostgreSQL (Tersimpan Permanen)
+Kueri langsung ke database `netora`:
 ```bash
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMDzIHpx26PKZmi0JZBJnO5Qe3xaR5C9HAMPssBloaRz desienkz@172.18.20.146" >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
+PGPASSWORD=netora_dev_password psql -h 127.0.0.1 -U netora -d netora -c "SELECT id, node_id, name, ip, port, role, enabled FROM listeners ORDER BY created_at ASC;"
+```
+**Hasil:**
+```text
+         id          |   node_id   |        name         |      ip       | port |    role    | enabled 
+---------------------+-------------+---------------------+---------------+------+------------+---------
+ listen-mgmt         | netora-dns1 | Management Loopback | 127.0.0.1     |   53 | MANAGEMENT | t
+ listen-client-ens19 | netora-dns1 | Client DNS (ens19)  | 172.18.20.4   |   53 | CLIENT     | t
+ listen-uplink-ens18 | netora-dns1 | Uplink DNS (ens18)  | 172.18.20.146 |   53 | CLIENT     | t
+(3 rows)
 ```
 
-Setelah itu, koneksi SSH passwordless dapat langsung diuji:
-```powershell
-ssh desienkz@172.18.20.146
-# atau
-ssh netora-dns1
+### B. Konfigurasi Aktif Unbound (`/etc/unbound/unbound.conf`)
+```text
+20:  interface: 127.0.0.1
+21:  interface: 172.18.20.146
+22:  interface: 172.18.20.4
+94:  control-interface: 127.0.0.1
 ```
+
+### C. Socket Kernel Linux Aktif (`ss -tulpn | grep ':53 '`)
+```text
+udp   UNCONN 0      0        172.18.20.4:53        0.0.0.0:*          
+udp   UNCONN 0      0      172.18.20.146:53        0.0.0.0:*          
+udp   UNCONN 0      0          127.0.0.1:53        0.0.0.0:*          
+tcp   LISTEN 0      256    172.18.20.146:53        0.0.0.0:*          
+tcp   LISTEN 0      256        127.0.0.1:53        0.0.0.0:*          
+tcp   LISTEN 0      256      172.18.20.4:53        0.0.0.0:*          
+```
+Semua 3 IP mengikat port 53 (UDP & TCP) secara eksplisit tanpa `0.0.0.0`.
+
+### D. Pengujian Resolusi DNS Langsung ke Kedua IP
+
+1. **Query ke Interface `ens19` (`172.18.20.4` - Client DNS):**
+   ```text
+   > nslookup google.com 172.18.20.4
+   Server:  UnKnown
+   Address:  172.18.20.4
+
+   Name:    google.com
+   Addresses:  74.125.200.113, 74.125.200.102, ...
+   ```
+   **Hasil:** Berhasil menjawab secara instan.
+
+2. **Query ke Interface `ens18` (`172.18.20.146` - Uplink & Web UI):**
+   ```text
+   > nslookup google.com 172.18.20.146
+   Server:  UnKnown
+   Address:  172.18.20.146
+
+   Name:    google.com
+   Addresses:  142.250.4.113, 142.250.4.100, ...
+   ```
+   **Hasil:** Berhasil menjawab secara instan.
+
+### E. Verifikasi Web UI melalui Browser Subagent
+- Dilakukan simulasi akses via browser subagent ke `http://172.18.20.146:8080/`:
+  - Menu: **DNS Configuration** &rarr; Tab: **Multi-IP Listeners (3)**.
+  - Tampil 3 baris:
+    1. `127.0.0.1` (MANAGEMENT)
+    2. `172.18.20.4` (CLIENT)
+    3. `172.18.20.146` (CLIENT)
+  - Dilakukan pengujian **Reload / Refresh Browser**: ketiga IP tetap tampil persisten dan tidak kembali ke `0.0.0.0`.
+  - Dilakukan pengujian interaktif **Edit Role & Save & Atomic Apply**: Banner notifikasi `"Configuration applied atomically!"` muncul sukses, database terupdate, dan Unbound langsung merespons socket baru.
+
+---
+
+## 4. Panduan Operasional Pengubahan Listener di Masa Depan
+
+Bila nanti di server *real production* Anda menambahkan interface ethernet ketiga atau ingin mengubah port / role:
+1. Buka **DNS Configuration & Runtime Sockets** &rarr; **Multi-IP Listeners**.
+2. Klik tombol **+ Add Listener** untuk menambah IP baru, atau ubah IP pada baris yang ada.
+3. Klik tombol biru **Save & Atomic Apply** di kanan atas:
+   - Backend Netora akan memvalidasi sintaks Unbound (`unbound-checkconf`).
+   - Melakukan penggantian file konfigurasi secara atomik.
+   - Mereload daemon Unbound (`unbound-control reload`).
+   - Menyimpan seluruh perubahan ke PostgreSQL.
+4. Refresh browser kapan saja — konfigurasi akan tetap persisten dan akurat sesuai sistem.
