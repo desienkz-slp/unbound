@@ -160,15 +160,24 @@ func ValidateDesiredState(state *DesiredState) []ValidationError {
 		}
 	}
 
-	// 6. Validate Local Records
+	// 6. Validate Local Records (DNS Rewrites)
 	for idx, rec := range state.LocalRecords {
 		prefix := fmt.Sprintf("local_records[%d]", idx)
 		if rec.Domain == "" {
 			errs = append(errs, ValidationError{Field: prefix + ".domain", Message: "local record domain cannot be empty"})
 		}
+		// Allow wildcard prefix "*.domain"; validate the bare domain portion.
+		bareDomain := strings.TrimPrefix(rec.Domain, "*.")
+		if rec.Domain != "" && bareDomain == "" {
+			errs = append(errs, ValidationError{Field: prefix + ".domain", Message: "wildcard domain must have a base name after '*.' (e.g. *.example.com)"})
+		}
 		validTypes := map[string]bool{"A": true, "AAAA": true, "CNAME": true, "PTR": true, "TXT": true}
 		if !validTypes[rec.Type] {
 			errs = append(errs, ValidationError{Field: prefix + ".type", Message: fmt.Sprintf("unsupported record type: %s", rec.Type)})
+		}
+		// PTR + wildcard is semantically invalid in Unbound.
+		if rec.Type == "PTR" && strings.HasPrefix(rec.Domain, "*.") {
+			errs = append(errs, ValidationError{Field: prefix + ".type", Message: "PTR records cannot be combined with a wildcard (*.) domain"})
 		}
 		if rec.Value == "" {
 			errs = append(errs, ValidationError{Field: prefix + ".value", Message: "local record value cannot be empty"})

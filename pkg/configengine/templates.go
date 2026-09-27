@@ -156,6 +156,8 @@ server:
 `
 
 // LocalRecordsTemplate renders custom authoritative local records.
+// Wildcards (domain starting with "*") are rendered as local-zone redirect zones
+// so that all sub-labels are answered synthetically by Unbound.
 const LocalRecordsTemplate = `# ==============================================================================
 # Netora DNS — Local Authoritative Records
 # Generated: {{ .GeneratedAt }}
@@ -165,6 +167,9 @@ server:
 {{- range .LocalRecords }}
 {{- if eq .Type "PTR" }}
   local-data-ptr: "{{ .Value }} {{ .Domain }}"
+{{- else if hasWildcardPrefix .Domain }}
+  local-zone: "{{ trimWildcardPrefix .Domain }}" redirect
+  local-data: "{{ trimWildcardPrefix .Domain }} {{ if .TTL }}{{ .TTL }} {{ end }}{{ .Type }} {{ .Value }}"
 {{- else }}
   local-data: "{{ .Domain }} {{ if .TTL }}{{ .TTL }} {{ end }}{{ .Type }} {{ .Value }}"
 {{- end }}

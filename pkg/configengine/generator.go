@@ -207,6 +207,18 @@ func CleanDomain(raw string) string {
 	return raw
 }
 
+// hasWildcardPrefix reports whether a DNS Rewrite domain starts with "*."
+// (i.e., the user wants a catch-all wildcard redirect zone in Unbound).
+func hasWildcardPrefix(domain string) bool {
+	return strings.HasPrefix(domain, "*.")
+}
+
+// trimWildcardPrefix removes the leading "*." from a wildcard domain name,
+// returning the bare zone name suitable for local-zone and local-data directives.
+func trimWildcardPrefix(domain string) string {
+	return strings.TrimPrefix(domain, "*.")
+}
+
 // loadDomainList reads domains from disk files (if existing) or falls back to defaults.
 func loadDomainList(filePath string, fallback []string) []string {
 	content, err := os.ReadFile(filePath)
@@ -268,7 +280,11 @@ func NewGenerator() (*Generator, error) {
 		return nil, fmt.Errorf("failed to parse insecure domains template: %w", err)
 	}
 
-	records, err := template.New("records").Parse(LocalRecordsTemplate)
+	wildcardFuncs := template.FuncMap{
+		"hasWildcardPrefix":  hasWildcardPrefix,
+		"trimWildcardPrefix": trimWildcardPrefix,
+	}
+	records, err := template.New("records").Funcs(wildcardFuncs).Parse(LocalRecordsTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse local records template: %w", err)
 	}

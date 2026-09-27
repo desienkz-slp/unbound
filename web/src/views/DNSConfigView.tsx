@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Check,
   CheckCircle2,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 import { ClientNetwork, DesiredState, Listener, UpstreamServer } from '../types';
 import { api } from '../services/api';
+import { DnsRewritesPanel } from '../components/DnsRewritesPanel';
 
 export interface DoHProviderPreset {
   id: string;
@@ -337,7 +339,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
   config,
   onConfigUpdated,
 }) => {
-  const [subTab, setSubTab] = useState<'listeners' | 'networks' | 'upstreams' | 'cache' | 'dnssec'>('listeners');
+  const [subTab, setSubTab] = useState<'listeners' | 'networks' | 'upstreams' | 'cache' | 'dnssec' | 'rewrites'>('listeners');
   const [localState, setLocalState] = useState<DesiredState | null>(config);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -749,6 +751,23 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
         >
           <ShieldCheck className="w-3.5 h-3.5" />
           DNSSEC Validation
+        </button>
+
+        <button
+          onClick={() => setSubTab('rewrites')}
+          className={`px-4 py-2.5 border-b-2 transition-all flex items-center gap-2 ${
+            subTab === 'rewrites'
+              ? 'border-cyan-400 text-cyan-400 bg-cyan-950/20'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <ArrowRight className="w-3.5 h-3.5" />
+          DNS Rewrites
+          {(localState.local_records?.length ?? 0) > 0 && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-900/60 text-cyan-300 border border-cyan-800">
+              {localState.local_records.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1683,6 +1702,16 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Subtab 6: DNS Rewrites */}
+      {subTab === 'rewrites' && (
+        <DnsRewritesPanel
+          records={localState.local_records ?? []}
+          onChange={(updated) =>
+            setLocalState({ ...localState, local_records: updated })
+          }
+        />
       )}
     </div>
   );
