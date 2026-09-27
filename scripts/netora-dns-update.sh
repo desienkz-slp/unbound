@@ -48,9 +48,11 @@ elif [[ "$NODE_ID" == "dns-unknown" ]]; then
     NODE_ID="$(hostname -s 2>/dev/null || echo "dns-node")"
 fi
 
-# Ensure base directories exist with secure permissions
-mkdir -p "$NETORA_BASE" "$RELEASES_DIR" "$BACKUPS_DIR" "$STAGING_DIR" "$STATE_DIR" "$LOG_DIR"
-chmod 750 "$NETORA_BASE" "$RELEASES_DIR" "$BACKUPS_DIR" "$STAGING_DIR" "$STATE_DIR" "$LOG_DIR"
+# Ensure base directories exist with secure permissions (when running as root)
+if [[ $(id -u) -eq 0 ]]; then
+    mkdir -p "$NETORA_BASE" "$RELEASES_DIR" "$BACKUPS_DIR" "$STAGING_DIR" "$STATE_DIR" "$LOG_DIR"
+    chmod 750 "$NETORA_BASE" "$RELEASES_DIR" "$BACKUPS_DIR" "$STAGING_DIR" "$STATE_DIR" "$LOG_DIR"
+fi
 
 # ------------------------------------------------------------------------------
 # Logging & State Utilities

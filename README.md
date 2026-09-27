@@ -4,6 +4,7 @@
   <p><strong>Autonomous High-Speed Unbound DNS Resolver with Real-Time NOC Telemetry, Suffix-Trie Filtering, and Zero-Downtime CI/CD Fleet Auto-Updates.</strong></p>
 
   <p>
+    <img src="https://img.shields.io/badge/Release-v1.0.75-cyan?style=flat-square" alt="Release" />
     <img src="https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange?style=flat-square&logo=ubuntu" alt="Ubuntu" />
     <img src="https://img.shields.io/badge/Debian-11%20|%2012-red?style=flat-square&logo=debian" alt="Debian" />
     <img src="https://img.shields.io/badge/Unbound-1.13+-blue?style=flat-square&logo=dns" alt="Unbound" />
@@ -59,6 +60,13 @@ Once the installation finishes, open your browser and navigate to:
 * **Default Password:** `admin123` *(or the custom password provided during installation)*
 * **Prometheus Telemetry:** `http://<YOUR_SERVER_IP>:8080/metrics`
 * **API Health Check:** `http://<YOUR_SERVER_IP>:8080/api/v1/health`
+
+### Key Web UI Capabilities:
+* **Dashboard Overview:** Real-time query counts, cache hit ratio, top clients, top queried domains, top blocked domains, and live upstream latency.
+* **DNS Configuration:** Listeners, upstream DNS over TLS (DoT) reordering/presets, cache tuning, and **DNS Rewrites** (with wildcard redirect support).
+* **Policy & Filtering:** Suffix-trie domain blocking, blocklist auto-updates, adult/gambling scheduled filters, and custom allowlists.
+* **Fleet Management & Updates:** Clickable version badge in the footer to inspect Git SHA, build numbers, and trigger immediate fleet updates.
+* **Audit & Diagnostics:** Real-time domain resolution inspector, audit logs, and Hermes AI-NOC deep diagnostics.
 
 ---
 
@@ -140,6 +148,12 @@ Once the installation finishes, open your browser and navigate to:
    Every configuration change generates a versioned snapshot with SHA256 verification. If an operator misconfigures a rule, 1-click rollback restores the previous state in **< 150 ms** with zero dropped packets.
 5. **Zero Open Resolver Guarantee:**  
    The configuration engine rejects arbitrary internet client access (`0.0.0.0/0 allow`) at the semantic validation level.
+6. **DNS Rewrites & Wildcard Redirects:**  
+   Configure custom DNS responses for A, AAAA, CNAME, PTR, and TXT records with wildcard subdomain support (`*.domain.com`) generated via Unbound's native `local-zone redirect` directives with zero downtime.
+7. **Resilient Dual-Source NOC Telemetry:**  
+   Telemetry combines Unbound control sockets with background query log and `journalctl` streaming. Provides zero-loss live metrics for Top Clients, Top Queried Domains, Top Blocked Domains, and Upstream Latencies even across log rotations and process restarts.
+8. **1-Click Fleet Updates & Priority Presets:**  
+   Administrators can trigger node updates fleet-wide directly from the Web UI footer modal with guaranteed zero IP listener/topology loss, plus apply 1-click optimized CDN presets (Cloudflare + Google DoT).
 
 ---
 
@@ -291,8 +305,10 @@ print('Password successfully updated!')
 
 Netora DNS uses a decentralized pull-based deployment model:
 * **Background Timer:** `/etc/systemd/system/netora-dns-updater.timer` runs every 5 minutes with randomized jitter to prevent server thundering herds.
+* **Web UI 1-Click Fleet Update:** Operators can trigger updates on demand via the "Perbarui Platform Sekarang" button in the footer popover modal.
 * **Sandboxed Staging:** Candidates from GitHub are assembled in `/opt/netora-dns/staging/` and pre-validated using `unbound-checkconf`.
 * **Atomic Swap:** Symlink `/opt/netora-dns/current` is atomically updated and Unbound is reloaded via `unbound-control reload`.
+* **Zero Configuration Loss:** Each node's unique IP topology (listeners `interface:`), local database data, and specific network bindings remain immutable across updates.
 * **Auto-Rollback on Failure:** If reload fails or post-activation health checks fail, the previous verified configuration is restored within seconds.
 
 ---
