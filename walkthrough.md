@@ -70,7 +70,7 @@ Catatan: PTR tidak bisa digabung dengan wildcard (*.) - diblokir di layer valida
 
 - Backend Go: PASS (`go build ./...`)
 - Frontend TypeScript: PASS (`tsc -b && vite build`)
-- Versi Rilis Terbaru: `v1.0.75` (Commit `d44ba31`)
+- Versi Rilis Terbaru: `v1.0.75` (Commit `180468a`)
 
 ---
 
