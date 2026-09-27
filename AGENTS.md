@@ -65,6 +65,8 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 18. Multi-Node IP Config Invariance: Auto-update releases must never distribute hardcoded node IP listeners, unbound interface bindings, or overwrite local database configurations. Each node's unique IP topology and PostgreSQL state must remain immutable across updates.
 19. Environment Access Boundary: Respect access tiers — dev nodes (e.g., 172.18.20.145) allow SSH root access for end-to-end automation, whereas production nodes (e.g., 172.18.20.146) are strictly updated via Web UI / HTTP API. Even if SSH access is available for diagnostics/investigation, deployment of updates MUST NEVER be done via SCP or manual CLI commands directly on the server.
 20. Server 146 Web UI Footer Update Mandate: Updates on server 172.18.20.146 must ALWAYS be triggered using the "Update" button in the Web UI footer (or via browser subagent / `POST /api/v1/system/update`) after committing and pushing code to GitHub. Never update server 146 via SCP or direct shell commands.
+21. Pre-built Release Invariance: The server-side auto-update script (`netora-dns-update.sh`) does NOT compile code. All frontend and backend modifications MUST be manually compiled and staged into the `deploy/` directory BEFORE committing and pushing to GitHub.
+
 
 ## Coding behavior
 
@@ -80,7 +82,9 @@ Build a professional ISP DNS platform around Unbound. Optimize for correctness, 
 - Return actionable errors.
 - For DNS validation, use browser subagent testing against real media-heavy websites (e-commerce, video) to verify CDN and streaming asset delivery alongside CLI benchmarks.
 - For server updates on target nodes (especially 172.18.20.146), always commit and push changes to GitHub first, then trigger the update exclusively via the Web UI footer update button (or `POST /api/v1/system/update`), never via SCP or direct CLI commands.
+- **Release Compilation (MANDATORY BEFORE PUSH):** If you modified the React Frontend (`web/`), you MUST run `npm run build` in `web/` and copy `web/dist/*` to `deploy/ui/`. If you modified the Go Backend, you MUST run `GOOS=linux GOARCH=amd64 go build -o deploy/bin/netora-api-linux-amd64 ./cmd/netora-api` and `go build -o deploy/bin/netora-cli-linux-amd64 ./cmd/netora-cli`. Ensure the updated `deploy/` directories, root `version.json`, and `web/src/version.json` are ALL staged and committed alongside your source code.
 - Document operational assumptions.
+
 
 ## Definition of done
 

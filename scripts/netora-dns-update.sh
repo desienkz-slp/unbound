@@ -486,6 +486,20 @@ action_update() {
 
     # Ensure dynamic version.json is placed in Web UI and state directory
     local version_file="${target_release_dir}/version.json"
+    if [[ -f "${target_release_dir}/deploy/ui/version.json" ]]; then
+        local ui_ver="${target_release_dir}/deploy/ui/version.json"
+        if command -v jq >/dev/null 2>&1; then
+            local ui_cnt root_cnt
+            ui_cnt="$(jq -r '.commit_count // 0' "$ui_ver" 2>/dev/null || echo 0)"
+            root_cnt="$(jq -r '.commit_count // 0' "$version_file" 2>/dev/null || echo 0)"
+            if [[ "$ui_cnt" -ge "$root_cnt" && "$ui_cnt" -gt 0 ]]; then
+                version_file="$ui_ver"
+            fi
+        else
+            version_file="$ui_ver"
+        fi
+    fi
+
     local version_str="v1.0.44"
     local commit_cnt=44
     if [[ -f "$version_file" ]] && command -v jq >/dev/null 2>&1; then
