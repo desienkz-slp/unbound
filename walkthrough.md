@@ -1,4 +1,4 @@
-﻿# Walkthrough — Fitur DNS Rewrites di Netora DNS
+# Walkthrough — Fitur DNS Rewrites di Netora DNS
 
 ## Ringkasan
 
@@ -66,7 +66,25 @@ Catatan: PTR tidak bisa digabung dengan wildcard (*.) - diblokir di layer valida
 
 ---
 
-## Status Build
+## Status Build & Release
 
-- Backend Go: PASS (go build ./...)
-- Frontend TypeScript: PASS (tsc -b && vite build)
+- Backend Go: PASS (`go build ./...`)
+- Frontend TypeScript: PASS (`tsc -b && vite build`)
+- Versi Rilis Terbaru: `v1.0.73` (Commit `b2b42e2`)
+
+---
+
+## Investigasi & Perbaikan Versioning
+
+### Akar Masalah Versi Tetap di `v1.0.69`:
+1. Pada commit sebelumnya (`e63bbba`), build frontend dan binary Go sudah ter-compile dan masuk ke dalam `deploy/`.
+2. Namun, file `version.json` di root repositori belum ter-stage/ter-commit ke git sehingga di server GitHub `origin/main` file `version.json` masih tercatat di `v1.0.69`.
+3. Script update di server (`netora-dns-update.sh`) membaca `version.json` dari root repositori yang di-clone dengan shallow `--depth=1`. Akibatnya, server tetap menyalin label `v1.0.69` meskipun git commit SHA berhasil diperbarui ke `e63bbba`.
+4. Kode fitur **DNS Rewrites** sebenarnya **sudah aktif dan terpasang** di server (karena SHA git yang berjalan sudah sesuai).
+
+### Solusi & Langkah yang Dilakukan:
+1. Sinkronisasi metadata versi: `version.json`, `web/src/version.json`, `web/public/version.json`, dan `deploy/ui/version.json` diperbarui ke `v1.0.73`.
+2. Peningkatan ketahanan pada `scripts/netora-dns-update.sh` agar membaca versi dari `deploy/ui/version.json` jika lebih baru dibanding root `version.json`.
+3. Semua artefak sudah di-commit (`b2b42e2`) dan di-push ke GitHub `origin/main`.
+4. Pengguna cukup menekan tombol **"Perbarui Platform Sekarang"** satu kali lagi di modal UI untuk memperbarui label versi ke `v1.0.73`.
+
