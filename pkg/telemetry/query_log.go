@@ -100,13 +100,24 @@ func NewQueryLogTailer(logPath string) *QueryLogTailer {
 	return t
 }
 
-// Start begins tailing the log file in a background goroutine.
+// Start begins tailing the log file in a background goroutine with journalctl fallback.
 func (t *QueryLogTailer) Start(ctx context.Context) {
-	// Initial read from recent window (up to last 4MB)
+	// Initial read from recent window (up to last 4MB) if log file exists
 	t.readRecentWindow(4 * 1024 * 1024)
+
+	// If no queries were parsed from file, load recent history from journalctl
+	t.mu.RLock()
+	hasQueries := t.totalLogQueries > 0
+	t.mu.RUnlock()
+	if !hasQueries {
+		t.readRecentJournal(ctx, 3000)
+	}
 
 	ticker := time.NewTicker(800 * time.Millisecond)
 	defer ticker.Stop()
+
+	// Launch background journal stream fallback if file is not producing logs
+	go t.streamJournalFallback(ctx)
 
 	for {
 		select {
@@ -114,6 +125,77 @@ func (t *QueryLogTailer) Start(ctx context.Context) {
 			return
 		case <-ticker.C:
 			t.readNewLines()
+		}
+	}
+}
+
+// readRecentJournal reads recent query log lines directly from journalctl.
+func (t *QueryLogTailer) readRecentJournal(ctx context.Context, lines int) {
+	cmd := exec.CommandContext(ctx, "journalctl", "-u", "unbound", "-o", "cat", "-n", strconv.Itoa(lines), "--no-pager")
+	out, err := cmd.Output()
+	if err != nil {
+		return
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		t.parseLine(scanner.Text())
+	}
+}
+
+// streamJournalFallback streams query lines from journalctl if the log file is not active.
+func (t *QueryLogTailer) streamJournalFallback(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Check if file is active with recent writes
+		t.mu.RLock()
+		fileActive := false
+		if fi, err := os.Stat(t.logPath); err == nil && fi.Size() > 0 && t.lastOffset > 0 {
+			fileActive = true
+		}
+		t.mu.RUnlock()
+
+		if fileActive {
+			// File is working, check again after delay
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Second):
+				continue
+			}
+		}
+
+		// File is not active; stream continuously from journalctl
+		cmd := exec.CommandContext(ctx, "journalctl", "-u", "unbound", "-o", "cat", "-f", "-n", "0")
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		if err := cmd.Start(); err != nil {
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			// If file becomes active while streaming, stop journal stream
+			if fi, err := os.Stat(t.logPath); err == nil && fi.Size() > 0 && t.lastOffset > 0 {
+				_ = cmd.Process.Kill()
+				break
+			}
+			t.parseLine(scanner.Text())
+		}
+		_ = cmd.Wait()
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
 		}
 	}
 }

@@ -86,8 +86,9 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	if err := os.MkdirAll(historyDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create history directory: %w", err)
 	}
-	// Ensure log directory exists so unbound-checkconf does not fail
-	_ = os.MkdirAll("/var/log/unbound", 0755)
+	// Ensure log directory exists and is accessible by unbound
+	_ = os.MkdirAll("/var/log/unbound", 0777)
+	_ = os.Chmod("/var/log/unbound", 0777)
 
 	return &Engine{
 		configDir:     opts.ConfigDir,

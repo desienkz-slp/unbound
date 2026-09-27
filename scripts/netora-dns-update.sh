@@ -522,6 +522,24 @@ action_update() {
 EOF
     cp -f /var/www/netora-ui/version.json /var/lib/netora-dns/version.json 2>/dev/null || true
 
+    # Ensure /var/log/unbound directory and permissions for Unbound telemetry
+    mkdir -p /var/log/unbound
+    touch /var/log/unbound/unbound.log
+    chown -R unbound:unbound /var/log/unbound 2>/dev/null || true
+    chmod 775 /var/log/unbound 2>/dev/null || true
+    chmod 664 /var/log/unbound/unbound.log 2>/dev/null || true
+
+    # AppArmor profile local exception for Unbound query log access
+    if [[ -d /etc/apparmor.d/local && -f /etc/apparmor.d/usr.sbin.unbound ]]; then
+        if ! grep -q "/var/log/unbound/" /etc/apparmor.d/local/usr.sbin.unbound 2>/dev/null; then
+            cat <<'AAEOF' >> /etc/apparmor.d/local/usr.sbin.unbound
+/var/log/unbound/ rw,
+/var/log/unbound/** rwk,
+AAEOF
+            apparmor_parser -r /etc/apparmor.d/usr.sbin.unbound 2>/dev/null || true
+        fi
+    fi
+
     # Update API binary if present
     if [[ -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" ]]; then
         cp -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" /usr/local/bin/netora-api 2>/dev/null && chmod +x /usr/local/bin/netora-api || true

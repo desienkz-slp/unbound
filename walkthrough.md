@@ -74,17 +74,23 @@ Catatan: PTR tidak bisa digabung dengan wildcard (*.) - diblokir di layer valida
 
 ---
 
-## Investigasi & Perbaikan Versioning
+## Investigasi & Perbaikan Data Telemetri (Top Clients, Top Domains, Blocked)
 
-### Akar Masalah Versi Tetap di `v1.0.69`:
-1. Pada commit sebelumnya (`e63bbba`), build frontend dan binary Go sudah ter-compile dan masuk ke dalam `deploy/`.
-2. Namun, file `version.json` di root repositori belum ter-stage/ter-commit ke git sehingga di server GitHub `origin/main` file `version.json` masih tercatat di `v1.0.69`.
-3. Script update di server (`netora-dns-update.sh`) membaca `version.json` dari root repositori yang di-clone dengan shallow `--depth=1`. Akibatnya, server tetap menyalin label `v1.0.69` meskipun git commit SHA berhasil diperbarui ke `e63bbba`.
-4. Kode fitur **DNS Rewrites** sebenarnya **sudah aktif dan terpasang** di server (karena SHA git yang berjalan sudah sesuai).
+### Akar Masalah:
+1. Statistik global seperti *Total DNS Queries (22)*, *Cache Hits*, dan *Upstreams* muncul normal karena diambil langsung dari socket Unbound (`unbound-control stats_noreset` & `dump_infra`).
+2. Namun data rinci (**Top clients**, **Top queried domains**, dan **Top blocked domains**) bersumber dari pembacaan log query (`QueryLogTailer` di `netora-api`).
+3. Pada server, direktori `/var/log/unbound/` berstatus kepemilikan `root:root` dengan permission `0755`. Ketika Unbound berjalan dengan user non-root `unbound`, Unbound gagal membuka atau membuat file `/var/log/unbound/unbound.log` (*Permission denied*).
+4. Akibatnya, Unbound secara otomatis mengalihkan log query ke `systemd / journalctl`, sementara file `/var/log/unbound/unbound.log` tidak ada. Hal ini membuat `QueryLogTailer` tidak menerima baris log sama sekali sehingga tabel klien dan domain tampak kosong di UI.
 
-### Solusi & Langkah yang Dilakukan:
-1. Sinkronisasi metadata versi: `version.json`, `web/src/version.json`, `web/public/version.json`, dan `deploy/ui/version.json` diperbarui ke `v1.0.73`.
-2. Peningkatan ketahanan pada `scripts/netora-dns-update.sh` agar membaca versi dari `deploy/ui/version.json` jika lebih baru dibanding root `version.json`.
-3. Semua artefak sudah di-commit (`b2b42e2`) dan di-push ke GitHub `origin/main`.
-4. Pengguna cukup menekan tombol **"Perbarui Platform Sekarang"** satu kali lagi di modal UI untuk memperbarui label versi ke `v1.0.73`.
+### Solusi & Peningkatan ISP-Grade:
+1. **Dual-Source Telemetry Engine (`pkg/telemetry/query_log.go`)**:
+   - `netora-api` kini dilengkapi fallback otomatis ke `journalctl -u unbound`.
+   - Saat aplikasi start, sistem langsung membaca hingga 3000 riwayat query terakhir dari `journalctl`. Dashboard tidak akan pernah kosong meskipun file log belum ada atau baru saja di-rotate.
+   - Sistem juga menjalankan streaming *real-time* via `journalctl -u unbound -f` jika file log tidak aktif.
+2. **Perbaikan Permission & AppArmor di Skrip Pembaruan (`scripts/netora-dns-update.sh`)**:
+   - Otomatis membuat `/var/log/unbound/unbound.log` dengan permission `chmod 775` dan kepemilikan `unbound:unbound`.
+   - Otomatis mendaftarkan pengecualian AppArmor `/var/log/unbound/** rwk,` jika AppArmor aktif.
+3. **Penyelarasan Permission Engine (`pkg/configengine/engine.go`)**:
+   - Direktori log dibuat dengan mode `0777` agar user `unbound` dapat menulis log tanpa kendala hak akses.
+
 
