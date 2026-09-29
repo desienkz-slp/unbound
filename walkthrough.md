@@ -3,7 +3,7 @@
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
 > **Target Node Prod:** `172.18.20.146` (`netora-dns1` — Unbound 1.19.2)  
-> **Versi Rilis:** `v1.0.96 (Build 96)` / Commit: `c9bb127`  
+> **Versi Rilis:** `v1.0.98 (Build 98)` / Commit: `c7c55ea`  
 
 ---
 
@@ -228,6 +228,65 @@ Sesuai instruksi dan rencana kerja 4 fase, tiga fitur kelas *Carrier-Grade ISP* 
 - Build Web UI: `index-4SmV_1Lg.js` & `index-BzZTSn8c.css` (`v1.0.96`).
 - Diuji di dev server `172.18.20.145`: Status `RESOLVING` aktif hijau berdampingan dengan `Netora Build v1.0.96`.
 - Diuji di prod server `172.18.20.146`: Diperbarui melalui GitHub auto-update script, bundle baru aktif, dan DNS resolution tetap normal 100%.
+
+---
+
+## 7. Fitur Session Inactivity Logout Timeout (v1.0.98)
+
+### A. Latar Belakang & Kebutuhan Keamanan
+- Menjaga integritas dan keamanan dashboard operasional NOC saat terminal operator ditinggalkan tanpa pengawasan (*unattended workstation*).
+- Menghindari risiko modifikasi konfigurasi DNS yang tidak sah akibat sesi login yang dibiarkan terbuka terus menerus.
+
+### B. Spesifikasi & Implementasi Lengkap
+1. **Opsi Konfigurasi Fleksibel (User Settings):**
+   - Ditambahkan selector durasi inactivity timeout pada modal **Pengaturan Akun & Profil** ([`web/src/components/UserSettingsModal.tsx`](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/UserSettingsModal.tsx)):
+     - **5 Menit** (Tingkat Keamanan Tinggi)
+     - **15 Menit** (Rekomendasi NOC - Default)
+     - **30 Menit** (Operasional Standar)
+     - **60 Menit** (Monitoring Panjang)
+     - **Dinonaktifkan** (0 Menit / Sesi Tetap Terbuka)
+   - Disimpan secara lokal di browser (`localStorage.getItem('netora_inactivity_timeout_mins')`), dan pengguna dapat menyimpan preferensi durasi tanpa harus mengubah atau mengetikkan kata sandi.
+2. **Pendeteksian Aktivitas Lintas Tab (Throttled & Synchronized):**
+   - Mendengarkan event interaksi pengguna: `mousemove`, `mousedown`, `keydown`, `scroll`, dan `touchstart`.
+   - Di-throttle dengan interval 5 detik untuk menjaga efisiensi CPU client (0% overhead).
+   - Menggunakan timestamp bersama di `localStorage` (`netora_last_activity`) sehingga aktivitas di satu tab dashboard secara otomatis menyegarkan timer sesi di seluruh tab lainnya yang terbuka.
+3. **Backend Audit Trail dengan Logout Reason:**
+   - Handler `POST /api/v1/auth/logout` ([`cmd/netora-api/server.go`](file:///c:/xampp/htdocs/auto-install/unbound/cmd/netora-api/server.go)) telah ditingkatkan untuk membaca body JSON `{ "reason": "INACTIVITY_TIMEOUT" }` atau `{ "reason": "MANUAL" }`.
+   - Setiap event logout dicatat ke dalam audit log backend (`s.store.LogAudit`) dengan detail alasan logout untuk kebutuhan audit kepatuhan ISO/security.
+   - Endpoint mengembalikan status `200 OK` dengan payload respons `{ "success": true, "reason": "...", "message": "Logged out successfully" }`.
+4. **Notifikasi Visual Ramah Pengguna (Login Notice Banner):**
+   - Komponen [`web/src/components/LoginModal.tsx`](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/LoginModal.tsx) mendukung prop `noticeMessage`.
+   - Ketika logout terjadi karena timeout inaktivitas, form login langsung terbuka dengan banner peringatan warna amber berikon jam dinding:
+     *"Sesi telah berakhir otomatis karena tidak ada aktivitas selama X menit demi keamanan NOC. Silakan masuk kembali."*
+
+### C. Hasil Pengujian Nyata (Real Verification)
+1. **Pengujian Go Unit Test:**
+   - Seluruh test suite Go termasuk `TestAPI_Logout_InactivityReason` dan generator konfigurasi lulus 100% PASS.
+2. **Pengujian Server Development (`172.18.20.145` — `dns-dev`):**
+   - `POST /api/v1/auth/logout` dengan body `{"reason":"INACTIVITY_TIMEOUT"}`:
+     ```json
+     {"message":"Logged out successfully","reason":"INACTIVITY_TIMEOUT","success":true}
+     ```
+   - Bundle Web UI yang disajikan: `index-DenqP_vD.js` & `index-DOx5UZCh.css`.
+3. **Pengujian Server Produksi (`172.18.20.146` — `netora-dns1`):**
+   - Auto-update via GitHub berhasil ditingkatkan ke versi `v1.0.98 (Build 98)` / commit `c7c55ea`.
+   - Endpoint `GET /api/v1/system/version`:
+     ```json
+     {
+       "version": "v1.0.98",
+       "build": 98,
+       "channel": "development",
+       "commit_count": 98,
+       "git_commit": "8dc9f92fe91075154bb1ad71c313c980f354e3fc",
+       "node_id": "netora-dns1",
+       "status": "SUCCESS"
+     }
+     ```
+   - Endpoint `POST /api/v1/auth/logout` dengan `{"reason":"INACTIVITY_TIMEOUT"}`: `HTTP/1.1 200 OK`, `reason: "INACTIVITY_TIMEOUT"`.
+   - Resolusi DNS live:
+     - `google.com` -> `142.250.4.139`, `142.250.4.102` (RESOLVED)
+     - `cf.shopee.co.id` -> `103.189.120.8`, `103.189.120.17` via Akamai CDN (RESOLVED)
+
 
 
 
