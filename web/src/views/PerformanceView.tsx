@@ -124,10 +124,13 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const [consoleOutput, setConsoleOutput] = useState<string | null>(null);
   const [logrotateMsg, setLogrotateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const effectiveNodeId = nodeId || node?.id || '';
+
   const fetchLogrotate = async () => {
+    if (!effectiveNodeId) return;
     setLogrotateLoading(true);
     try {
-      const rep = await api.getLogrotateReport(nodeId);
+      const rep = await api.getLogrotateReport(effectiveNodeId);
       setLogrotateReport(rep);
       if (rep.active_policy && rep.active_policy.frequency) {
         setLogrotatePolicy(rep.active_policy);
@@ -146,10 +149,10 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   }, [config]);
 
   useEffect(() => {
-    if (nodeId) {
+    if (effectiveNodeId) {
       fetchLogrotate();
     }
-  }, [nodeId]);
+  }, [effectiveNodeId]);
 
   const applyAIPolicy = () => {
     if (logrotateReport?.ai_recommendation?.recommended_policy) {
@@ -174,10 +177,11 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   };
 
   const handleApplyLogrotate = async () => {
+    if (!effectiveNodeId) return;
     setSavingLogrotate(true);
     setLogrotateMsg(null);
     try {
-      const res = await api.applyLogrotate(nodeId, logrotatePolicy);
+      const res = await api.applyLogrotate(effectiveNodeId, logrotatePolicy);
       if (res.success) {
         setLogrotateMsg({ type: 'success', text: res.message });
         if (res.dry_run_output) {
@@ -198,10 +202,11 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   };
 
   const handleTestLogrotate = async () => {
+    if (!effectiveNodeId) return;
     setTestingLogrotate(true);
     setLogrotateMsg(null);
     try {
-      const res = await api.testLogrotate(nodeId, logrotatePolicy);
+      const res = await api.testLogrotate(effectiveNodeId, logrotatePolicy);
       setConsoleOutput(res.output || (res.error ? `Error: ${res.error}` : 'Dry run completed without output.'));
       setLogrotateMsg({
         type: res.success ? 'success' : 'error',
@@ -215,13 +220,14 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   };
 
   const handleForceRotate = async () => {
+    if (!effectiveNodeId) return;
     if (!window.confirm('Rotasi darurat akan memotong file log saat ini dan mengompresinya untuk mengosongkan ruang disk sekarang. Lanjutkan?')) {
       return;
     }
     setForceRotating(true);
     setLogrotateMsg(null);
     try {
-      const res = await api.forceRotateLogrotate(nodeId);
+      const res = await api.forceRotateLogrotate(effectiveNodeId);
       setConsoleOutput(res.output);
       setLogrotateMsg({
         type: 'success',
@@ -235,7 +241,35 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
     }
   };
 
-  if (!localConfig) return null;
+  if (!localConfig) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-800/80">
+          <div>
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-cyan-400" />
+              Tuning Performa & Profil Hardware
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Optimasi parameter Unbound kernel, cache slab, dan manajemen rotasi log berdasarkan kapasitas hardware.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center justify-center min-h-[380px] bg-[#0D1424] border border-slate-800 rounded-xl p-8 text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.15)]">
+            <RefreshCw className="w-7 h-7 animate-spin" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-slate-200">Memuat Konfigurasi Hardware & Profil...</h3>
+            <p className="text-xs text-slate-400 max-w-md">
+              Sedang mengambil status profil hardware, cache DNS, dan konfigurasi logrotate dari node {effectiveNodeId || 'aktif'}.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const detectedCores   = node?.cpu_cores    || 2;
   const detectedRAMMB   = node?.ram_mb       || 2048;

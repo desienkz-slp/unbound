@@ -490,17 +490,36 @@ EOF
 
 log_success "PostgreSQL database '${DB_NAME}' provisioned for user '${DB_USER}'."
 
-# Apply initial schema migration
-SCHEMA_FILE=""
-if [[ -f "${REPO_DIR}/pkg/storage/migrations/001_initial_schema.sql" ]]; then
-  SCHEMA_FILE="${REPO_DIR}/pkg/storage/migrations/001_initial_schema.sql"
-elif [[ -f "/opt/netora-dns/repository/pkg/storage/migrations/001_initial_schema.sql" ]]; then
-  SCHEMA_FILE="/opt/netora-dns/repository/pkg/storage/migrations/001_initial_schema.sql"
+# Apply database schema migrations
+MIGRATION_DIR=""
+if [[ -d "${REPO_DIR}/pkg/storage/migrations" ]]; then
+  MIGRATION_DIR="${REPO_DIR}/pkg/storage/migrations"
+elif [[ -d "/opt/netora-dns/repository/pkg/storage/migrations" ]]; then
+  MIGRATION_DIR="/opt/netora-dns/repository/pkg/storage/migrations"
 fi
 
-if [[ -n "$SCHEMA_FILE" && -f "$SCHEMA_FILE" ]]; then
+if [[ -n "$MIGRATION_DIR" && -d "$MIGRATION_DIR" ]]; then
+  log_info "Applying database schema migrations..."
+  for sql_file in $(find "$MIGRATION_DIR" -name "*.sql" | sort); do
+    log_info "Executing migration: $(basename "$sql_file")"
+    cat "$sql_file" | (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}") || true
+  done
+  (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}" -c "
+    DO \$\$
+    DECLARE r RECORD;
+    BEGIN
+      FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+        EXECUTE 'ALTER TABLE ' || quote_ident(r.tablename) || ' OWNER TO ${DB_USER}';
+      END LOOP;
+    END \$\$;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${DB_USER};
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DB_USER};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${DB_USER};
+  ") || true
+  log_success "Database schema migrations applied and ownership granted."
+elif [[ -f "${REPO_DIR}/pkg/storage/migrations/001_initial_schema.sql" ]]; then
   log_info "Applying initial database schema migrations..."
-  cat "$SCHEMA_FILE" | (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}") || true
+  cat "${REPO_DIR}/pkg/storage/migrations/001_initial_schema.sql" | (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}") || true
   (cd /tmp && sudo -u postgres psql -q -d "${DB_NAME}" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${DB_USER}; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DB_USER}; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${DB_USER};") || true
   log_success "Initial database schema applied and privileges granted."
 fi

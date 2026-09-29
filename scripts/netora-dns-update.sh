@@ -559,6 +559,38 @@ AAEOF
         fi
     fi
 
+    # Apply database schema migrations & ensure netora ownership if PostgreSQL is installed
+    if command -v psql >/dev/null 2>&1; then
+        log_event "INFO" "db_migration" "Applying database schema migrations and updating table ownership"
+        su - postgres -c "psql -d netora -c '
+            DO \$\$
+            DECLARE r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = '\''public\'') LOOP
+                EXECUTE '\''ALTER TABLE '\'' || quote_ident(r.tablename) || '\'' OWNER TO netora'\'';
+              END LOOP;
+            END \$\$;
+            ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT NOT NULL DEFAULT 0;
+            ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS disk_free_gb INT NOT NULL DEFAULT 0;
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO netora;
+            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO netora;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO netora;
+        '" >/dev/null 2>&1 || sudo -u postgres psql -d netora -c "
+            DO \$\$
+            DECLARE r RECORD;
+            BEGIN
+              FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'ALTER TABLE ' || quote_ident(r.tablename) || ' OWNER TO netora';
+              END LOOP;
+            END \$\$;
+            ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT NOT NULL DEFAULT 0;
+            ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS disk_free_gb INT NOT NULL DEFAULT 0;
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO netora;
+            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO netora;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO netora;
+        " >/dev/null 2>&1 || true
+    fi
+
     # Update API binary if present
     if [[ -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" ]]; then
         cp -f "${target_release_dir}/deploy/bin/netora-api-linux-amd64" /usr/local/bin/netora-api 2>/dev/null && chmod +x /usr/local/bin/netora-api || true

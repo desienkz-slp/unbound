@@ -181,6 +181,25 @@ func (p *PostgresStore) UpsertNode(ctx context.Context, n *model.NodeMetadata, s
 	_, err := p.db.ExecContext(ctx, query,
 		n.NodeID, n.Hostname, mgmtIP, status, n.UnboundVersion,
 		n.CPUCores, n.TotalRAMMB, n.DiskTotalGB, n.DiskFreeGB, n.LastSeenAt)
+	if err != nil && (strings.Contains(err.Error(), "disk_total_gb") || strings.Contains(err.Error(), "42703")) {
+		// Fallback query without disk columns
+		fallbackQuery := `
+			INSERT INTO nodes (id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb, last_seen_at, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+			ON CONFLICT (id) DO UPDATE SET
+				hostname = EXCLUDED.hostname,
+				management_ip = EXCLUDED.management_ip,
+				status = EXCLUDED.status,
+				unbound_version = EXCLUDED.unbound_version,
+				cpu_cores = EXCLUDED.cpu_cores,
+				ram_mb = EXCLUDED.ram_mb,
+				last_seen_at = EXCLUDED.last_seen_at,
+				updated_at = NOW();
+		`
+		_, err = p.db.ExecContext(ctx, fallbackQuery,
+			n.NodeID, n.Hostname, mgmtIP, status, n.UnboundVersion,
+			n.CPUCores, n.TotalRAMMB, n.LastSeenAt)
+	}
 	return err
 }
 
@@ -197,7 +216,21 @@ func (p *PostgresStore) GetNode(ctx context.Context, nodeID string) (*NodeRecord
 	if err := row.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver,
 		&n.CPUCores, &n.RAMMB, &n.DiskTotalGB, &n.DiskFreeGB,
 		&lastSeen, &n.CreatedAt, &n.UpdatedAt); err != nil {
-		return nil, err
+		if strings.Contains(err.Error(), "disk_total_gb") || strings.Contains(err.Error(), "42703") {
+			// Fallback query if disk columns do not exist yet
+			fallbackQuery := `SELECT id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb,
+					last_seen_at, created_at, updated_at FROM nodes WHERE id = $1`
+			rowFallback := p.db.QueryRowContext(ctx, fallbackQuery, nodeID)
+			if errFallback := rowFallback.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver,
+				&n.CPUCores, &n.RAMMB,
+				&lastSeen, &n.CreatedAt, &n.UpdatedAt); errFallback != nil {
+				return nil, errFallback
+			}
+			n.DiskTotalGB = 0
+			n.DiskFreeGB = 0
+		} else {
+			return nil, err
+		}
 	}
 	n.UnboundVersion = ver.String
 	n.LastSeenAt = lastSeen.Time
@@ -211,6 +244,34 @@ func (p *PostgresStore) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 			last_seen_at, created_at, updated_at FROM nodes ORDER BY hostname ASC`
 	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
+		if strings.Contains(err.Error(), "disk_total_gb") || strings.Contains(err.Error(), "42703") {
+			// Fallback query without disk columns
+			fallbackQuery := `SELECT id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb,
+					last_seen_at, created_at, updated_at FROM nodes ORDER BY hostname ASC`
+			rowsFallback, errFallback := p.db.QueryContext(ctx, fallbackQuery)
+			if errFallback != nil {
+				return nil, errFallback
+			}
+			defer rowsFallback.Close()
+
+			nodes := make([]NodeRecord, 0)
+			for rowsFallback.Next() {
+				var n NodeRecord
+				var lastSeen sql.NullTime
+				var ver sql.NullString
+				if err := rowsFallback.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver,
+					&n.CPUCores, &n.RAMMB,
+					&lastSeen, &n.CreatedAt, &n.UpdatedAt); err != nil {
+					return nil, err
+				}
+				n.UnboundVersion = ver.String
+				n.LastSeenAt = lastSeen.Time
+				n.DiskTotalGB = 0
+				n.DiskFreeGB = 0
+				nodes = append(nodes, n)
+			}
+			return nodes, rowsFallback.Err()
+		}
 		return nil, err
 	}
 	defer rows.Close()

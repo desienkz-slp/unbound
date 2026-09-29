@@ -30,30 +30,56 @@ export function App() {
 
   // Initial load
   const loadInitialData = async () => {
+    let nodeList: NodeRecord[] = [];
     try {
-      const nodeList = await api.getNodes();
+      nodeList = await api.getNodes();
       setNodes(nodeList);
-
-      let activeId = selectedNodeId;
-      if (nodeList.length > 0) {
-        if (!activeId || !nodeList.some((n) => n.id === activeId)) {
-          activeId = nodeList[0].id;
-          setSelectedNodeId(activeId);
-        }
-      }
-
-      if (activeId) {
-        const cfg = await api.getDesiredState(activeId);
-        setConfig(cfg);
-
-        const health = await api.getNodeHealth(activeId);
-        setUnboundHealthy(health.healthy);
-      }
     } catch (err: any) {
       if (err.message === 'Unauthorized') {
         setShowLogin(true);
-      } else {
-        console.error('Initialization error:', err);
+        return;
+      }
+      console.error('Initialization error fetching nodes:', err);
+    }
+
+    let activeId = selectedNodeId;
+    if (nodeList.length > 0) {
+      if (!activeId || !nodeList.some((n) => n.id === activeId)) {
+        activeId = nodeList[0].id;
+        setSelectedNodeId(activeId);
+      }
+    } else if (!activeId) {
+      // Fallback: discover node_id from system version or use local node fallback
+      try {
+        const sysVer = await api.getSystemVersion();
+        if (sysVer && (sysVer as any).node_id) {
+          activeId = (sysVer as any).node_id;
+          setSelectedNodeId(activeId);
+        }
+      } catch {
+        // default fallback
+        activeId = 'netora-dns1';
+        setSelectedNodeId(activeId);
+      }
+    }
+
+    if (activeId) {
+      try {
+        const cfg = await api.getDesiredState(activeId);
+        setConfig(cfg);
+      } catch (err: any) {
+        if (err.message === 'Unauthorized') {
+          setShowLogin(true);
+          return;
+        }
+        console.error('Initialization error fetching desired state:', err);
+      }
+
+      try {
+        const health = await api.getNodeHealth(activeId);
+        setUnboundHealthy(health.healthy);
+      } catch (err: any) {
+        console.warn('Failed to load node health:', err);
       }
     }
   };
