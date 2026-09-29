@@ -3,7 +3,7 @@
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
 > **Target Node Prod:** `172.18.20.146` (`netora-dns1` — Unbound 1.19.2)  
-> **Versi Rilis:** `v1.0.91 (Build 91)` / Commit: `492d647`  
+> **Versi Rilis:** `v1.0.94 (Build 94)` / Commit: `1cee891`  
 
 ---
 
@@ -206,4 +206,25 @@ Sesuai instruksi dan rencana kerja 4 fase, tiga fitur kelas *Carrier-Grade ISP* 
   - Bundle UI `index-iE_LrVwZ.js` aktif disajikan.
   - `POST /api/v1/auth/logout` -> `200 OK`.
   - DNS resolution `google.com` tetap normal dan responsif.
+
+---
+
+## 6. Penyederhanaan Footer Sidebar (Netora Build Version Only — v1.0.94)
+
+### A. Permintaan Pengguna
+Menghapus blok informasi Data Plane ("Data Plane RESOLVING" dan deskripsi) pada bagian bawah sidebar, dan hanya mempertahankan baris informasi **Netora Build version**.
+
+### B. Perubahan Kode
+1. **[`web/src/components/Sidebar.tsx`](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/Sidebar.tsx):**
+   - Menghapus badge status Data Plane (`RESOLVING` / `DEGRADED`) dan teks deskripsi pendukung.
+   - Menggantikan card footer dengan box minimalis yang ramping dan elegan berisi label `Netora Build` dan versi aktif (misal `v1.0.94`).
+   - Membersihkan import ikon `Wrench` yang sudah tidak digunakan (Dead Code Elimination).
+2. **[`scripts/netora-dns-update.sh`](file:///c:/xampp/htdocs/auto-install/unbound/scripts/netora-dns-update.sh):**
+   - Memperbaiki script auto-updater agar menyalin asset Web UI dari direktori `deploy/ui/` yang dilacak di git (sebelumnya hanya mengecek `web/dist/` yang di-ignore oleh `.gitignore`).
+
+### C. Hasil Uji & Distribusi
+- Build Web UI: `index-1IdAYN5T.js` (`v1.0.94`).
+- Diuji di dev server `172.18.20.145`: Footer sidebar bersih, hanya menampilkan Netora Build version.
+- Diuji di prod server `172.18.20.146`: Diupdate via GitHub auto-update script, bundle baru aktif, DNS resolution tetap prima.
+
 
