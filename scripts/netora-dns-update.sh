@@ -621,7 +621,10 @@ AAEOF
     fi
 
     # Update Web UI static assets if present in release
-    if [[ -d "${target_release_dir}/web/dist" ]]; then
+    if [[ -d "${target_release_dir}/deploy/ui" ]]; then
+        mkdir -p /var/www/netora-ui
+        cp -r "${target_release_dir}/deploy/ui/"* /var/www/netora-ui/ 2>/dev/null || true
+    elif [[ -d "${target_release_dir}/web/dist" ]]; then
         mkdir -p /var/www/netora-ui
         cp -r "${target_release_dir}/web/dist/"* /var/www/netora-ui/ 2>/dev/null || true
     fi
