@@ -17,6 +17,8 @@ type NodeRecord struct {
 	UnboundVersion string    `json:"unbound_version"`
 	CPUCores       int       `json:"cpu_cores"`
 	RAMMB          int       `json:"ram_mb"`
+	DiskTotalGB    int       `json:"disk_total_gb"`
+	DiskFreeGB     int       `json:"disk_free_gb"`
 	LastSeenAt     time.Time `json:"last_seen_at"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`

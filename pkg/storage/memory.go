@@ -107,6 +107,8 @@ func (m *MemoryStore) UpsertNode(ctx context.Context, n *model.NodeMetadata, sta
 		UnboundVersion: n.UnboundVersion,
 		CPUCores:       n.CPUCores,
 		RAMMB:          n.TotalRAMMB,
+		DiskTotalGB:    n.DiskTotalGB,
+		DiskFreeGB:     n.DiskFreeGB,
 		LastSeenAt:     n.LastSeenAt,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),

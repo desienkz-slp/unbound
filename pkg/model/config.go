@@ -181,13 +181,15 @@ type RemoteControlConfig struct {
 
 // NodeMetadata captures physical/VM machine information.
 type NodeMetadata struct {
-	NodeID         string    `json:"node_id"`
-	Hostname       string    `json:"hostname"`
-	OS             string    `json:"os"`
-	UnboundVersion string    `json:"unbound_version"`
-	CPUCores       int       `json:"cpu_cores"`
-	TotalRAMMB     int       `json:"total_ram_mb"`
-	LastSeenAt     time.Time `json:"last_seen_at"`
+	NodeID       string    `json:"node_id"`
+	Hostname     string    `json:"hostname"`
+	OS           string    `json:"os"`
+	UnboundVersion string  `json:"unbound_version"`
+	CPUCores     int       `json:"cpu_cores"`
+	TotalRAMMB   int       `json:"total_ram_mb"`
+	DiskTotalGB  int       `json:"disk_total_gb"`
+	DiskFreeGB   int       `json:"disk_free_gb"`
+	LastSeenAt   time.Time `json:"last_seen_at"`
 }
 
 // DesiredState is the comprehensive desired configuration for a DNS node.

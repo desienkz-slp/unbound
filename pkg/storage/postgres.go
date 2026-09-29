@@ -162,8 +162,8 @@ func (p *PostgresStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 // UpsertNode records node metadata using non-destructive UPSERT.
 func (p *PostgresStore) UpsertNode(ctx context.Context, n *model.NodeMetadata, status string, mgmtIP string) error {
 	query := `
-		INSERT INTO nodes (id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb, last_seen_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+		INSERT INTO nodes (id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb, disk_total_gb, disk_free_gb, last_seen_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			hostname = EXCLUDED.hostname,
 			management_ip = EXCLUDED.management_ip,
@@ -171,22 +171,30 @@ func (p *PostgresStore) UpsertNode(ctx context.Context, n *model.NodeMetadata, s
 			unbound_version = EXCLUDED.unbound_version,
 			cpu_cores = EXCLUDED.cpu_cores,
 			ram_mb = EXCLUDED.ram_mb,
+			disk_total_gb = EXCLUDED.disk_total_gb,
+			disk_free_gb = EXCLUDED.disk_free_gb,
 			last_seen_at = EXCLUDED.last_seen_at,
 			updated_at = NOW();
 	`
-	_, err := p.db.ExecContext(ctx, query, n.NodeID, n.Hostname, mgmtIP, status, n.UnboundVersion, n.CPUCores, n.TotalRAMMB, n.LastSeenAt)
+	_, err := p.db.ExecContext(ctx, query,
+		n.NodeID, n.Hostname, mgmtIP, status, n.UnboundVersion,
+		n.CPUCores, n.TotalRAMMB, n.DiskTotalGB, n.DiskFreeGB, n.LastSeenAt)
 	return err
 }
 
 // GetNode gets a single node by ID.
 func (p *PostgresStore) GetNode(ctx context.Context, nodeID string) (*NodeRecord, error) {
-	query := `SELECT id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb, last_seen_at, created_at, updated_at FROM nodes WHERE id = $1`
+	query := `SELECT id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb,
+			COALESCE(disk_total_gb, 0), COALESCE(disk_free_gb, 0),
+			last_seen_at, created_at, updated_at FROM nodes WHERE id = $1`
 	row := p.db.QueryRowContext(ctx, query, nodeID)
 
 	var n NodeRecord
 	var lastSeen sql.NullTime
 	var ver sql.NullString
-	if err := row.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver, &n.CPUCores, &n.RAMMB, &lastSeen, &n.CreatedAt, &n.UpdatedAt); err != nil {
+	if err := row.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver,
+		&n.CPUCores, &n.RAMMB, &n.DiskTotalGB, &n.DiskFreeGB,
+		&lastSeen, &n.CreatedAt, &n.UpdatedAt); err != nil {
 		return nil, err
 	}
 	n.UnboundVersion = ver.String
@@ -196,7 +204,9 @@ func (p *PostgresStore) GetNode(ctx context.Context, nodeID string) (*NodeRecord
 
 // ListNodes lists all managed DNS nodes.
 func (p *PostgresStore) ListNodes(ctx context.Context) ([]NodeRecord, error) {
-	query := `SELECT id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb, last_seen_at, created_at, updated_at FROM nodes ORDER BY hostname ASC`
+	query := `SELECT id, hostname, management_ip, status, unbound_version, cpu_cores, ram_mb,
+			COALESCE(disk_total_gb, 0), COALESCE(disk_free_gb, 0),
+			last_seen_at, created_at, updated_at FROM nodes ORDER BY hostname ASC`
 	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -208,7 +218,9 @@ func (p *PostgresStore) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 		var n NodeRecord
 		var lastSeen sql.NullTime
 		var ver sql.NullString
-		if err := rows.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver, &n.CPUCores, &n.RAMMB, &lastSeen, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Hostname, &n.ManagementIP, &n.Status, &ver,
+			&n.CPUCores, &n.RAMMB, &n.DiskTotalGB, &n.DiskFreeGB,
+			&lastSeen, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
 		}
 		n.UnboundVersion = ver.String

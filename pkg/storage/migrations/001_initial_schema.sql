@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     unbound_version VARCHAR(64),
     cpu_cores INT NOT NULL DEFAULT 1,
     ram_mb INT NOT NULL DEFAULT 1024,
+    disk_total_gb INT NOT NULL DEFAULT 0,
+    disk_free_gb INT NOT NULL DEFAULT 0,
     config_json JSONB,
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

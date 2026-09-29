@@ -127,6 +127,8 @@ export interface NodeRecord {
   unbound_version: string;
   cpu_cores: number;
   ram_mb: number;
+  disk_total_gb: number;
+  disk_free_gb: number;
   last_seen_at: string;
 }
 

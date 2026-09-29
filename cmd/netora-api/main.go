@@ -75,6 +75,7 @@ func main() {
 	// 3. Register Current Node with Real Dynamic Hardware Specs & IP
 	realIP := detectManagementIP()
 	realCores, realRAM, realUnboundVer := detectSystemSpecs()
+	realDiskTotal, realDiskFree := detectDiskSpecs()
 	hostname := *nodeID
 	if h, err := os.Hostname(); err == nil && h != "" && (*nodeID == "dns-dev" || *nodeID == "") {
 		hostname = h
@@ -86,11 +87,13 @@ func main() {
 		UnboundVersion: realUnboundVer,
 		CPUCores:       realCores,
 		TotalRAMMB:     realRAM,
+		DiskTotalGB:    realDiskTotal,
+		DiskFreeGB:     realDiskFree,
 		LastSeenAt:     time.Now().UTC(),
 	}
 	_ = store.UpsertNode(ctx, nodeMeta, "HEALTHY", realIP)
-	log.Printf("Registered local node '%s' (hostname: %s, mgmt_ip: %s, cpu: %d cores, ram: %d MB, unbound: %s)\n",
-		*nodeID, hostname, realIP, realCores, realRAM, realUnboundVer)
+	log.Printf("Registered local node '%s' (hostname: %s, mgmt_ip: %s, cpu: %d cores, ram: %d MB, disk: %dGB total/%dGB free, unbound: %s)\n",
+		*nodeID, hostname, realIP, realCores, realRAM, realDiskTotal, realDiskFree, realUnboundVer)
 
 	// 3.1 Ensure Initial Node Listeners & DesiredState Exist with Real Detected Host IPs
 	existingState, err := store.GetDesiredState(ctx, *nodeID)
