@@ -3,7 +3,7 @@
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
 > **Target Node Prod:** `172.18.20.146` (`netora-dns1` — Unbound 1.19.2)  
-> **Versi Rilis:** `v1.0.89 (Build 89)` / Commit: `7a8e649`  
+> **Versi Rilis:** `v1.0.91 (Build 91)` / Commit: `492d647`  
 
 ---
 
@@ -170,3 +170,40 @@ Sesuai instruksi dan rencana kerja 4 fase, tiga fitur kelas *Carrier-Grade ISP* 
    - Untuk mencadangkan database sebelum maintenance: Klik **"Buat Snapshot Baru"** -> Masukkan deskripsi -> Klik **Proses Snapshot**.
    - Untuk mengunduh arsip ke komputer teknisi: Klik tombol **Unduh** pada baris snapshot yang diinginkan.
    - Untuk memulihkan (*restore*): Klik tombol **Restore** (Sistem akan mengembalikan seluruh skema dan data konfigurasi PostgreSQL secara instan).
+
+---
+
+## 5. Perbaikan & Verifikasi Tombol Logout Header (Hotfix v1.0.91)
+
+### A. Akar Masalah (Root Cause Analysis)
+1. **Endpoint Backend Belum Terdaftar:** Go Backend API (`netora-api`) sebelumnya belum mendaftarkan route `/api/v1/auth/logout`. Ketika client memanggil POST ke endpoint tersebut, server merespons dengan HTTP `404 Not Found`.
+2. **Uncaught Rejection pada Client:** Di `api.ts`, pemanggilan `await this.request('/auth/logout')` melempar *Error 404*. Meskipun token dibersihkan di blok `finally`, error yang tidak tertangkap (*unhandled rejection*) di `App.tsx: handleLogout` menyebabkan pemanggilan `setShowLogin(true)` terputus dan tidak pernah dieksekusi.
+3. **Dampak di UI:** Pengguna melihat tombol logout ditekan tetapi layar tidak berubah dan modal login tidak muncul.
+
+### B. Solusi & Perubahan yang Diterapkan
+1. **Backend ([cmd/netora-api/server.go](file:///c:/xampp/htdocs/auto-install/unbound/cmd/netora-api/server.go)):**
+   - Mendaftarkan route: `mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)`.
+   - Menambahkan handler `handleLogout`: Menerima POST request, memvalidasi JWT token jika ada, mencatat audit log `USER_LOGOUT`, dan selalu mengembalikan respons `200 OK` (`{"message":"Logged out successfully","success":true}`).
+   - Menambahkan unit test `TestAPI_Logout` di `server_test.go` (100% PASS).
+2. **API Service ([web/src/services/api.ts](file:///c:/xampp/htdocs/auto-install/unbound/web/src/services/api.ts)):**
+   - Menambahkan error handling aman pada `logout()` sehingga token di `localStorage` dipastikan selalu terhapus dan fungsi tidak pernah melempar exception ke UI.
+   - Menambahkan `getMe()` untuk verifikasi session dan sinkronisasi username aktual dengan token claims.
+3. **Header Component ([web/src/components/Header.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/Header.tsx)):**
+   - Menambahkan atribut eksplisit `type="button"`, `aria-label="Logout"`, `title="Keluar dari Akun (Logout)"`, `cursor-pointer`, dan efek visual hover `group-hover:scale-110`.
+4. **Application State ([web/src/App.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/App.tsx)):**
+   - Pada `handleLogout`: Membersihkan state `currentUser`, `config`, dan memicu modal login (`setShowLogin(true)`).
+   - Pada `loadInitialData`: Memverifikasi token via `getMe()` saat aplikasi pertama kali dimuat. Jika tidak ada token atau token sudah kadaluarsa (401), otomatis mengarahkan ke form login.
+5. **Login Modal ([web/src/components/LoginModal.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/LoginModal.tsx)):**
+   - Menambahkan `useEffect` untuk mereset kolom kata sandi dan status error saat modal login dibuka kembali pasca logout.
+
+### C. Hasil Uji Nyata (Live Verification)
+- **Dev Server (`172.18.20.145`):**
+  - `POST /api/v1/auth/login` -> Token diperoleh.
+  - `GET /api/v1/auth/me` -> Claims valid (`usr-superadmin` / `admin`).
+  - `POST /api/v1/auth/logout` -> `200 OK` (`{"message":"Logged out successfully","success":true}`).
+- **Prod Server (`172.18.20.146`):**
+  - Auto-update via GitHub berhasil ditingkatkan ke `v1.0.91 (Build 91)`.
+  - Bundle UI `index-iE_LrVwZ.js` aktif disajikan.
+  - `POST /api/v1/auth/logout` -> `200 OK`.
+  - DNS resolution `google.com` tetap normal dan responsif.
+
