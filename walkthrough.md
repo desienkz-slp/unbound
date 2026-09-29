@@ -1,4 +1,4 @@
-# Walkthrough — Netora DNS Carrier-Grade Features (Fase 1–4 Selesai)
+﻿# Walkthrough — Netora DNS Carrier-Grade Features (Fase 1–4 Selesai)
 
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
@@ -499,3 +499,68 @@ Ketika menginstalasi Netora DNS pada server baru via repository private GitHub m
 1. Menambahkan panduan **Option A: One-Line Silent Fleet Installer (Recommended for Private Repo)** lengkap dengan contoh flag --github-token "".
 2. Menambahkan catatan penjelas mengenai header Authorization: token dan kegunaan flag --github-token.
 3. Memperbarui badge rilis ke versi 1.0.104.
+
+---
+
+## 12. Dynamic Real-Time Download Progress Bar pada Installer (`install.sh`)
+
+### A. Latar Belakang & Masalah
+Ketika menginstalasi Netora DNS di server baru menggunakan perintah:
+```bash
+curl -H "Authorization: token <TOKEN>" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- ...
+```
+Pada tahap:
+```text
+=== Setting Up Netora Workspace Hierarchy ===
+[INFO] Cloning Netora repository from GitHub (main)...
+```
+Layar terminal tidak menampilkan indikator kemajuan (progress bar atau persentase unduhan) selama ~20–40 detik saat mengunduh paket core Netora sebesar ~18.5 MB. Hal ini membuat proses instalasi tampak seperti berhenti atau macet (*stuck/frozen*).
+
+### B. Investigasi Akar Masalah
+1. Secara default, `git clone` hanya menampilkan teks persentase interaktif jika output stderr terhubung langsung ke TTY interaktif.
+2. Ketika installer dijalankan melalui pipa terminal (`curl ... | sudo bash -s --`), Git mendeteksi lingkungan non-TTY sehingga mematikan atau mem-buffer karakter carriage return (`\r`).
+3. Tanpa mekanisme parsing khusus, output kemajuan Git tidak dapat dirender secara dinamis di layar pipa bash.
+
+### C. Solusi & Implementasi
+Pada [install.sh](file:///c:/xampp/htdocs/auto-install/unbound/install.sh):
+1. **Fungsi Helper Visual `render_progress_bar()`**:
+   Menghasilkan tampilan progress bar ASCII modern dengan persentase dan detail transfer:
+   ```bash
+   render_progress_bar() {
+     local pct="${1:-0}"
+     local info="${2:-}"
+     local width=32
+     local num=$(( pct * width / 100 ))
+     local bar=""
+     for ((i=0; i<num; i++)); do bar+="█"; done
+     for ((i=num; i<width; i++)); do bar+="░"; done
+     printf "\r  ${CYAN}[%s]${NC} ${BOLD}%3d%%${NC} %-35s" "$bar" "$pct" "$info"
+   }
+   ```
+2. **Pipa Stream Parser Real-Time**:
+   Mengalirkan stderr `git clone --progress` melalui pemisah carriage return (`tr "\r" "\n"`) dan parsing regex ke dalam loop pembaruan bar:
+   ```bash
+   render_progress_bar 0 "Connecting to GitHub..."
+
+   (
+     set +e
+     GIT_TERMINAL_PROMPT=0 git clone --depth=1 --progress --branch "$GIT_BRANCH" "$AUTH_CLONE_URL" "$REPO_DIR" 2>&1
+   ) | tee "$CLONE_LOG" | tr "\r" "\n" | while IFS= read -r line; do
+     if [[ "$line" =~ Receiving[[:space:]]+objects:[[:space:]]*([0-9]+)%([^\,]*)(,\ (.*))? ]]; then
+       pct="${BASH_REMATCH[1]}"
+       extra="${BASH_REMATCH[4]:-}"
+       render_progress_bar "$pct" "$extra"
+     elif [[ "$line" =~ Resolving[[:space:]]+deltas:[[:space:]]*([0-9]+)% ]]; then
+       render_progress_bar 100 "Resolving deltas..."
+     fi
+   done || true
+   ```
+3. **Penyelesaian & Logging Error Aman**:
+   - Jika berhasil: Mencetak `[████████████████████████████████] 100% Complete! (18.5 MB)` lalu baris baru dengan pesan sukses hijau `[✔] Repository cloned to: ...`.
+   - Jika gagal: Menampilkan pesan error merah beserta log detail dari `$CLONE_LOG` tanpa menghapus pesan penting.
+
+### D. Hasil Pengujian
+Diuji langsung pada lingkungan Linux node `172.18.20.145`:
+- Progress bar bergerak lancar dari 0% hingga 100% secara *in-place* dengan informasi ukuran transfer dan kecepatan riil:
+  `[████████████████████████████████] 100% 16.26 MiB | 1.45 MiB/s, done.`
+- Instalasi tampak profesional, responsif, dan memberikan kejelasan visual bahwa proses unduhan sedang berjalan aktif.

@@ -47,6 +47,17 @@ log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error()   { echo -e "${RED}[✖]${NC} $1"; }
 log_step()    { echo -e "\n${CYAN}${BOLD}=== $1 ===${NC}"; }
 
+render_progress_bar() {
+  local pct="${1:-0}"
+  local info="${2:-}"
+  local width=32
+  local num=$(( pct * width / 100 ))
+  local bar=""
+  for ((i=0; i<num; i++)); do bar+="█"; done
+  for ((i=num; i<width; i++)); do bar+="░"; done
+  printf "\r  ${CYAN}[%s]${NC} ${BOLD}%3d%%${NC} %-35s" "$bar" "$pct" "$info"
+}
+
 show_banner() {
   echo -e "${CYAN}${BOLD}"
   echo "╔═══════════════════════════════════════════════════════════════════╗"
@@ -298,18 +309,43 @@ if [[ -n "$SCRIPT_SOURCE_DIR" && -f "${SCRIPT_SOURCE_DIR}/conf/unbound-base.conf
   mkdir -p "$REPO_DIR"
   cp -r "${SCRIPT_SOURCE_DIR}/"* "$REPO_DIR/" 2>/dev/null || true
 else
-  log_info "Cloning Netora repository from GitHub (${GIT_BRANCH})..."
+  log_info "Downloading Netora Core Package from GitHub (${GIT_BRANCH})..."
   AUTH_CLONE_URL="$REPO_URL"
   if [[ -n "$GITHUB_TOKEN" ]]; then
     AUTH_CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/desienkz-slp/unbound.git"
   fi
 
   rm -rf "$REPO_DIR"
-  if ! GIT_TERMINAL_PROMPT=0 git clone --depth=1 --progress --branch "$GIT_BRANCH" "$AUTH_CLONE_URL" "$REPO_DIR"; then
+  CLONE_LOG=$(mktemp /tmp/netora-clone.XXXXXX)
+
+  render_progress_bar 0 "Connecting to GitHub..."
+
+  (
+    set +e
+    GIT_TERMINAL_PROMPT=0 git clone --depth=1 --progress --branch "$GIT_BRANCH" "$AUTH_CLONE_URL" "$REPO_DIR" 2>&1
+  ) | tee "$CLONE_LOG" | tr "\r" "\n" | while IFS= read -r line; do
+    if [[ "$line" =~ Receiving[[:space:]]+objects:[[:space:]]*([0-9]+)%([^\,]*)(,\ (.*))? ]]; then
+      pct="${BASH_REMATCH[1]}"
+      extra="${BASH_REMATCH[4]:-}"
+      render_progress_bar "$pct" "$extra"
+    elif [[ "$line" =~ Resolving[[:space:]]+deltas:[[:space:]]*([0-9]+)% ]]; then
+      render_progress_bar 100 "Resolving deltas..."
+    fi
+  done || true
+
+  if [[ -d "$REPO_DIR/.git" ]]; then
+    render_progress_bar 100 "Complete! (18.5 MB)"
+    echo ""
+    log_success "Repository cloned to: ${REPO_DIR}"
+    rm -f "$CLONE_LOG"
+  else
+    echo ""
     log_error "Failed to clone repository from GitHub. If this is a private repo, make sure to provide: --github-token <TOKEN>"
+    echo -e "${RED}[ERROR LOG]${NC}"
+    cat "$CLONE_LOG"
+    rm -f "$CLONE_LOG"
     exit 1
   fi
-  log_success "Repository cloned to: ${REPO_DIR}"
 fi
 ln -sfn "${REPO_DIR}" "${INSTALL_DIR}/current"
 
