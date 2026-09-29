@@ -525,6 +525,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	reason := "MANUAL"
+	if req.Reason != "" {
+		reason = req.Reason
+	}
+
 	tokenStr := ""
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
@@ -540,7 +549,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 				Action:   "USER_LOGOUT",
 				Target:   claims.UserID,
 				ClientIP: r.RemoteAddr,
-				Status:   "SUCCESS",
+				Status:   reason,
 			})
 		}
 	}
@@ -548,6 +557,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Logged out successfully",
+		"reason":  reason,
 	})
 }
 

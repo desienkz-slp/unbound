@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  Clock,
   Eye,
   EyeOff,
   KeyRound,
@@ -18,6 +19,8 @@ interface UserSettingsModalProps {
   onClose: () => void;
   currentUser: string;
   onUserUpdated: (newUsername: string) => void;
+  timeoutMinutes?: number;
+  onTimeoutUpdated?: (minutes: number) => void;
 }
 
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
@@ -25,8 +28,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onClose,
   currentUser,
   onUserUpdated,
+  timeoutMinutes = 15,
+  onTimeoutUpdated,
 }) => {
   const [username, setUsername] = useState(currentUser || 'admin');
+  const [selectedTimeout, setSelectedTimeout] = useState<number>(timeoutMinutes);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,13 +47,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setUsername(currentUser || 'admin');
+      setSelectedTimeout(timeoutMinutes !== undefined ? timeoutMinutes : 15);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setError(null);
       setSuccessMsg(null);
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, timeoutMinutes]);
 
   if (!isOpen) return null;
 
@@ -56,8 +63,24 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setError(null);
     setSuccessMsg(null);
 
-    // Frontend validations
+    // Save timeout setting first if changed
+    if (onTimeoutUpdated) {
+      onTimeoutUpdated(selectedTimeout);
+      localStorage.setItem('netora_inactivity_timeout_minutes', selectedTimeout.toString());
+    }
+
     const trimmedUsername = username.trim();
+
+    // If only updating session timeout without changing credentials
+    if (!newPassword && trimmedUsername === (currentUser || 'admin') && !currentPassword) {
+      setSuccessMsg('Pengaturan timeout sesi berhasil disimpan.');
+      setTimeout(() => {
+        onClose();
+      }, 1000);
+      return;
+    }
+
+    // Frontend validations for credentials update
     if (!trimmedUsername) {
       setError('Username tidak boleh kosong.');
       return;
@@ -68,7 +91,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
 
     if (!currentPassword) {
-      setError('Password saat ini wajib diisi untuk verifikasi keamanan.');
+      setError('Password saat ini wajib diisi untuk mengubah username atau password.');
       return;
     }
 
@@ -91,7 +114,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         new_password: newPassword ? newPassword : undefined,
       });
 
-      setSuccessMsg('Pengaturan akun berhasil disimpan.');
+      setSuccessMsg('Pengaturan akun & sesi berhasil disimpan.');
       onUserUpdated(res.user.username);
       setCurrentPassword('');
       setNewPassword('');
@@ -237,19 +260,45 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Current Password (Required for confirmation) */}
-          <div className="pt-2 border-t border-gray-800/80">
+          {/* Inactivity Logout Timeout Setting */}
+          <div className="pt-3 border-t border-gray-800/80">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                Timeout Logout Otomatis (Inactivity)
+              </label>
+              <span className="text-[10px] text-cyan-400 font-mono font-semibold">
+                {selectedTimeout === 0 ? 'Nonaktif' : `${selectedTimeout} Menit`}
+              </span>
+            </div>
+            <select
+              value={selectedTimeout}
+              onChange={(e) => setSelectedTimeout(Number(e.target.value))}
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono transition-colors cursor-pointer"
+            >
+              <option value={5}>5 Menit (Keamanan Tinggi / Server Publik)</option>
+              <option value={15}>15 Menit (Standar NOC / Rekomendasi)</option>
+              <option value={30}>30 Menit (Sedang)</option>
+              <option value={60}>60 Menit (1 Jam)</option>
+              <option value={0}>Nonaktif (Jangan Pernah Logout Otomatis)</option>
+            </select>
+            <span className="text-[10px] text-gray-500 mt-1 block">
+              Sesi operator akan otomatis keluar jika tidak ada aktivitas mouse atau keyboard selama batas waktu ini.
+            </span>
+          </div>
+
+          {/* Current Password (Required only when changing username or password) */}
+          <div className="pt-3 border-t border-gray-800/80">
             <label className="block text-xs font-semibold text-gray-300 mb-1">
-              Password Saat Ini <span className="text-rose-400">*</span>
+              Password Saat Ini {(newPassword || username.trim() !== (currentUser || 'admin')) && <span className="text-rose-400">*</span>}
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
               <input
                 type={showCurrentPass ? 'text' : 'password'}
-                required
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Masukkan password saat ini untuk konfirmasi..."
+                placeholder="Masukkan password saat ini jika mengubah akun..."
                 className="w-full bg-gray-950 border border-gray-800 rounded-lg pl-9 pr-9 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500 font-mono transition-colors"
               />
               <button
@@ -261,7 +310,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </button>
             </div>
             <span className="text-[10px] text-gray-500 mt-1 block">
-              Diperlukan untuk memvalidasi otorisasi perubahan kredensial.
+              Hanya diperlukan jika Anda mengubah username atau password baru.
             </span>
           </div>
 

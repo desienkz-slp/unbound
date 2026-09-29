@@ -89,10 +89,13 @@ class ApiClient {
     return res;
   }
 
-  async logout(): Promise<void> {
+  async logout(reason?: string): Promise<void> {
     try {
       if (this.token) {
-        await this.request('/auth/logout', { method: 'POST' });
+        await this.request('/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ reason: reason || 'MANUAL' }),
+        });
       }
     } catch (err) {
       console.warn('Backend logout call failed, completing client-side logout:', err);

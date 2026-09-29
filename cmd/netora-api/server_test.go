@@ -324,4 +324,19 @@ func TestAPI_Logout(t *testing.T) {
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK from tokenless logout, got %d", w2.Code)
 	}
+
+	// 3. Logout with inactivity timeout reason
+	body := []byte(`{"reason":"INACTIVITY_TIMEOUT"}`)
+	req3 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", bytes.NewReader(body))
+	req3.Header.Set("Authorization", "Bearer "+token)
+	w3 := httptest.NewRecorder()
+	mux.ServeHTTP(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from inactivity logout, got %d", w3.Code)
+	}
+	var resp3 map[string]interface{}
+	if err := json.Unmarshal(w3.Body.Bytes(), &resp3); err != nil || resp3["reason"] != "INACTIVITY_TIMEOUT" {
+		t.Errorf("expected reason INACTIVITY_TIMEOUT, got %v", resp3["reason"])
+	}
 }

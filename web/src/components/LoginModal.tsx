@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { KeyRound, Lock, User, AlertCircle, ShieldCheck } from 'lucide-react';
+import { KeyRound, Lock, User, AlertCircle, ShieldCheck, Clock } from 'lucide-react';
 import { api } from '../services/api';
 
 interface LoginModalProps {
   isOpen: boolean;
   onSuccess: (user: { id: string; username: string; role: string }) => void;
+  noticeMessage?: string | null;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess, noticeMessage }) => {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
           <h1 className="text-xl font-bold text-white tracking-wide">Netora DNS NOC</h1>
           <p className="text-xs text-gray-400">Enterprise Operator Authentication</p>
         </div>
+
+        {noticeMessage && !error && (
+          <div className="mt-4 p-3 bg-amber-950/60 border border-amber-800 rounded-lg text-xs text-amber-300 flex items-center gap-2">
+            <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>{noticeMessage}</span>
+          </div>
+        )}
 
         {error && (
           <div className="mt-4 p-3 bg-red-950/60 border border-red-800 rounded-lg text-xs text-red-300 flex items-center gap-2">

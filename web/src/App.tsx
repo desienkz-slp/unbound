@@ -24,9 +24,14 @@ export function App() {
   const [config, setConfig] = useState<DesiredState | null>(null);
   const [currentUser, setCurrentUser] = useState<string>('admin');
   const [showLogin, setShowLogin] = useState<boolean>(false);
+  const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [showUserSettings, setShowUserSettings] = useState<boolean>(false);
   const [diagnoseDomain, setDiagnoseDomain] = useState<string>('');
   const [unboundHealthy, setUnboundHealthy] = useState<boolean>(true);
+  const [inactivityTimeoutMinutes, setInactivityTimeoutMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('netora_inactivity_timeout_minutes');
+    return saved !== null ? parseInt(saved, 10) : 15;
+  });
 
   // Initial load
   const loadInitialData = async () => {
@@ -122,18 +127,66 @@ export function App() {
     setCurrentTab('diagnostics');
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (reason: string = 'MANUAL', notice?: string | null) => {
     try {
-      await api.logout();
+      await api.logout(reason);
     } catch (err) {
       console.warn('Logout error:', err);
     } finally {
       api.setToken(null);
+      localStorage.removeItem('netora_last_activity');
       setCurrentUser('');
       setConfig(null);
+      setLoginNotice(notice || null);
       setShowLogin(true);
     }
   };
+
+  // User activity tracking & Session Inactivity Auto-Logout
+  useEffect(() => {
+    if (showLogin || !api.getToken()) return;
+
+    // Initialize activity timestamp
+    localStorage.setItem('netora_last_activity', Date.now().toString());
+
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    const recordActivity = () => {
+      if (!throttleTimer) {
+        localStorage.setItem('netora_last_activity', Date.now().toString());
+        throttleTimer = setTimeout(() => {
+          throttleTimer = null;
+        }, 5000); // Record activity at most once every 5 seconds
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((ev) => window.addEventListener(ev, recordActivity, { passive: true }));
+
+    // Heartbeat check for inactivity every 10 seconds
+    const interval = setInterval(() => {
+      if (inactivityTimeoutMinutes <= 0) return; // 0 = disabled
+
+      const last = parseInt(localStorage.getItem('netora_last_activity') || '0', 10);
+      if (!last) return;
+
+      const elapsedMs = Date.now() - last;
+      const timeoutMs = inactivityTimeoutMinutes * 60 * 1000;
+
+      if (elapsedMs >= timeoutMs) {
+        console.warn(`[AUTH] Session timeout reached (${inactivityTimeoutMinutes}m of inactivity). Auto-logging out...`);
+        handleLogout(
+          'INACTIVITY_TIMEOUT',
+          `Sesi telah berakhir otomatis karena tidak ada aktivitas selama ${inactivityTimeoutMinutes} menit demi keamanan NOC.`
+        );
+      }
+    }, 10000);
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, recordActivity));
+      if (throttleTimer) clearTimeout(throttleTimer);
+      clearInterval(interval);
+    };
+  }, [showLogin, inactivityTimeoutMinutes]);
 
   return (
     <div className="h-screen w-screen bg-[#080C14] text-slate-100 flex flex-col font-sans overflow-hidden">
@@ -142,7 +195,7 @@ export function App() {
         selectedNode={selectedNodeId}
         onSelectNode={(id) => setSelectedNodeId(id)}
         onQuickDiagnose={handleQuickDiagnose}
-        onLogout={handleLogout}
+        onLogout={() => handleLogout('MANUAL', null)}
         currentUser={currentUser}
         onOpenUserSettings={() => setShowUserSettings(true)}
       />
@@ -227,8 +280,10 @@ export function App() {
 
       <LoginModal
         isOpen={showLogin}
+        noticeMessage={loginNotice}
         onSuccess={(user) => {
           setCurrentUser(user.username);
+          setLoginNotice(null);
           setShowLogin(false);
           loadInitialData();
         }}
@@ -241,6 +296,11 @@ export function App() {
         onUserUpdated={(newUsername) => {
           setCurrentUser(newUsername);
           loadInitialData();
+        }}
+        timeoutMinutes={inactivityTimeoutMinutes}
+        onTimeoutUpdated={(newTimeout) => {
+          setInactivityTimeoutMinutes(newTimeout);
+          localStorage.setItem('netora_inactivity_timeout_minutes', newTimeout.toString());
         }}
       />
     </div>
