@@ -485,3 +485,17 @@ Pengguna meminta agar pada panel sidebar samping, baris **Netora Build** beserta
 pm run build berhasil mengompilasi bundle baru index-CeBVDx97.js (523 kB) tanpa error lint maupun TypeScript.
 2. **Git Commit & Push:** Di-push ke GitHub repository dengan commit cf6f116 pada rilis 1.0.104 (Build 104).
 3. **Penyebaran Produksi (Server 172.18.20.146):** Auto-update selesai dengan sukses (SUCCESS), file index-CeBVDx97.js aktif disajikan secara langsung ke pengguna browser.
+
+---
+
+## 11. Pembaruan Dokumentasi Instalasi Private Repository pada README.md
+
+### A. Latar Belakang
+Ketika menginstalasi Netora DNS pada server baru via repository private GitHub menggunakan perintah one-liner:
+- curl -H mewajibkan format header otentikasi: -H "Authorization: token ".
+- Script install.sh mewajibkan flag --github-token "" agar proses git clone berjalan 100% otomatis tanpa meminta input Username dan Password interaktif di terminal.
+
+### B. Perubahan pada [README.md](file:///c:/xampp/htdocs/auto-install\unbound\README.md)
+1. Menambahkan panduan **Option A: One-Line Silent Fleet Installer (Recommended for Private Repo)** lengkap dengan contoh flag --github-token "".
+2. Menambahkan catatan penjelas mengenai header Authorization: token dan kegunaan flag --github-token.
+3. Memperbarui badge rilis ke versi 1.0.104.
