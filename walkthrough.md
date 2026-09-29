@@ -1,4 +1,4 @@
-﻿# Walkthrough — Netora DNS Carrier-Grade Features (Fase 1–4 Selesai)
+# Walkthrough — Netora DNS Carrier-Grade Features (Fase 1–4 Selesai)
 
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
@@ -564,3 +564,28 @@ Diuji langsung pada lingkungan Linux node `172.18.20.145`:
 - Progress bar bergerak lancar dari 0% hingga 100% secara *in-place* dengan informasi ukuran transfer dan kecepatan riil:
   `[████████████████████████████████] 100% 16.26 MiB | 1.45 MiB/s, done.`
 - Instalasi tampak profesional, responsif, dan memberikan kejelasan visual bahwa proses unduhan sedang berjalan aktif.
+
+---
+
+## 12. Dokumentasi Pembaruan GitHub Token & CLI Helper `netora set-token`
+
+### A. Konteks & Latar Belakang
+GitHub Fine-Grained Personal Access Token (PAT) memiliki masa aktif terbatas (biasanya 30, 60, atau 90 hari) demi standar keamanan. Ketika token kadaluarsa atau dirotasi, proses auto-update (`netora-dns-update`), systemd background timer, dan pembaruan 1-klik di Web UI memerlukan token baru yang valid di `/etc/netora-dns/github.token`.
+
+### B. Perubahan yang Dilakukan
+1. **Pembaruan Dokumen [README.md](file:///c:/xampp/htdocs/auto-install/unbound/README.md):**
+   - Menambahkan petunjuk cepat rotasi token pada section instalasi private repository.
+   - Menambahkan perintah CLI `netora set-token` ke dalam daftar perintah utility NOC operator.
+   - Menambahkan bab khusus: `## 🔐 Panduan Update / Rotasi GitHub Token di Server` yang mencakup:
+     - Kapan token perlu diperbarui dan gejala jika token expired.
+     - Spesifikasi scope token Fine-Grained PAT (`Contents: Read-only`, `Metadata: Read-only`).
+     - **Metode 1:** Perintah cepat 1-baris via SSH (`echo ... | sudo tee /etc/netora-dns/github.token`).
+     - **Metode 2:** Menggunakan CLI helper `sudo netora set-token` (interaktif dan auto-verifikasi).
+     - **Metode 3:** Edit manual dengan `nano /etc/netora-dns/github.token`.
+     - Langkah-langkah verifikasi keaktifan token (`git ls-remote`, `netora update`, dan API endpoint `/api/v1/system/status?check_remote=true`).
+2. **Peningkatan Utility [scripts/netora-cli.sh](file:///c:/xampp/htdocs/auto-install/unbound/scripts/netora-cli.sh):**
+   - Menambahkan subcommand `set-token` (alias: `token`).
+   - Mendukung mode interaktif dengan *hidden password prompt* (`read -rsp`) agar token tidak tercatat di riwayat bash history.
+   - Otomatis menghapus whitespace/karakter newline tidak sengaja (`tr -d '[:space:]'`).
+   - Menerapkan hak akses ketat `chmod 600 /etc/netora-dns/github.token`.
+   - Menguji koneksi langsung ke repository GitHub menggunakan `GIT_TERMINAL_PROMPT=0 git ls-remote` dan memberikan feedback langsung apakah token valid.

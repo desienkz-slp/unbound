@@ -86,6 +86,10 @@ sudo bash install.sh --github-token "github_pat_yourFineGrainedTokenHere" --sile
 
 The token is stored securely in `/etc/netora-dns/github.token` (mode `600`, root-only) and used by the autonomous auto-update engine for all subsequent pulls.
 
+> [!TIP]
+> Jika token GitHub Anda kadaluarsa (*expired*) atau ingin dirotasi di kemudian hari, lihat [Panduan Update / Rotasi GitHub Token](#-panduan-update--rotasi-github-token-di-server).
+
+
 ---
 
 ## 🖥️ NOC Web Dashboard & Default Credentials
@@ -228,6 +232,9 @@ netora reset-password admin "MyNewPassword123"
 
 # 9. List registered NOC operator accounts and database status
 netora users
+
+# 10. Update GitHub PAT token for auto-updates & verify repository access
+netora set-token "github_pat_yourNewTokenHere"
 ```
 
 ---
@@ -335,6 +342,120 @@ print('Password successfully updated!')
 > [!NOTE]
 > **Keamanan & Konsistensi Database:**  
 > Seluruh password di-hash secara aman menggunakan algoritma **bcrypt** (cost 10) standar industri. Setiap perubahan kredensial via CLI otomatis dicatat ke tabel Audit Log (`audit_logs`) untuk keperluan kepatuhan (*compliance*) keamanan jaringan ISP.
+
+---
+
+## 🔐 Panduan Update / Rotasi GitHub Token di Server
+
+Token autentikasi GitHub disimpan secara aman di file konfigurasi `/etc/netora-dns/github.token` dengan permission ketat `600` (hanya dapat dibaca/ditulis oleh user `root`). Token ini digunakan oleh engine auto-updater (`netora-dns-update`), systemd background timer (`netora-dns-updater.timer`), dan fitur pembaruan 1-klik di Web UI.
+
+### ❓ Kapan Token Perlu Diperbarui?
+1. **Token Kadaluarsa (*Expired*):** GitHub **Fine-Grained Personal Access Token (PAT)** memiliki masa berlaku terbatas (misal 30, 60, atau 90 hari) demi standar keamanan.
+2. **Rotasi Token Keamanan:** Dilakukan secara berkala sesuai kebijakan dan SOP keamanan jaringan ISP.
+3. **Gejala Token Expired:**
+   - Perintah `netora update` menghasilkan error:
+     ```text
+     [ERROR] update_failed: Cannot reach GitHub or invalid credentials. Preserving current DNS configuration.
+     ```
+   - Log auto-update di `/var/log/netora-dns/update.log` mencatat `fatal: Authentication failed`.
+   - Tombol / status update di Web UI gagal mendeteksi revisi commit terbaru dari repository GitHub.
+
+---
+
+### 📋 Spesifikasi Token Baru yang Dibutuhkan
+Buat token baru di GitHub (**Settings** ➔ **Developer Settings** ➔ **Personal access tokens** ➔ **Fine-grained tokens**):
+* **Repository access:** *Only select repositories* ➔ Pilih repository Netora DNS (`desienkz-slp/unbound` atau repository privat Anda).
+* **Permissions (Repository permissions):**
+  * **Contents:** `Read-only`
+  * **Metadata:** `Read-only`
+
+---
+
+### 🚀 Cara Update Token di Server
+
+Pilih salah satu metode berikut (dijalankan langsung di server via SSH):
+
+#### 1. Metode Cepat 1-Baris via SSH (Paling Praktis & Universal)
+Jalankan perintah berikut di terminal server (ganti `github_pat_yourNewTokenHere` dengan token baru Anda):
+
+```bash
+echo "github_pat_yourNewTokenHere" | sudo tee /etc/netora-dns/github.token > /dev/null && sudo chmod 600 /etc/netora-dns/github.token
+```
+
+*Atau jika Anda sudah login langsung sebagai user `root`:*
+```bash
+echo "github_pat_yourNewTokenHere" > /etc/netora-dns/github.token && chmod 600 /etc/netora-dns/github.token
+```
+
+---
+
+#### 2. Metode Menggunakan CLI Utility `netora set-token` (Interaktif & Auto-Verifikasi)
+Utility `/usr/local/bin/netora` menyediakan perintah bawaan untuk memperbarui token dan langsung memverifikasi akses repository:
+
+**A. Mode Interaktif (Aman — Token tidak tersimpan di riwayat shell history):**
+```bash
+sudo netora set-token
+```
+Sistem akan meminta input token secara tersembunyi (*hidden input*):
+```text
+Enter new GitHub Personal Access Token (PAT): [Tempel Token Baru]
+GitHub Token successfully updated in /etc/netora-dns/github.token (mode 600).
+Verifying repository access with new token...
+Verification PASS: Token is valid and has read access!
+```
+
+**B. Mode Parameter 1-Baris:**
+```bash
+sudo netora set-token "github_pat_yourNewTokenHere"
+```
+
+---
+
+#### 3. Metode Edit Manual Menggunakan Text Editor (`nano`)
+```bash
+sudo nano /etc/netora-dns/github.token
+```
+1. Hapus token lama, lalu tempel (*paste*) token baru (pastikan hanya berisi 1 baris string token tanpa spasi atau baris kosong tambahan).
+2. Simpan perubahan dengan menekan `Ctrl + O`, tekan `Enter`, lalu keluar dengan `Ctrl + X`.
+3. Pastikan izin file tetap aman (root-only):
+```bash
+sudo chmod 600 /etc/netora-dns/github.token
+```
+
+---
+
+### 🔍 Cara Verifikasi Bahwa Token Baru Sudah Berfungsi
+
+> [!NOTE]
+> **Zero-Downtime:** Anda **TIDAK PERLU** merestart service Unbound maupun Netora API setelah memperbarui token. Token dibaca secara dinamis dari file `/etc/netora-dns/github.token` setiap kali proses auto-update atau pengecekan remote berjalan.
+
+Uji keberhasilan token baru dengan salah satu langkah berikut:
+
+#### A. Verifikasi Koneksi Git Remote Langsung:
+```bash
+TOKEN=$(sudo cat /etc/netora-dns/github.token)
+git ls-remote "https://${TOKEN}@github.com/desienkz-slp/unbound.git" refs/heads/main
+```
+*Jika token valid, output akan menampilkan hash commit terbaru (misalnya: `6c354b2... refs/heads/main`).*
+
+#### B. Uji Jalankan Auto-Update Manual:
+```bash
+sudo netora update
+```
+
+#### C. Uji Endpoint Status API:
+```bash
+curl -s http://127.0.0.1:8080/api/v1/system/status?check_remote=true | jq .
+```
+Output jika berhasil:
+```json
+{
+  "channel": "development",
+  "git_commit": "6c354b2",
+  "remote_commit": "6c354b2",
+  "update_available": false
+}
+```
 
 ---
 

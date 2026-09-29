@@ -166,6 +166,31 @@ cmd_users() {
     fi
 }
 
+cmd_set_token() {
+    local tok="${1:-}"
+    if [[ -z "$tok" ]]; then
+        read -rsp "Enter new GitHub Personal Access Token (PAT): " tok
+        echo ""
+    fi
+    tok="$(echo "$tok" | tr -d '[:space:]')"
+    if [[ -z "$tok" ]]; then
+        echo -e "${RED}Error: Token cannot be empty!${NC}" >&2
+        exit 1
+    fi
+    mkdir -p /etc/netora-dns
+    echo "$tok" > /etc/netora-dns/github.token
+    chmod 600 /etc/netora-dns/github.token
+    echo -e "${GREEN}GitHub Token successfully updated in /etc/netora-dns/github.token (mode 600).${NC}"
+
+    echo -e "${CYAN}Verifying repository access with new token...${NC}"
+    local clean_url="github.com/desienkz-slp/unbound.git"
+    if GIT_TERMINAL_PROMPT=0 git ls-remote "https://${tok}@${clean_url}" refs/heads/main &>/dev/null; then
+        echo -e "${GREEN}Verification PASS: Token is valid and has read access!${NC}"
+    else
+        echo -e "${YELLOW}Warning: Could not verify token with GitHub. Please check internet connection or token permissions.${NC}"
+    fi
+}
+
 usage() {
     echo "Netora DNS Carrier CLI Utility"
     echo "Usage: netora <command> [options]"
@@ -180,6 +205,7 @@ usage() {
     echo "  info                 Display Web UI URL, node endpoints, and credentials"
     echo "  reset-password [u]   Reset NOC operator password directly on server"
     echo "  users                List all operator accounts and database status"
+    echo "  set-token [tok]      Update GitHub PAT token for auto-updates & verify"
     exit 1
 }
 
@@ -193,5 +219,7 @@ case "${1:-}" in
     info)           cmd_info ;;
     reset-password) shift; cmd_reset_password "$@" ;;
     users)          shift; cmd_users "$@" ;;
+    set-token|token) shift; cmd_set_token "$@" ;;
     *)              usage ;;
 esac
+
