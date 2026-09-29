@@ -301,12 +301,12 @@ else
   log_info "Cloning Netora repository from GitHub (${GIT_BRANCH})..."
   AUTH_CLONE_URL="$REPO_URL"
   if [[ -n "$GITHUB_TOKEN" ]]; then
-    AUTH_CLONE_URL="https://${GITHUB_TOKEN}@github.com/desienkz-slp/unbound.git"
+    AUTH_CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/desienkz-slp/unbound.git"
   fi
 
   rm -rf "$REPO_DIR"
-  if ! git clone --depth=1 --branch "$GIT_BRANCH" "$AUTH_CLONE_URL" "$REPO_DIR" 2>/dev/null; then
-    log_error "Failed to clone repository from GitHub. If this is a private repo, provide --github-token <TOKEN>."
+  if ! GIT_TERMINAL_PROMPT=0 git clone --depth=1 --progress --branch "$GIT_BRANCH" "$AUTH_CLONE_URL" "$REPO_DIR"; then
+    log_error "Failed to clone repository from GitHub. If this is a private repo, make sure to provide: --github-token <TOKEN>"
     exit 1
   fi
   log_success "Repository cloned to: ${REPO_DIR}"
