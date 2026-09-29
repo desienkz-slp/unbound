@@ -211,13 +211,19 @@ func (s *Server) CORS(next http.Handler) http.Handler {
 // Middleware: Authentication
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		tokenStr := ""
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+		} else if qToken := r.URL.Query().Get("token"); qToken != "" {
+			tokenStr = qToken
+		}
+
+		if tokenStr == "" {
 			s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing or invalid authorization header"})
 			return
 		}
 
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 		claims, err := auth.ValidateToken(tokenStr, s.jwtSecret)
 		if err != nil {
 			s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": fmt.Sprintf("unauthorized: %v", err)})
