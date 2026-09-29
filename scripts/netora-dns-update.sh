@@ -480,6 +480,23 @@ action_update() {
     # Update current symlink
     ln -sfn "$target_release_dir" "${NETORA_BASE}/current"
 
+    # Prune old releases beyond retention limit (keeps disk from filling with accumulated release dirs)
+    local total_releases
+    total_releases="$(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+    if [[ "$total_releases" -gt "$BACKUP_RETENTION" ]]; then
+        # Sort by modification time (oldest first), skip the BACKUP_RETENTION newest
+        find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T+ %p\n' | \
+            sort | head -n "$(( total_releases - BACKUP_RETENTION ))" | \
+            awk '{print $2}' | while read -r old_release; do
+                # Never prune the active current or previous revision
+                if [[ "$old_release" != "$target_release_dir" && "$old_release" != "${RELEASES_DIR}/${current_sha}" ]]; then
+                    rm -rf "$old_release"
+                    log_event "INFO" "release_pruned" "Pruned old release directory: ${old_release##*/}"
+                fi
+            done
+    fi
+
+
     # Synchronize Web UI distribution if present in release
     if [[ -d "${target_release_dir}/deploy/ui" ]]; then
         mkdir -p /var/www/netora-ui
