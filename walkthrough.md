@@ -1,110 +1,140 @@
-# Walkthrough: Penambahan Sistem Logrotate & AI Storage Guard pada Netora DNS Tuning
+# Walkthrough — Perbaikan Masalah Menu Tuning & Profile Blank
 
-## Ringkasan Perubahan
+## 1. Ringkasan Investigasi & Akar Masalah (Root Cause)
 
-Fitur **Host Log Rotation (Logrotate) & Storage AI Guard** telah berhasil ditambahkan ke dalam ekosistem **Tuning & Profiles** Netora DNS. Fitur ini memungkinkan sistem DNS Unbound melakukan auto-tuning siklus rotasi log secara otomatis, kustomisasi penuh sesuai kondisi kapasitas disk & CPU/RAM server, serta memberikan rekomendasi cerdas berbasis analisis perangkat keras (AI Reasoning Advisor) untuk mencegah server crash akibat disk penuh (*disk exhaustion / ENOSPC*).
+Berdasarkan investigasi nyata pada Server **172.18.20.146** dan pelacakan alur eksekusi aplikasi frontend/backend, ditemukan akar masalah yang menyebabkan halaman **Tuning & Profile** menjadi blank (kosong):
 
----
-
-## 1. Temuan Investigasi Nyata di Server
-
-Sebelum implementasi, dilakukan audit diagnostik mendalam pada server produksi dan pengembangan:
-1. **Silent Failure pada Logrotate Bawaan:**
-   - File `/etc/logrotate.d/unbound` tidak memiliki directive `su unbound unbound`.
-   - Pada Linux Ubuntu 20.04/22.04+, `logrotate` secara otomatis menolak dan membatalkan rotasi file jika direktori induknya (`/var/log/unbound`) memiliki permission grup non-root tanpa directive `su`.
-   - Hasil pengujian debug `logrotate -d /etc/logrotate.d/unbound`:
-     ```text
-     error: skipping "/var/log/unbound/unbound.log" because parent directory has insecure permissions
-     Set "su" directive in config file to tell logrotate which user/group should be used for rotation.
+1. **Kendala Hak Akses Migrasi PostgreSQL (Table Ownership):**
+   - Pada Server 146, tabel `nodes` dibuat dengan pemilik (*owner*) user `postgres`.
+   - Backend `netora-api` terhubung menggunakan akun `netora`. Dalam PostgreSQL, perintah `ALTER TABLE` membutuhkan hak kepemilikan tabel (*table owner*) atau superuser.
+   - Akibatnya, perintah `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT ...` pada inisialisasi backend gagal secara senyap (*silent failure*).
+2. **Kegagalan Query Node List:**
+   - Karena kolom `disk_total_gb` belum terbuat di tabel `nodes`, panggilan REST API `GET /api/v1/nodes` menghasilkan error database:
      ```
-2. **Penumpukan Log DNS Query:**
-   - File `/var/log/unbound/unbound.log` dan arsipnya membengkak hingga **152 MB** pada server VPS/Edge dengan kapasitas disk hanya 7.8 GB (tersisa hanya 1.2 GB / 84% terpakai).
-   - Menghasilkan error sistem `ENOSPC: No space left on device` saat proses backup otomatis berlangsung.
-3. **Keterbatasan Sistem Tuning Lama:**
-   - Halaman *Performance & Tuning* sebelumnya hanya membaca metrik CPU dan RAM, belum memonitor ruang penyimpanan disk, volume log aktif, maupun status penjadwalan rotasi log host.
+     pq: column "disk_total_gb" does not exist at position 2:13 (42703)
+     ```
+3. **Pemutusan Rantai Inisialisasi Frontend:**
+   - Pada file [App.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/App.tsx), fungsi `loadInitialData()` memanggil `await api.getNodes()`.
+   - Ketika `getNodes()` melempar exception, alur JavaScript langsung melompat ke blok `catch` sebelum sempat memanggil `api.getDesiredState(activeId)` dan `setConfig(cfg)`.
+   - Akibatnya, state `config` bernilai `null`.
+4. **Blank Render Guard pada PerformanceView:**
+   - Pada [PerformanceView.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/views/PerformanceView.tsx) baris 238 terdapat guard:
+     ```tsx
+     if (!localConfig) return null;
+     ```
+   - Karena `config` bernilai `null`, komponen merender `null` (layar kosong/blank) tanpa pesan error atau loading spinner.
 
 ---
 
-## 2. Arsitektur & Implementasi Solusi
+## 2. Perubahan & Perbaikan yang Diterapkan
 
-### A. Backend Go Engine (`pkg/logrotate/`)
-Dibuat paket modular baru `pkg/logrotate` dengan komponen:
-- **`model.go`**: Mendefinisikan struct `LogrotatePolicy`, `LogTelemetry`, `AIRecommendation`, dan `LogrotateReport`.
-- **`engine.go`**:
-  - `CalculateAIRecommendation()`: Mesin analisis cerdas yang mengevaluasi CPU cores, total RAM, total disk, sisa disk kosong, persentase penggunaan disk, dan volume log saat ini.
-  - `GenerateUnboundConfig()`: Generator konfigurasi `/etc/logrotate.d/unbound` standar dengan proteksi `su unbound unbound`, ambang batas `maxsize`, kompresi gzip, dan perintah atomik `/usr/sbin/unbound-control log_reopen`.
-  - `GenerateNetoraConfig()`: Generator konfigurasi `/etc/logrotate.d/netora-dns` dengan mekanisme `copytruncate`.
-- **`manager_linux.go`**:
-  - `inspectHostLogrotate()`: Membaca statistik log aktif, arsip terotasi, status directive `su`, dan tanggal rotasi terakhir dari `/var/lib/logrotate/status`.
-  - `applyHostLogrotate()`: Menulis konfigurasi ke `/etc/logrotate.d/` dan menjalankan verifikasi sintaks via `logrotate -d`.
-  - `forceRotateHost()`: Menjalankan `logrotate -f /etc/logrotate.d/unbound` untuk reklamasi ruang disk seketika.
-- **`manager_other.go`**: Mock/stub aman untuk lingkungan non-Linux (pengembangan lokal Windows).
-- **`engine_test.go`**: Unit test komprehensif untuk algoritma AI, generator konfigurasi, dan format byte.
+### A. Backend Storage Resilience ([pkg/storage/postgres.go](file:///c:/xampp/htdocs/auto-install/unbound/pkg/storage/postgres.go))
+- Menambahkan fallback query transparan pada metode `UpsertNode()`, `GetNode()`, dan `ListNodes()`.
+- Jika PostgreSQL mengembalikan error `column "disk_total_gb" does not exist` (kode SQL 42703), backend secara otomatis mengeksekusi fallback query tanpa kolom disk (`disk_total_gb = 0`, `disk_free_gb = 0`) sehingga endpoint `/api/v1/nodes` **tidak akan pernah mengalami crash atau gagal kirim data**.
 
-### B. Auto-Migration Idempotent Database (`pkg/storage/postgres.go`)
-Menambahkan perintah auto-migration pada `NewPostgresStore`:
-```go
-_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT NOT NULL DEFAULT 0;`)
-_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_free_gb INT NOT NULL DEFAULT 0;`)
+### B. Otomatisasi Migrasi Updater ([scripts/netora-dns-update.sh](file:///c:/xampp/htdocs/auto-install/unbound/scripts/netora-dns-update.sh))
+- Menambahkan langkah migrasi skema database berbasis root sebelum merestart service `netora-api`:
+  ```bash
+  su - postgres -c "psql -d netora -c '
+      ALTER TABLE IF EXISTS nodes OWNER TO netora;
+      ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT NOT NULL DEFAULT 0;
+      ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS disk_free_gb INT NOT NULL DEFAULT 0;
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO netora;
+  '"
+  ```
+
+### C. Standardisasi Fresh Installer ([install.sh](file:///c:/xampp/htdocs/auto-install/unbound/install.sh))
+- Memperbarui alur migrasi database agar mengeksekusi seluruh berkas skema di direktori `migrations/*.sql` secara berurutan dan mengalihkan seluruh kepemilikan tabel skema publik ke user `netora` (`ALTER TABLE ... OWNER TO ${DB_USER}`).
+
+### D. Isolasi Inisialisasi Frontend ([web/src/App.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/App.tsx))
+- Mengisolasi pemanggilan `api.getNodes()`, `api.getDesiredState()`, dan `api.getNodeHealth()` dalam blok `try-catch` terpisah.
+- Menambahkan fallback otomatis pendeteksian `node_id` melalui endpoint versi sistem (`/api/v1/system/version`) jika daftar node kosong/gagal, sehingga konfigurasi desired state tetap dapat dimuat dengan sempurna.
+
+### E. Eliminasi Layar Blank ([web/src/views/PerformanceView.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/views/PerformanceView.tsx))
+- Menghapus klausa `if (!localConfig) return null;` dan menggantikannya dengan tampilan loading skeleton modern:
+  - Ikon spinner cyan beranimasi dengan efek glow.
+  - Judul *"Memuat Konfigurasi Hardware & Profil..."*.
+  - Informasi node aktif yang sedang dimuat.
+- Memperbaiki penanganan `effectiveNodeId = nodeId || node?.id || ''` agar seluruh fitur rotasi log (laporan AI, uji dry-run, dan rotasi darurat) selalu menggunakan ID node yang valid.
+
+---
+
+## 3. Hasil Pengujian & Verifikasi Nyata di Server Produksi
+
+### A. Rilis & Deployment Mandiri (GitHub & Server 146)
+- Seluruh kode frontend telah di-*compile* (`npm run build`), aset Web UI (`dist/*`) dipindahkan ke `deploy/ui/`, dan binary Go backend (`netora-api-linux-amd64` & `netora-cli-linux-amd64`) dikompilasi untuk arsitektur Linux AMD64.
+- Perubahan di-commit dan di-push ke GitHub:
+  - **Commit:** `c869391`
+  - **Version:** `v1.0.86 (Build 86)`
+- Update dipicu secara otonom melalui HTTP API `POST /api/v1/system/update`. Log rilis `/var/log/netora-dns/update.log` mencatat:
+  ```json
+  {"time":"2026-09-29T06:52:41Z","level":"INFO","event":"health_check_started","message":"Running comprehensive DNS data-plane health checks"}
+  {"time":"2026-09-29T06:52:47Z","level":"INFO","event":"health_check_passed","message":"DNS Health Check: PASS (4/4 probes succeeded)"}
+  {"time":"2026-09-29T06:52:47Z","level":"INFO","event":"update_completed","message":"Update to revision c869391dec9883235ba96280cd4f5d5dbe3c0de0 successfully completed in 110s"}
+  ```
+
+### B. Verifikasi Skema Database PostgreSQL di Server 146
+Query skema tabel `nodes` di database `netora`:
 ```
-Menjamin seluruh node cluster yang diperbarui otomatis memiliki skema database yang sinkron tanpa perlu eksekusi skrip manual.
+                                        Table "public.nodes"
+     Column      |           Type           | Collation | Nullable |           Default            
+-----------------+--------------------------+-----------+----------+------------------------------
+ id              | character varying(64)    |           | not null | 
+ hostname        | character varying(128)   |           | not null | 
+ management_ip   | character varying(64)    |           | not null | 
+ status          | character varying(32)    |           | not null | 'HEALTHY'::character varying
+ unbound_version | character varying(64)    |           |          | 
+ cpu_cores       | integer                  |           | not null | 1
+ ram_mb          | integer                  |           | not null | 1024
+ config_json     | jsonb                    |           |          | 
+ last_seen_at    | timestamp with time zone |           |          | 
+ created_at      | timestamp with time zone |           | not null | now()
+ updated_at      | timestamp with time zone |           | not null | now()
+ disk_total_gb   | integer                  |           | not null | 0
+ disk_free_gb    | integer                  |           | not null | 0
+```
+- **Owner:** `netora`
+- Kolom `disk_total_gb` dan `disk_free_gb` telah aktif dan sinkron.
 
-### C. REST API Endpoints (`cmd/netora-api/server.go`)
-Menambahkan sub-rute baru pada node API:
-| Method | Endpoint | Fungsi |
-|---|---|---|
-| `GET` | `/api/v1/nodes/{id}/logrotate` | Mengambil telemetri log, status keamanan `su`, dan rekomendasi AI |
-| `POST` | `/api/v1/nodes/{id}/logrotate/apply` | Menerapkan konfigurasi logrotate ke sistem operasi host |
-| `POST` | `/api/v1/nodes/{id}/logrotate/test` | Menjalankan uji validasi dry-run (`logrotate -d`) |
-| `POST` | `/api/v1/nodes/{id}/logrotate/force-rotate` | Melakukan rotasi paksa darurat untuk mengosongkan disk |
+### C. Verifikasi REST API Telemetri & Desired State Server 146
+Pengujian endpoint menggunakan auth token:
+1. **`GET /api/v1/nodes`**:
+   ```json
+   {
+       "id": "netora-dns1",
+       "hostname": "netora-dns1",
+       "management_ip": "172.18.20.146",
+       "status": "HEALTHY",
+       "unbound_version": "1.19.2",
+       "cpu_cores": 4,
+       "ram_mb": 15615,
+       "disk_total_gb": 14,
+       "disk_free_gb": 4
+   }
+   ```
+2. **`GET /api/v1/nodes/netora-dns1/config`**:
+   ```
+   Desired state loaded: Profile=ISP, Threads=4, MsgCache=1024m
+   ```
+3. **`GET /api/v1/nodes/netora-dns1/logrotate`**:
+   ```
+   Logrotate report: Frequency=daily, MaxSize=50M, Title=Keseimbangan Performa & Riwayat Diagnostik
+   ```
 
-### D. Frontend Antarmuka NOC (`web/src/views/PerformanceView.tsx`)
-1. **Tab Switcher Navigasi:**
-   - `Semua Sistem Tuning`
-   - `CPU & Cache Engine`
-   - `Logrotate & Storage AI Guard` (dilengkapi badge peringatan jika status log tidak sehat).
-2. **4 Kartu Telemetri Real-Time:**
-   - Log Aktif Unbound (`/var/log/unbound/unbound.log`).
-   - Arsip Terotasi (jumlah file & total ukuran terkompresi).
-   - Total Jejak Log di Disk (termasuk updater log).
-   - Status Kesehatan Rotasi (indikator hijau/merah untuk directive `su`).
-3. **Hero Card Rekomendasi AI:**
-   - Menjelaskan rasional teknis mengapa konfigurasi tertentu direkomendasikan untuk hardware spesifik server.
-   - Tombol **"⚡ Auto-Tune dengan AI"** untuk menerapkan parameter ideal dalam satu klik.
-4. **Preset Profil:**
-   - *Ultra Storage Saver* (Disk &le; 10GB / Free &le; 2GB): Daily, 2–3 rotasi, maxsize 15M–25M, gzip + delaycompress.
-   - *Balanced Standard* (Disk 10–40GB): Daily, 7 rotasi, maxsize 50M, gzip + delaycompress.
-   - *Carrier Audit Retention* (Disk &gt; 40GB): Weekly, 30 rotasi, maxsize 100M, gzip.
-5. **Form Kustomisasi & Live Syntax Preview:**
-   - Kontrol frekuensi, jumlah retensi, ambang batas `maxsize`, kompresi gzip, dan penundaan kompresi (`delaycompress`).
-   - Pratinjau teks `/etc/logrotate.d/unbound` secara langsung.
-6. **Action Toolbar & Interactive Console:**
-   - Tombol Uji Validasi (Dry Run), Rotasi Sekarang (Paksa & Kosongkan), dan Terapkan Konfigurasi.
-   - Jendela konsol terminal interaktif untuk melihat log eksekusi secara transparan.
+### D. Verifikasi Aset Web UI di Server 146
+- Bundle file baru telah terpasang di `/var/www/netora-ui`:
+  - `index-D7kqQxl-.js` (492 KB)
+  - `index-DyMxgM4t.css` (45.9 KB)
+  - `version.json` menunjukkan versi `v1.0.86 / c869391`
+- Request HTTP `GET http://172.18.20.146:8080/` mengembalikan `HTTP 200 OK`.
 
 ---
 
-## 3. Hasil Pengujian & Verifikasi
+## 4. Status Penyelesaian
 
-### Pengujian di Server Dev (172.18.20.145)
-1. **Pengambilan Telemetri & Rekomendasi AI:**
-   - Terdeteksi: Disk 7.8GB, sisa 1GB (85% terpakai), log Unbound 151.7 MB.
-   - Deteksi masalah: Directive `su unbound unbound` hilang (status: `CRITICAL`).
-   - Rekomendasi AI: Profil `STORAGE_SAVER` (Daily, retensi 2x, maxsize 15M, kompresi gzip aktif).
-2. **Penerapan Konfigurasi Otomatis:**
-   - File `/etc/logrotate.d/unbound` berhasil diperbarui dengan menyertakan `su unbound unbound`.
-   - Validasi `logrotate -d` berjalan mulus tanpa peringatan permission.
-3. **Eksekusi Rotasi Paksa (Reclaim Disk):**
-   - File log Unbound terpangkas dari **151.7 MB** menjadi **31.4 MB**.
-   - Sisa ruang disk meningkat dari 1.2 GB menjadi **1.4 GB**.
-   - Directive `su unbound unbound` terkonfirmasi aktif dan aman.
-
----
-
-## 4. Panduan Operasional NOC
-
-1. Buka menu **Tuning & Profiles** di Web UI Netora DNS (`http://<ip-node>:8080/`).
-2. Pilih tab **Logrotate & Storage AI Guard**.
-3. Periksa kartu status telemetri dan kartu rekomendasi AI.
-4. Untuk menerapkan rekomendasi ideal, klik tombol **"Auto-Tune dengan AI"**, lalu klik **"Terapkan Konfigurasi Logrotate"**.
-5. Jika server mengalami lonjakan log mendadak yang menghabiskan disk, klik tombol **"Rotasi Sekarang (Paksa & Kosongkan)"** untuk membebaskan ruang disk seketika tanpa menghentikan layanan DNS Unbound.
+- [x] Akar masalah penyebab halaman blank berhasil diidentifikasi tanpa asumsi.
+- [x] Hak kepemilikan tabel dan kolom `disk_total_gb`/`disk_free_gb` telah diperbaiki di PostgreSQL.
+- [x] Backend Go dilengkapi fallback transparan anti-crash.
+- [x] Frontend React bebas dari blank render (`return null`) dan dilengkapi skeleton loader responsif.
+- [x] Kode baru berhasil di-*build*, di-push ke GitHub, dan di-*deploy* ke server 146 via auto-update.
+- [x] Seluruh endpoint konfigurasi, hardware telemetri, dan rotasi log terverifikasi 100% normal dan operasional.
