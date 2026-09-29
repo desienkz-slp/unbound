@@ -61,12 +61,37 @@ server:
   serve-expired: {{ if .Features.ServeExpired }}yes{{ else }}no{{ end }}
 {{- if .Features.ServeExpired }}
   serve-expired-ttl: {{ .Features.ServeExpiredTTL }}
+  serve-expired-ttl-reset: {{ if .Features.ServeExpiredTTLReset }}yes{{ else }}no{{ end }}
   serve-expired-client-timeout: {{ .Features.ServeExpiredClientTimeout }}
   serve-expired-reply-ttl: {{ .Features.ServeExpiredReplyTTL }}
 {{- end }}
   cache-min-ttl: {{ .Cache.MinTTL }}
   cache-max-ttl: {{ .Cache.MaxTTL }}
   infra-host-ttl: {{ .Cache.InfraHostTTL }}
+
+  # --- 5b. Anti-DDoS Subnet Rate Limiting & RRL Shield ---
+{{- if .RateLimit.Enabled }}
+{{- if gt .RateLimit.IPRateLimit 0 }}
+  ip-ratelimit: {{ .RateLimit.IPRateLimit }}
+  ip-ratelimit-factor: {{ if gt .RateLimit.IPRateLimitFactor 0 }}{{ .RateLimit.IPRateLimitFactor }}{{ else }}10{{ end }}
+{{- if .RateLimit.RateLimitSize }}
+  ip-ratelimit-size: {{ .RateLimit.RateLimitSize }}
+{{- end }}
+{{- if gt .RateLimit.RateLimitSlabs 0 }}
+  ip-ratelimit-slabs: {{ .RateLimit.RateLimitSlabs }}
+{{- end }}
+{{- end }}
+{{- if gt .RateLimit.DomainRateLimit 0 }}
+  ratelimit: {{ .RateLimit.DomainRateLimit }}
+  ratelimit-factor: 10
+{{- if .RateLimit.RateLimitSize }}
+  ratelimit-size: {{ .RateLimit.RateLimitSize }}
+{{- end }}
+{{- if gt .RateLimit.RateLimitSlabs 0 }}
+  ratelimit-slabs: {{ .RateLimit.RateLimitSlabs }}
+{{- end }}
+{{- end }}
+{{- end }}
 
   # --- 6. Hardware Multi-Threading & Cache Allocations ---
   num-threads: {{ .Performance.NumThreads }}

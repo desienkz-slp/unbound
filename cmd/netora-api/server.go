@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"netora-dns/pkg/auth"
+	"netora-dns/pkg/backup"
 	"netora-dns/pkg/blocklist"
 	"netora-dns/pkg/cluster"
 	"netora-dns/pkg/configengine"
@@ -29,19 +30,20 @@ import (
 
 // Server encapsulates the Netora REST API dependencies.
 type Server struct {
-	store            storage.Store
-	engine           *configengine.Engine
-	policyEngine     *policy.PolicyEngine
-	blocklistManager *blocklist.Manager
-	healthChecker    *runtime.DNSHealthChecker
-	jwtSecret        string
-	nodeID           string
-	metrics          *telemetry.Metrics
-	alertEngine      *telemetry.AlertEngine
-	clusterManager   *cluster.ClusterManager
-	investigator     *hermes.Investigator
-	queryLogTailer   *telemetry.QueryLogTailer
-	logrotateManager *logrotate.Manager
+	store                 storage.Store
+	engine                *configengine.Engine
+	policyEngine          *policy.PolicyEngine
+	blocklistManager      *blocklist.Manager
+	healthChecker         *runtime.DNSHealthChecker
+	jwtSecret             string
+	nodeID                string
+	metrics               *telemetry.Metrics
+	alertEngine           *telemetry.AlertEngine
+	clusterManager        *cluster.ClusterManager
+	investigator          *hermes.Investigator
+	queryLogTailer        *telemetry.QueryLogTailer
+	logrotateManager      *logrotate.Manager
+	databaseBackupManager *backup.DatabaseManager
 
 	updateMu       sync.Mutex
 	isUpdating     bool
@@ -90,20 +92,33 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		tailer = telemetry.NewQueryLogTailer("/var/log/unbound/unbound.log")
 	}
 
+	dbBackupMgr, _ := backup.NewDatabaseManager("/var/backups/netora-dns/database", "", nodeID)
+
 	return &Server{
-		store:            store,
-		engine:           engine,
-		policyEngine:     policyEngine,
-		blocklistManager: bm,
-		healthChecker:    hc,
-		jwtSecret:        jwtSecret,
-		nodeID:           nodeID,
-		metrics:          metrics,
-		alertEngine:      alertEngine,
-		clusterManager:   cm,
-		investigator:     inv,
-		queryLogTailer:   tailer,
-		logrotateManager: logrotate.NewManager(),
+		store:                 store,
+		engine:                engine,
+		policyEngine:          policyEngine,
+		blocklistManager:      bm,
+		healthChecker:         hc,
+		jwtSecret:             jwtSecret,
+		nodeID:                nodeID,
+		metrics:               metrics,
+		alertEngine:           alertEngine,
+		clusterManager:        cm,
+		investigator:          inv,
+		queryLogTailer:        tailer,
+		logrotateManager:      logrotate.NewManager(),
+		databaseBackupManager: dbBackupMgr,
+	}
+}
+
+// SetDatabaseURL configures the real PostgreSQL database connection string for disaster recovery backups.
+func (s *Server) SetDatabaseURL(dbURL string) {
+	if dbURL != "" {
+		mgr, err := backup.NewDatabaseManager("/var/backups/netora-dns/database", dbURL, s.nodeID)
+		if err == nil {
+			s.databaseBackupManager = mgr
+		}
 	}
 }
 
@@ -114,6 +129,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/system/version", s.handleSystemVersion)
 	mux.HandleFunc("/api/v1/system/update", s.requireAuth(s.handleSystemUpdate))
 	mux.HandleFunc("/api/v1/system/update/status", s.handleSystemUpdateStatus)
+
+	// Database Disaster Recovery & Snapshots
+	mux.HandleFunc("/api/v1/system/backups/database", s.requireAuth(s.handleDatabaseBackups))
+	mux.HandleFunc("/api/v1/system/backups/database/", s.requireAuth(s.handleDatabaseBackupOperations))
 
 	// Prometheus Telemetry
 	mux.HandleFunc("/metrics", s.metrics.PrometheusHandler())
@@ -1592,5 +1611,169 @@ func buildAuthenticatedRepoURL(repoURL, tokenFile string) string {
 	}
 	cleanURL := strings.TrimPrefix(repoURL, "https://")
 	return "https://" + token + "@" + cleanURL
+}
+
+// Handler: Database Disaster Recovery Backups (/api/v1/system/backups/database)
+func (s *Server) handleDatabaseBackups(w http.ResponseWriter, r *http.Request) {
+	if s.databaseBackupManager == nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Database backup manager not initialized"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		backups, err := s.databaseBackupManager.ListBackups()
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to list database backups: %v", err)})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"backups": backups,
+			"total":   len(backups),
+			"node_id": s.nodeID,
+		})
+
+	case http.MethodPost:
+		var req struct {
+			Description string `json:"description"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		info, err := s.databaseBackupManager.CreateBackup(r.Context(), req.Description)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to create database backup: %v", err)})
+			return
+		}
+
+		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
+		actor := "system"
+		if claims != nil {
+			actor = claims.Username
+		}
+		_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+			Actor:    actor,
+			Action:   "DB_BACKUP_CREATE",
+			Target:   s.nodeID,
+			Details:  fmt.Sprintf("Created database snapshot %s (%.2f MB)", info.Filename, info.SizeMB),
+			ClientIP: r.RemoteAddr,
+			Status:   "SUCCESS",
+		})
+
+		s.writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"message": "Database backup created successfully",
+			"backup":  info,
+		})
+
+	default:
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+// Handler: Database Disaster Recovery Operations (/api/v1/system/backups/database/{filename}/[download|restore])
+func (s *Server) handleDatabaseBackupOperations(w http.ResponseWriter, r *http.Request) {
+	if s.databaseBackupManager == nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Database backup manager not initialized"})
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/system/backups/database/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Backup filename is required"})
+		return
+	}
+
+	filename := parts[0]
+
+	if len(parts) == 2 && parts[1] == "download" {
+		if r.Method != http.MethodGet {
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		info, err := s.databaseBackupManager.GetBackup(filename)
+		if err != nil {
+			s.writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Backup file not found: %v", err)})
+			return
+		}
+
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", info.Filename))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, info.FilePath)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "restore" {
+		if r.Method != http.MethodPost {
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if err := s.databaseBackupManager.RestoreBackup(r.Context(), filename); err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to restore database: %v", err)})
+			return
+		}
+
+		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
+		actor := "system"
+		if claims != nil {
+			actor = claims.Username
+		}
+		_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+			Actor:    actor,
+			Action:   "DB_BACKUP_RESTORE",
+			Target:   s.nodeID,
+			Details:  fmt.Sprintf("Restored database from snapshot %s", filename),
+			ClientIP: r.RemoteAddr,
+			Status:   "SUCCESS",
+		})
+
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"message":  "Database restored successfully from snapshot",
+			"filename": filename,
+		})
+		return
+	}
+
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			info, err := s.databaseBackupManager.GetBackup(filename)
+			if err != nil {
+				s.writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("Backup not found: %v", err)})
+				return
+			}
+			s.writeJSON(w, http.StatusOK, info)
+
+		case http.MethodDelete:
+			if err := s.databaseBackupManager.DeleteBackup(filename); err != nil {
+				s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to delete backup: %v", err)})
+				return
+			}
+
+			claims, _ := r.Context().Value("user_claims").(*auth.Claims)
+			actor := "system"
+			if claims != nil {
+				actor = claims.Username
+			}
+			_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+				Actor:    actor,
+				Action:   "DB_BACKUP_DELETE",
+				Target:   s.nodeID,
+				Details:  fmt.Sprintf("Deleted database snapshot %s", filename),
+				ClientIP: r.RemoteAddr,
+				Status:   "SUCCESS",
+			})
+
+			s.writeJSON(w, http.StatusOK, map[string]interface{}{
+				"message":  "Database snapshot deleted successfully",
+				"filename": filename,
+			})
+
+		default:
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
+		return
+	}
+
+	s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "endpoint not found"})
 }
 

@@ -189,3 +189,54 @@ func TestGenerator_AllFilterConfigs(t *testing.T) {
 	}
 }
 
+func TestGenerator_ResiliencyAndRateLimit(t *testing.T) {
+	gen, err := NewGenerator()
+	if err != nil {
+		t.Fatalf("failed to create generator: %v", err)
+	}
+
+	state := model.NewDefaultDesiredState("node-isp", 4, 8192)
+	state.Features.Prefetch = true
+	state.Features.PrefetchKey = true
+	state.Features.ServeExpired = true
+	state.Features.ServeExpiredTTL = 86400
+	state.Features.ServeExpiredTTLReset = true
+	state.Features.ServeExpiredClientTimeout = 1800
+	state.Features.ServeExpiredReplyTTL = 30
+
+	state.RateLimit.Enabled = true
+	state.RateLimit.IPRateLimit = 600
+	state.RateLimit.IPRateLimitFactor = 10
+	state.RateLimit.DomainRateLimit = 2500
+	state.RateLimit.RateLimitSize = "32m"
+	state.RateLimit.RateLimitSlabs = 4
+
+	res, err := gen.Generate(state, "/etc/unbound")
+	if err != nil {
+		t.Fatalf("failed to generate config: %v", err)
+	}
+
+	mainConf := string(res.Files[0].Content)
+
+	expectedDirectives := []string{
+		"prefetch: yes",
+		"prefetch-key: yes",
+		"serve-expired: yes",
+		"serve-expired-ttl: 86400",
+		"serve-expired-ttl-reset: yes",
+		"serve-expired-client-timeout: 1800",
+		"serve-expired-reply-ttl: 30",
+		"ip-ratelimit: 600",
+		"ip-ratelimit-factor: 10",
+		"ip-ratelimit-size: 32m",
+		"ip-ratelimit-slabs: 4",
+		"ratelimit: 2500",
+	}
+
+	for _, dir := range expectedDirectives {
+		if !strings.Contains(mainConf, dir) {
+			t.Errorf("expected directive %q in generated unbound.conf, but not found", dir)
+		}
+	}
+}
+

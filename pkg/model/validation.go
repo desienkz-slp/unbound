@@ -184,5 +184,18 @@ func ValidateDesiredState(state *DesiredState) []ValidationError {
 		}
 	}
 
+	// 7. Validate Anti-DDoS Rate Limiting
+	if state.RateLimit.Enabled {
+		if state.RateLimit.IPRateLimit < 0 {
+			errs = append(errs, ValidationError{Field: "rate_limit.ip_rate_limit", Message: "IP rate limit cannot be negative"})
+		}
+		if state.RateLimit.DomainRateLimit < 0 {
+			errs = append(errs, ValidationError{Field: "rate_limit.domain_rate_limit", Message: "domain rate limit cannot be negative"})
+		}
+		if state.RateLimit.IPRateLimitFactor < 0 {
+			errs = append(errs, ValidationError{Field: "rate_limit.ip_rate_limit_factor", Message: "rate limit factor cannot be negative"})
+		}
+	}
+
 	return errs
 }

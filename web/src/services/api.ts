@@ -14,6 +14,7 @@ import {
   LogrotateReport,
   LogrotatePolicy,
   LogrotateApplyResult,
+  DatabaseBackupInfo,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -294,6 +295,36 @@ class ApiClient {
     return this.request(`/nodes/${nodeId}/logrotate/force-rotate`, {
       method: 'POST',
     });
+  }
+
+  // Database Disaster Recovery Snapshots
+  async getDatabaseBackups(): Promise<DatabaseBackupInfo[]> {
+    const res = await this.request<{ backups: DatabaseBackupInfo[] }>('/system/backups/database');
+    return res.backups || [];
+  }
+
+  async createDatabaseBackup(description?: string): Promise<{ status: string; message: string; backup: DatabaseBackupInfo }> {
+    return this.request('/system/backups/database', {
+      method: 'POST',
+      body: JSON.stringify({ description: description || 'Manual backup via Web UI' }),
+    });
+  }
+
+  async deleteDatabaseBackup(filename: string): Promise<{ status: string; message: string }> {
+    return this.request(`/system/backups/database/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async restoreDatabaseBackup(filename: string): Promise<{ status: string; message: string }> {
+    return this.request(`/system/backups/database/${encodeURIComponent(filename)}/restore`, {
+      method: 'POST',
+    });
+  }
+
+  getDatabaseBackupDownloadUrl(filename: string): string {
+    const token = this.getToken();
+    return `${API_BASE}/system/backups/database/${encodeURIComponent(filename)}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   }
 }
 

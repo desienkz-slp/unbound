@@ -104,7 +104,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const [localConfig, setLocalConfig] = useState<DesiredState | null>(config);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'logrotate'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'resiliency' | 'logrotate'>('all');
 
   // ── Logrotate State ──────────────────────────────────────────────────────────
   const [logrotateReport, setLogrotateReport] = useState<LogrotateReport | null>(null);
@@ -303,6 +303,45 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
     });
   };
 
+  const applyResiliencyPreset = () => {
+    if (!localConfig) return;
+    setLocalConfig({
+      ...localConfig,
+      features: {
+        ...localConfig.features,
+        prefetch: true,
+        prefetch_key: true,
+        serve_expired: true,
+        serve_expired_ttl_reset: true,
+        serve_expired_ttl: 86400,
+        serve_expired_client_timeout: 200,
+      },
+    });
+    setMsg({
+      type: 'success',
+      text: 'Preset Carrier Resilience diterapkan (Prefetch Aktif, DNSKEY Prefetch, Serve-Expired Fallback, TTL Reset).',
+    });
+  };
+
+  const applyRateLimitPreset = (preset: { label: string; ip: number; ipFactor: number; domain: number; domainFactor: number }) => {
+    if (!localConfig) return;
+    setLocalConfig({
+      ...localConfig,
+      rate_limit: {
+        enabled: preset.ip > 0 || preset.domain > 0,
+        ip_rate_limit: preset.ip,
+        ip_rate_limit_factor: preset.ipFactor,
+        domain_rate_limit: preset.domain,
+        rate_limit_size: '16m',
+        rate_limit_slabs: localConfig.performance?.msg_cache_slabs || 4,
+      },
+    });
+    setMsg({
+      type: 'success',
+      text: `Preset Anti-DDoS '${preset.label}' diterapkan (${preset.ip} IP QPS / ${preset.domain} Domain QPS).`,
+    });
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setMsg(null);
@@ -369,6 +408,17 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
         >
           <Cpu className="w-3.5 h-3.5" />
           CPU & Cache Engine
+        </button>
+        <button
+          onClick={() => setActiveTab('resiliency')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+            activeTab === 'resiliency'
+              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5" />
+          Resiliency & Anti-DDoS
         </button>
         <button
           onClick={() => setActiveTab('logrotate')}
@@ -849,6 +899,395 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
         </div>
       </div>
     </>
+  )}
+
+  {/* ── Cache Resiliency & Anti-DDoS Subnet Shield ────────────────────────────── */}
+  {(activeTab === 'all' || activeTab === 'resiliency') && (
+    <div className="space-y-6 pt-4 border-t border-gray-800/80">
+      {/* Section Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              CARRIER RESILIENCE (RFC 8767)
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" />
+              SUBNET FLOOD DEFENSE
+            </span>
+          </div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2 mt-1">
+            <Zap className="w-5 h-5 text-amber-400" />
+            Cache Resiliency &amp; Anti-DDoS Subnet Rate Limiting
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Zero-latency cache proactive prefetch, offline fallback saat upstream down, dan mitigasi query flooding per-IP pelanggan.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={applyResiliencyPreset}
+            className="px-3 py-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+            title="Terapkan konfigurasi Carrier Grade untuk browsing 0ms dan tahan mati upstream"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Terapkan Preset Resiliency ISP</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Card 1: Cache Resiliency (Prefetch & Serve-Expired) ─────────────── */}
+      <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-800 gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Zap className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Cache Resiliency Engine (Prefetch &amp; Serve-Expired)</h3>
+              <p className="text-[11px] text-gray-400">Menjamin kecepatan browsing 0ms dan ketahanan saat internet upstream mengalami kendala.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+              localConfig.features.serve_expired
+                ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800'
+                : 'bg-gray-800 text-gray-400 border-gray-700'
+            }`}>
+              {localConfig.features.serve_expired ? '● Expired Fallback AKTIF' : '○ Expired Fallback MATI'}
+            </span>
+          </div>
+        </div>
+
+        {/* Feature Toggles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Toggle 1: Prefetch Hot Domains */}
+          <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-3.5 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="feature_prefetch"
+              checked={localConfig.features.prefetch}
+              onChange={(e) =>
+                setLocalConfig({
+                  ...localConfig,
+                  features: {
+                    ...localConfig.features,
+                    prefetch: e.target.checked,
+                  },
+                })
+              }
+              className="mt-1 rounded bg-gray-900 border-gray-700 text-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="feature_prefetch" className="cursor-pointer">
+              <span className="text-xs font-semibold text-white block">Prefetch Hot Domain Records</span>
+              <span className="text-[11px] text-gray-400 leading-relaxed block mt-0.5">
+                Otomatis memperbarui record populer di background sebelum TTL habis. Klien selalu mendapat respon cache instan (0ms).
+              </span>
+            </label>
+          </div>
+
+          {/* Toggle 2: Prefetch DNSKEY */}
+          <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-3.5 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="feature_prefetch_key"
+              checked={localConfig.features.prefetch_key}
+              onChange={(e) =>
+                setLocalConfig({
+                  ...localConfig,
+                  features: {
+                    ...localConfig.features,
+                    prefetch_key: e.target.checked,
+                  },
+                })
+              }
+              className="mt-1 rounded bg-gray-900 border-gray-700 text-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="feature_prefetch_key" className="cursor-pointer">
+              <span className="text-xs font-semibold text-white block">Prefetch DNSKEY (DNSSEC Acceleration)</span>
+              <span className="text-[11px] text-gray-400 leading-relaxed block mt-0.5">
+                Mengambil kunci kriptografi DNSSEC lebih awal sehingga validasi domain bertanda tangan berjalan tanpa jeda query tambahan.
+              </span>
+            </label>
+          </div>
+
+          {/* Toggle 3: Serve-Expired Fallback */}
+          <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-3.5 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="feature_serve_expired"
+              checked={localConfig.features.serve_expired}
+              onChange={(e) =>
+                setLocalConfig({
+                  ...localConfig,
+                  features: {
+                    ...localConfig.features,
+                    serve_expired: e.target.checked,
+                  },
+                })
+              }
+              className="mt-1 rounded bg-gray-900 border-gray-700 text-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="feature_serve_expired" className="cursor-pointer">
+              <span className="text-xs font-semibold text-white block">Serve-Expired Fallback (Tahan Upstream Down)</span>
+              <span className="text-[11px] text-gray-400 leading-relaxed block mt-0.5">
+                Jika server authoritative luar lambat atau tidak dapat dijangkau, sajikan cache kedaluwarsa agar pelanggan tetap dapat browsing.
+              </span>
+            </label>
+          </div>
+
+          {/* Toggle 4: Serve-Expired TTL Reset */}
+          <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-3.5 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="feature_serve_expired_ttl_reset"
+              checked={localConfig.features.serve_expired_ttl_reset ?? true}
+              onChange={(e) =>
+                setLocalConfig({
+                  ...localConfig,
+                  features: {
+                    ...localConfig.features,
+                    serve_expired_ttl_reset: e.target.checked,
+                  },
+                })
+              }
+              className="mt-1 rounded bg-gray-900 border-gray-700 text-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="feature_serve_expired_ttl_reset" className="cursor-pointer">
+              <span className="text-xs font-semibold text-white block">Reset TTL to 0s for Expired Responses</span>
+              <span className="text-[11px] text-gray-400 leading-relaxed block mt-0.5">
+                Mengirimkan TTL 0 detik kepada klien sehingga gadget/browser pelanggan tidak menyimpan data basi dan langsung update saat upstream pulih.
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Resiliency Numeric Parameters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono pt-2 border-t border-gray-800/60">
+          <div>
+            <label className="block text-gray-400 mb-1">
+              Max Expired Retention (<span className="text-amber-400">serve-expired-ttl</span>) [Detik]
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={localConfig.features.serve_expired_ttl}
+              onChange={(e) =>
+                setLocalConfig({
+                  ...localConfig,
+                  features: {
+                    ...localConfig.features,
+                    serve_expired_ttl: parseInt(e.target.value) || 0,
+                  },
+                })
+              }
+              className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-white"
+            />
+            <span className="text-[10px] text-gray-500 block mt-1">Default: 86400 (24 Jam). 0 = pertahankan tanpa batas waktu.</span>
+          </div>
+
+          <div>
+            <label className="block text-gray-400 mb-1">
+              Client Timeout Fallback (<span className="text-amber-400">serve-expired-client-timeout</span>) [Milidetik]
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={localConfig.features.serve_expired_client_timeout}
+              onChange={(e) =>
+                setLocalConfig({
+                  ...localConfig,
+                  features: {
+                    ...localConfig.features,
+                    serve_expired_client_timeout: parseInt(e.target.value) || 0,
+                  },
+                })
+              }
+              className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-white"
+            />
+            <span className="text-[10px] text-gray-500 block mt-1">Waktu tunggu respon upstream sebelum fallback expired (200ms recommended, 0ms = instan).</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Card 2: Anti-DDoS Subnet Rate Limiting & RRL Shield ─────────────── */}
+      <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-800 gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Anti-DDoS Subnet Rate Limiting &amp; RRL Shield</h3>
+              <p className="text-[11px] text-gray-400">Proteksi Response Rate Limiting (RRL) terhadap DNS Amplification Attack dan infeksi botnet.</p>
+            </div>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => applyRateLimitPreset({ label: 'Disabled', ip: 0, ipFactor: 0, domain: 0, domainFactor: 0 })}
+              className={`px-2 py-1 text-[10px] font-mono rounded border transition-colors ${
+                (localConfig.rate_limit?.ip_rate_limit ?? 0) === 0
+                  ? 'bg-gray-800 text-white border-gray-600'
+                  : 'bg-gray-950/80 text-gray-400 border-gray-800 hover:border-gray-700'
+              }`}
+            >
+              Off (0 QPS)
+            </button>
+            <button
+              onClick={() => applyRateLimitPreset({ label: 'Strict Anti-DDoS', ip: 200, ipFactor: 10, domain: 300, domainFactor: 10 })}
+              className={`px-2 py-1 text-[10px] font-mono rounded border transition-colors ${
+                (localConfig.rate_limit?.ip_rate_limit ?? 0) === 200
+                  ? 'bg-rose-950 text-rose-300 border-rose-700'
+                  : 'bg-gray-950/80 text-gray-400 border-gray-800 hover:border-gray-700'
+              }`}
+            >
+              Strict (200 QPS)
+            </button>
+            <button
+              onClick={() => applyRateLimitPreset({ label: 'Standard ISP', ip: 1000, ipFactor: 10, domain: 1000, domainFactor: 10 })}
+              className={`px-2 py-1 text-[10px] font-mono rounded border transition-colors ${
+                (localConfig.rate_limit?.ip_rate_limit ?? 0) === 1000
+                  ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
+                  : 'bg-gray-950/80 text-gray-400 border-gray-800 hover:border-gray-700'
+              }`}
+            >
+              Standard ISP (1000 QPS)
+            </button>
+            <button
+              onClick={() => applyRateLimitPreset({ label: 'Enterprise Core', ip: 5000, ipFactor: 5, domain: 5000, domainFactor: 5 })}
+              className={`px-2 py-1 text-[10px] font-mono rounded border transition-colors ${
+                (localConfig.rate_limit?.ip_rate_limit ?? 0) === 5000
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                  : 'bg-gray-950/80 text-gray-400 border-gray-800 hover:border-gray-700'
+              }`}
+            >
+              Enterprise (5000 QPS)
+            </button>
+          </div>
+        </div>
+
+        {/* Rate Limiting Parameters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
+          <div>
+            <label className="block text-gray-400 mb-1">
+              Subscriber IP Limit (<span className="text-rose-400">ip-ratelimit</span>)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={localConfig.rate_limit?.ip_rate_limit ?? 1000}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                setLocalConfig({
+                  ...localConfig,
+                  rate_limit: {
+                    enabled: val > 0 || (localConfig.rate_limit?.domain_rate_limit ?? 0) > 0,
+                    ip_rate_limit: val,
+                    ip_rate_limit_factor: localConfig.rate_limit?.ip_rate_limit_factor ?? 10,
+                    domain_rate_limit: localConfig.rate_limit?.domain_rate_limit ?? 1000,
+                    rate_limit_size: localConfig.rate_limit?.rate_limit_size || '16m',
+                    rate_limit_slabs: localConfig.rate_limit?.rate_limit_slabs || 4,
+                  },
+                });
+              }}
+              className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-white"
+            />
+            <span className="text-[10px] text-gray-500 block mt-1">Batas QPS per alamat IP subscriber (0 = disabled).</span>
+          </div>
+
+          <div>
+            <label className="block text-gray-400 mb-1">
+              IP Backoff Factor (<span className="text-rose-400">ip-ratelimit-factor</span>)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={localConfig.rate_limit?.ip_rate_limit_factor ?? 10}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                setLocalConfig({
+                  ...localConfig,
+                  rate_limit: {
+                    enabled: (localConfig.rate_limit?.ip_rate_limit ?? 0) > 0 || (localConfig.rate_limit?.domain_rate_limit ?? 0) > 0,
+                    ip_rate_limit: localConfig.rate_limit?.ip_rate_limit ?? 1000,
+                    ip_rate_limit_factor: val,
+                    domain_rate_limit: localConfig.rate_limit?.domain_rate_limit ?? 1000,
+                    rate_limit_size: localConfig.rate_limit?.rate_limit_size || '16m',
+                    rate_limit_slabs: localConfig.rate_limit?.rate_limit_slabs || 4,
+                  },
+                });
+              }}
+              className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-white"
+            />
+            <span className="text-[10px] text-gray-500 block mt-1">1 dari N query yang dibalas saat limit terlampaui (default: 10).</span>
+          </div>
+
+          <div>
+            <label className="block text-gray-400 mb-1">
+              Domain Global Limit (<span className="text-orange-400">ratelimit</span>)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={localConfig.rate_limit?.domain_rate_limit ?? 1000}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                setLocalConfig({
+                  ...localConfig,
+                  rate_limit: {
+                    enabled: (localConfig.rate_limit?.ip_rate_limit ?? 0) > 0 || val > 0,
+                    ip_rate_limit: localConfig.rate_limit?.ip_rate_limit ?? 1000,
+                    ip_rate_limit_factor: localConfig.rate_limit?.ip_rate_limit_factor ?? 10,
+                    domain_rate_limit: val,
+                    rate_limit_size: localConfig.rate_limit?.rate_limit_size || '16m',
+                    rate_limit_slabs: localConfig.rate_limit?.rate_limit_slabs || 4,
+                  },
+                });
+              }}
+              className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-white"
+            />
+            <span className="text-[10px] text-gray-500 block mt-1">Batas total QPS untuk satu domain (0 = disabled).</span>
+          </div>
+
+          <div>
+            <label className="block text-gray-400 mb-1">
+              Hash Table Memory Size (<span className="text-orange-400">rate-limit-size</span>)
+            </label>
+            <input
+              type="text"
+              value={localConfig.rate_limit?.rate_limit_size || '16m'}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLocalConfig({
+                  ...localConfig,
+                  rate_limit: {
+                    enabled: (localConfig.rate_limit?.ip_rate_limit ?? 0) > 0 || (localConfig.rate_limit?.domain_rate_limit ?? 0) > 0,
+                    ip_rate_limit: localConfig.rate_limit?.ip_rate_limit ?? 1000,
+                    ip_rate_limit_factor: localConfig.rate_limit?.ip_rate_limit_factor ?? 10,
+                    domain_rate_limit: localConfig.rate_limit?.domain_rate_limit ?? 1000,
+                    rate_limit_size: val,
+                    rate_limit_slabs: localConfig.rate_limit?.rate_limit_slabs || 4,
+                  },
+                });
+              }}
+              className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-white"
+            />
+            <span className="text-[10px] text-gray-500 block mt-1">Alokasi memori tabel hash RRL (default: 16m).</span>
+          </div>
+        </div>
+
+        {/* Informational Box */}
+        <div className="bg-gray-950/60 border border-gray-800/80 rounded-lg p-3 text-[11px] text-gray-400 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <span>
+            <strong>Catatan Keamanan NOC:</strong> Pengaturan <code className="text-rose-300">ip-ratelimit</code> dan <code className="text-orange-300">ratelimit</code> beroperasi langsung di level kernel Unbound C-threads. Menghentikan botnet dari mengeksploitasi resolver ISP sebagai amplifier serangan DDoS global (amplification vector) sekaligus menjaga latensi pengguna legal tetap normal.
+          </span>
+        </div>
+      </div>
+    </div>
   )}
 
   {/* ── Logrotate & Host Storage Section ────────────────────────────────────────── */}

@@ -127,11 +127,22 @@ type FeatureConfig struct {
 	PrefetchKey              bool `json:"prefetch_key"`
 	ServeExpired             bool `json:"serve_expired"`
 	ServeExpiredTTL          int  `json:"serve_expired_ttl"`           // e.g. 86400
+	ServeExpiredTTLReset     bool `json:"serve_expired_ttl_reset"`     // Reset expired TTL on continuous access
 	ServeExpiredClientTimeout int  `json:"serve_expired_client_timeout"` // e.g. 1800 ms
 	ServeExpiredReplyTTL     int  `json:"serve_expired_reply_ttl"`     // e.g. 30
 	QnameMinimisation        bool `json:"qname_minimisation"`
 	HideIdentity             bool `json:"hide_identity"`
 	HideVersion              bool `json:"hide_version"`
+}
+
+// RateLimitConfig defines Anti-DDoS and Response Rate Limiting (RRL) protection.
+type RateLimitConfig struct {
+	Enabled           bool   `json:"enabled"`
+	IPRateLimit       int    `json:"ip_rate_limit"`        // Max QPS per subscriber IP (e.g. 500)
+	IPRateLimitFactor int    `json:"ip_rate_limit_factor"` // 10 = reply 1/10 queries with TC bit (force TCP), drop others
+	DomainRateLimit   int    `json:"domain_rate_limit"`    // Max QPS per target domain (e.g. 2000)
+	RateLimitSize     string `json:"rate_limit_size"`      // Memory hash table size (e.g. "16m")
+	RateLimitSlabs    int    `json:"rate_limit_slabs"`     // Multi-core slab locks (e.g. 4)
 }
 
 // SafeSearchConfig defines search engine safety enforcement.
@@ -215,6 +226,7 @@ type DesiredState struct {
 	Performance      PerformanceConfig     `json:"performance"`
 	DNSSEC           DNSSECConfig          `json:"dnssec"`
 	Features         FeatureConfig         `json:"features"`
+	RateLimit        RateLimitConfig       `json:"rate_limit"`
 	SafeSearch       SafeSearchConfig      `json:"safe_search"`
 	ParentalControl  ParentalControlConfig `json:"parental_control"`
 	GamblingBlock    GamblingBlockConfig   `json:"gambling_block"`
@@ -333,11 +345,20 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			PrefetchKey:               true,
 			ServeExpired:              true,
 			ServeExpiredTTL:           86400,
+			ServeExpiredTTLReset:      true,
 			ServeExpiredClientTimeout: 1800,
 			ServeExpiredReplyTTL:      30,
 			QnameMinimisation:         false, // Disabled by default for ISP resolvers to avoid NXDOMAIN on non-compliant CDN GSLBs (e.g. Baishan, Shopee)
 			HideIdentity:              true,
 			HideVersion:               true,
+		},
+		RateLimit: RateLimitConfig{
+			Enabled:           true,
+			IPRateLimit:       500,
+			IPRateLimitFactor: 10,
+			DomainRateLimit:   2000,
+			RateLimitSize:     "16m",
+			RateLimitSlabs:    perf.MsgCacheSlabs,
 		},
 		SafeSearch: SafeSearchConfig{
 			Enabled:            true,

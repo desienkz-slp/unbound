@@ -75,10 +75,12 @@ export interface DesiredState {
     serve_expired: boolean;
     serve_expired_ttl: number;
     serve_expired_client_timeout: number;
+    serve_expired_ttl_reset?: boolean;
     qname_minimisation: boolean;
     hide_identity: boolean;
     hide_version: boolean;
   };
+  rate_limit?: RateLimitConfig;
   safe_search: {
     enabled: boolean;
     google_redirect_ipv4: string;
@@ -118,6 +120,23 @@ export interface DesiredState {
     port: number;
   };
   logrotate?: LogrotatePolicy;
+}
+
+export interface RateLimitConfig {
+  enabled: boolean;
+  ip_rate_limit: number;
+  ip_rate_limit_factor: number;
+  domain_rate_limit: number;
+  rate_limit_size?: string;
+  rate_limit_slabs?: number;
+}
+
+export interface DatabaseBackupInfo {
+  filename: string;
+  size: number;
+  created_at: string;
+  description: string;
+  format: string;
 }
 
 export interface LogrotatePolicy {

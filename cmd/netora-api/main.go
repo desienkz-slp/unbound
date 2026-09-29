@@ -197,6 +197,9 @@ func main() {
 
 	// 7. Setup HTTP Server
 	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID, realIP)
+	if *dbURL != "" {
+		apiServer.SetDatabaseURL(*dbURL)
+	}
 
 	// 7.1 Start Autonomous Blocklist Auto-Update Scheduler
 	apiServer.blocklistManager.StartScheduler(collectorCtx)
