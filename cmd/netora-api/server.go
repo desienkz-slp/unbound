@@ -19,6 +19,7 @@ import (
 	"netora-dns/pkg/cluster"
 	"netora-dns/pkg/configengine"
 	"netora-dns/pkg/hermes"
+	"netora-dns/pkg/logrotate"
 	"netora-dns/pkg/model"
 	"netora-dns/pkg/policy"
 	"netora-dns/pkg/runtime"
@@ -40,6 +41,7 @@ type Server struct {
 	clusterManager   *cluster.ClusterManager
 	investigator     *hermes.Investigator
 	queryLogTailer   *telemetry.QueryLogTailer
+	logrotateManager *logrotate.Manager
 
 	updateMu       sync.Mutex
 	isUpdating     bool
@@ -101,6 +103,7 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		clusterManager:   cm,
 		investigator:     inv,
 		queryLogTailer:   tailer,
+		logrotateManager: logrotate.NewManager(),
 	}
 }
 
@@ -757,6 +760,13 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Apply Host Logrotate Policy if configured
+		if state.Logrotate.Enabled {
+			if _, lErr := s.logrotateManager.Apply(r.Context(), state.Logrotate); lErr != nil {
+				log.Printf("[apply] Node %s: Warning: Logrotate apply encountered issue: %v\n", nodeID, lErr)
+			}
+		}
+
 		if err := s.store.SaveDesiredState(r.Context(), &state); err != nil {
 			log.Printf("[apply] Node %s: SaveDesiredState failed: %v\n", nodeID, err)
 			s.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -855,9 +865,132 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.writeJSON(w, http.StatusOK, versions)
 
+	case "logrotate":
+		s.handleLogrotate(w, r, nodeID, parts)
+		return
 
 	default:
 		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "endpoint not found"})
+	}
+}
+
+// handleLogrotate manages host log rotation inspection, testing, and application.
+func (s *Server) handleLogrotate(w http.ResponseWriter, r *http.Request, nodeID string, parts []string) {
+	subAction := ""
+	if len(parts) > 2 {
+		subAction = parts[2]
+	}
+
+	switch subAction {
+	case "apply":
+		if r.Method != http.MethodPost {
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		var policy model.LogrotateConfig
+		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+			return
+		}
+		res, err := s.logrotateManager.Apply(r.Context(), policy)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		// Save into current desired state if present
+		if state, err := s.store.GetDesiredState(r.Context(), nodeID); err == nil && state != nil {
+			state.Logrotate = policy
+			_ = s.store.SaveDesiredState(r.Context(), state)
+		}
+		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
+		actor := "system"
+		if claims != nil {
+			actor = claims.Username
+		}
+		_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+			Actor:    actor,
+			Action:   "LOGROTATE_APPLY",
+			Target:   nodeID,
+			Details:  fmt.Sprintf("Applied logrotate: %s, rotate %d, maxsize %s", policy.Frequency, policy.RotateCount, policy.MaxSize),
+			ClientIP: r.RemoteAddr,
+			Status:   "SUCCESS",
+		})
+		s.writeJSON(w, http.StatusOK, res)
+
+	case "test":
+		if r.Method != http.MethodPost {
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		var policy *model.LogrotateConfig
+		var bodyPolicy model.LogrotateConfig
+		if err := json.NewDecoder(r.Body).Decode(&bodyPolicy); err == nil && bodyPolicy.Frequency != "" {
+			policy = &bodyPolicy
+		}
+		out, err := s.logrotateManager.Test(r.Context(), policy)
+		errStr := ""
+		if err != nil {
+			errStr = err.Error()
+		}
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": err == nil,
+			"output":  out,
+			"error":   errStr,
+		})
+
+	case "force-rotate":
+		if r.Method != http.MethodPost {
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		out, err := s.logrotateManager.ForceRotate(r.Context())
+		claims, _ := r.Context().Value("user_claims").(*auth.Claims)
+		actor := "system"
+		if claims != nil {
+			actor = claims.Username
+		}
+		_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+			Actor:    actor,
+			Action:   "LOGROTATE_FORCE",
+			Target:   nodeID,
+			Details:  "Triggered immediate manual logrotate",
+			ClientIP: r.RemoteAddr,
+			Status:   "SUCCESS",
+		})
+		errStr := ""
+		if err != nil {
+			errStr = err.Error()
+		}
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": err == nil,
+			"output":  out,
+			"error":   errStr,
+			"message": "Rotasi manual logrotate selesai dijalankan",
+		})
+
+	default: // GET report
+		if r.Method != http.MethodGet {
+			s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		// Retrieve hardware specs of node
+		node, _ := s.store.GetNode(r.Context(), nodeID)
+		cores := 2
+		ramMB := 2048
+		diskTotalGB := 0
+		diskFreeGB := 0
+		if node != nil {
+			cores = node.CPUCores
+			ramMB = node.RAMMB
+			diskTotalGB = node.DiskTotalGB
+			diskFreeGB = node.DiskFreeGB
+		}
+		report, err := s.logrotateManager.GetReport(r.Context(), nodeID, cores, ramMB, diskTotalGB, diskFreeGB)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, report)
 	}
 }
 

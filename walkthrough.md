@@ -1,96 +1,106 @@
-# Walkthrough — Fitur DNS Rewrites di Netora DNS
+# Walkthrough — Disk-Aware Performance Tuning
 
-## Ringkasan
+## Fitur Baru: Disk sebagai Faktor Rekomendasi
 
-Fitur **DNS Rewrites** memungkinkan admin ISP/NOC untuk mengkonfigurasi jawaban DNS custom untuk domain atau wildcard subdomain tertentu — tanpa menyentuh file konfigurasi Unbound secara manual.
+### Perubahan yang Dilakukan
 
----
-
-## File yang Diubah / Ditambahkan
+#### Backend (Go)
 
 | File | Perubahan |
 |------|-----------|
-| `web/src/components/DnsRewritesPanel.tsx` | **Baru** — Komponen panel lengkap (tabel, modal Add/Edit, filter chips, search) |
-| `web/src/views/DNSConfigView.tsx` | Tambah sub-tab DNS Rewrites, import DnsRewritesPanel, integrasi ke localState.local_records |
-| `pkg/configengine/templates.go` | Update LocalRecordsTemplate untuk wildcard (local-zone redirect) |
-| `pkg/configengine/generator.go` | Tambah helper hasWildcardPrefix & trimWildcardPrefix ke template.FuncMap |
-| `pkg/model/validation.go` | Tambah validasi wildcard domain: reject PTR + wildcard |
+| `cmd/netora-api/disk_detect_linux.go` | NEW — `detectDiskSpecs()` via `syscall.Statfs` (Linux build tag) |
+| `cmd/netora-api/disk_detect_other.go` | NEW — stub return `0,0` untuk Windows/dev |
+| `cmd/netora-api/main.go` | Wire `detectDiskSpecs()` → `NodeMetadata` + log startup |
+| `pkg/model/config.go` | `NodeMetadata` + `DiskTotalGB`, `DiskFreeGB` |
+| `pkg/storage/store.go` | `NodeRecord` + `DiskTotalGB`, `DiskFreeGB` |
+| `pkg/storage/postgres.go` | `UpsertNode`, `GetNode`, `ListNodes` dengan kolom disk + `COALESCE` backward compat |
+| `pkg/storage/memory.go` | `UpsertNode` propagate disk fields |
+| `pkg/storage/migrations/001_initial_schema.sql` | Kolom `disk_total_gb`, `disk_free_gb` di `CREATE TABLE nodes` |
+| `pkg/storage/migrations/002_add_disk_columns_to_nodes.sql` | Migration idempotent untuk existing DB |
+
+#### Frontend (React/TypeScript)
+
+| File | Perubahan |
+|------|-----------|
+| `web/src/types.ts` | `NodeRecord` + `disk_total_gb`, `disk_free_gb` |
+| `web/src/views/PerformanceView.tsx` | Full rewrite — disk-aware UI |
 
 ---
 
-## Cara Menggunakan (UI)
+### Cara Kerja Baru
 
-1. Buka halaman **DNS Configuration** di Web UI.
-2. Klik tab **DNS Rewrites** (tab paling kanan, ikon ->).
-3. Klik tombol **Add DNS Rewrite**.
-4. Isi form:
-   - **Domain**: e.g. speedtest.isp.net atau *.internal.lan (wildcard)
-   - **Record Type**: A / AAAA / CNAME / PTR / TXT
-   - **Answer / Value**: IP address atau hostname tujuan
-   - **TTL**: default 3600 detik
-5. Preview otomatis tampil saat domain + value sudah diisi.
-6. Klik **Add Rewrite** - record muncul di tabel.
-7. Klik **Save & Atomic Apply** untuk menerapkan ke Unbound.
+#### 1. Deteksi Disk (Backend)
+- Saat startup, `detectDiskSpecs()` membaca root filesystem (`/`) menggunakan `syscall.Statfs`
+- Mengembalikan `disk_total_gb` dan `disk_free_gb`
+- Disimpan ke PostgreSQL via `UpsertNode`, diperbarui setiap restart API
 
----
+#### 2. Rekomendasi Profile (Frontend)
+Sebelumnya: hanya `cpu_cores`
+Sekarang: `cpu_cores + ram_mb + disk_total_gb` (semuanya harus memenuhi minimum)
 
-## Output Konfigurasi Unbound
+```
+Priority: malware > ads > adult > gambling > custom
+Profile ISP     = CPU>=9, RAM>=28GB, Disk>=40GB
+Profile LARGE   = CPU>=5, RAM>=12GB, Disk>=20GB
+Profile MEDIUM  = CPU>=3, RAM>=4GB,  Disk>=10GB
+Profile SMALL   = CPU>=1, RAM>=0GB,  Disk>=4GB
+```
 
-### Domain biasa (A record)
-  local-data: "speedtest.isp.net 3600 A 192.168.10.50"
+#### 3. Komponen UI Baru
 
-### Wildcard subdomain (*.domain)
-  local-zone: "internal.lan" redirect
-  local-data: "internal.lan 3600 A 10.0.0.1"
+**Hardware Topology Cards (3 panel):**
+- CPU — jumlah core
+- RAM — total physical memory
+- Disk — total/free GB dengan progress bar berwarna:
+  - 🟢 Hijau: <75% used (Healthy)
+  - 🟡 Amber: 75-89% used (Low Space)
+  - 🔴 Merah: ≥90% used (CRITICAL)
 
-Dengan local-zone redirect, semua query *.internal.lan dijawab dengan IP 10.0.0.1.
+**Alert Banners:**
+- Critical (≥90%): tampilkan perintah remediation langsung di UI
+- Warn (≥75%): reminder untuk prune
 
----
+**Disk Setup Recommendations Panel:**
+| Tier | Root Disk | RAM | vCPU | QPS Target |
+|------|-----------|-----|------|------------|
+| Minimum | 8 GB | 1 GB | 1-2 | <5k |
+| Recommended | 25+ GB | 4-8 GB | 4-8 | 30k-80k |
+| Carrier Grade | 50+ GB | 32+ GB | 16+ | 100k+ |
 
-## Tipe Record Didukung
-
-A, AAAA, CNAME, PTR, TXT
-
-Catatan: PTR tidak bisa digabung dengan wildcard (*.) - diblokir di layer validasi.
-
----
-
-## Fitur UI
-
-- Search bar: Filter by domain atau IP
-- Filter chips: Quick filter per tipe record
-- Edit/Delete: Tombol muncul saat hover di baris
-- Wildcard badge: Record dengan *.domain menampilkan badge wildcard
-- Live preview: Modal menampilkan preview output DNS
-- Empty state: Tampilan kosong dengan call-to-action
+**Profile Cards:** sekarang menampilkan "Min Disk" per profile, berwarna merah jika disk aktual < minimum.
 
 ---
 
-## Status Build & Release
+### Database Migration
 
-- Backend Go: PASS (`go build ./...`)
-- Frontend TypeScript: PASS (`tsc -b && vite build`)
-- Versi Rilis Terbaru: `v1.0.75` (Commit `180468a`)
+Untuk server yang sudah ada, jalankan:
+```sql
+-- File: pkg/storage/migrations/002_add_disk_columns_to_nodes.sql
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'nodes' AND column_name = 'disk_total_gb')
+    THEN ALTER TABLE nodes ADD COLUMN disk_total_gb INT NOT NULL DEFAULT 0; END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'nodes' AND column_name = 'disk_free_gb')
+    THEN ALTER TABLE nodes ADD COLUMN disk_free_gb INT NOT NULL DEFAULT 0; END IF;
+END $$;
+```
+
+Atau via psql:
+```bash
+PGPASSWORD=netora_dev_password psql -h 127.0.0.1 -U netora -d netora \
+  -f /opt/netora-dns/current/pkg/storage/migrations/002_add_disk_columns_to_nodes.sql
+```
 
 ---
 
-## Investigasi & Perbaikan Data Telemetri (Top Clients, Top Domains, Blocked)
+### Deployment
 
-### Akar Masalah:
-1. Statistik global seperti *Total DNS Queries (22)*, *Cache Hits*, dan *Upstreams* muncul normal karena diambil langsung dari socket Unbound (`unbound-control stats_noreset` & `dump_infra`).
-2. Namun data rinci (**Top clients**, **Top queried domains**, dan **Top blocked domains**) bersumber dari pembacaan log query (`QueryLogTailer` di `netora-api`).
-3. Pada server, direktori `/var/log/unbound/` berstatus kepemilikan `root:root` dengan permission `0755`. Ketika Unbound berjalan dengan user non-root `unbound`, Unbound gagal membuka atau membuat file `/var/log/unbound/unbound.log` (*Permission denied*).
-4. Akibatnya, Unbound secara otomatis mengalihkan log query ke `systemd / journalctl`, sementara file `/var/log/unbound/unbound.log` tidak ada. Hal ini membuat `QueryLogTailer` tidak menerima baris log sama sekali sehingga tabel klien dan domain tampak kosong di UI.
+| Server | Revision | Status |
+|--------|----------|--------|
+| 145 (dns-dev) | `519b683` | In progress → auto-update |
+| 146 (netora-dns1) | `519b683` | In progress → via API |
 
-### Solusi & Peningkatan ISP-Grade:
-1. **Dual-Source Telemetry Engine (`pkg/telemetry/query_log.go`)**:
-   - `netora-api` kini dilengkapi fallback otomatis ke `journalctl -u unbound`.
-   - Saat aplikasi start, sistem langsung membaca hingga 3000 riwayat query terakhir dari `journalctl`. Dashboard tidak akan pernah kosong meskipun file log belum ada atau baru saja di-rotate.
-   - Sistem juga menjalankan streaming *real-time* via `journalctl -u unbound -f` jika file log tidak aktif.
-2. **Perbaikan Permission & AppArmor di Skrip Pembaruan (`scripts/netora-dns-update.sh`)**:
-   - Otomatis membuat `/var/log/unbound/unbound.log` dengan permission `chmod 775` dan kepemilikan `unbound:unbound`.
-   - Otomatis mendaftarkan pengecualian AppArmor `/var/log/unbound/** rwk,` jika AppArmor aktif.
-3. **Penyelarasan Permission Engine (`pkg/configengine/engine.go`)**:
-   - Direktori log dibuat dengan mode `0777` agar user `unbound` dapat menulis log tanpa kendala hak akses.
-
-
+Kolom `disk_total_gb` dan `disk_free_gb` langsung terisi otomatis saat `netora-api` restart setelah update.

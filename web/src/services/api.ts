@@ -11,6 +11,9 @@ import {
   DetailedStatsReport,
   SystemVersion,
   SystemUpdateStatus,
+  LogrotateReport,
+  LogrotatePolicy,
+  LogrotateApplyResult,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -264,6 +267,31 @@ class ApiClient {
 
   async triggerSystemUpdate(): Promise<{ status: string; message: string }> {
     return this.request('/system/update', {
+      method: 'POST',
+    });
+  }
+
+  // Logrotate Management
+  async getLogrotateReport(nodeId: string): Promise<LogrotateReport> {
+    return this.request<LogrotateReport>(`/nodes/${nodeId}/logrotate`);
+  }
+
+  async applyLogrotate(nodeId: string, policy: LogrotatePolicy): Promise<LogrotateApplyResult> {
+    return this.request<LogrotateApplyResult>(`/nodes/${nodeId}/logrotate/apply`, {
+      method: 'POST',
+      body: JSON.stringify(policy),
+    });
+  }
+
+  async testLogrotate(nodeId: string, policy?: LogrotatePolicy): Promise<{ success: boolean; output: string; error?: string }> {
+    return this.request(`/nodes/${nodeId}/logrotate/test`, {
+      method: 'POST',
+      body: JSON.stringify(policy || {}),
+    });
+  }
+
+  async forceRotateLogrotate(nodeId: string): Promise<{ success: boolean; output: string; message: string; error?: string }> {
+    return this.request(`/nodes/${nodeId}/logrotate/force-rotate`, {
       method: 'POST',
     });
   }

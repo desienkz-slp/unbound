@@ -192,6 +192,17 @@ type NodeMetadata struct {
 	LastSeenAt   time.Time `json:"last_seen_at"`
 }
 
+// LogrotateConfig defines the automated and custom log rotation policy for the node host.
+type LogrotateConfig struct {
+	Enabled       bool   `json:"enabled"`
+	Frequency     string `json:"frequency"`      // "daily", "weekly", "monthly"
+	RotateCount   int    `json:"rotate_count"`   // 1 - 90
+	MaxSize       string `json:"max_size"`       // e.g. "25M", "50M", "100M"
+	Compress      bool   `json:"compress"`       // gzip
+	DelayCompress bool   `json:"delay_compress"` // delaycompress
+	RotateNetora  bool   `json:"rotate_netora"`  // rotate /var/log/netora-dns/*.log
+}
+
 // DesiredState is the comprehensive desired configuration for a DNS node.
 type DesiredState struct {
 	VersionID        string                `json:"version_id"`
@@ -212,6 +223,7 @@ type DesiredState struct {
 	CustomBlock      FilterBlockConfig     `json:"custom_block"`
 	LocalRecords     []LocalRecord         `json:"local_records"`
 	RemoteControl    RemoteControlConfig   `json:"remote_control"`
+	Logrotate        LogrotateConfig       `json:"logrotate"`
 	IncludeFiles     []string              `json:"include_files,omitempty"`
 }
 
@@ -224,6 +236,15 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 		VersionID:      fmt.Sprintf("v-%d", time.Now().Unix()),
 		NodeID:         nodeID,
 		ResolutionMode: ModeRecursive,
+		Logrotate: LogrotateConfig{
+			Enabled:       true,
+			Frequency:     "daily",
+			RotateCount:   7,
+			MaxSize:       "50M",
+			Compress:      true,
+			DelayCompress: true,
+			RotateNetora:  true,
+		},
 		Listeners: []Listener{
 			{
 				ID:      "listen-mgmt",

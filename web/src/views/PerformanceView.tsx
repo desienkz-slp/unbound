@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,8 +13,17 @@ import {
   Server,
   Sparkles,
   Zap,
+  FileText,
+  RotateCcw,
+  Terminal,
+  ShieldAlert,
+  ShieldCheck,
+  Play,
+  FileCode,
+  Sliders,
+  Check,
 } from 'lucide-react';
-import { DesiredState, NodeRecord } from '../types';
+import { DesiredState, NodeRecord, LogrotateReport, LogrotatePolicy } from '../types';
 import { api } from '../services/api';
 
 interface PerformanceViewProps {
@@ -95,10 +104,136 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const [localConfig, setLocalConfig] = useState<DesiredState | null>(config);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'logrotate'>('all');
 
-  React.useEffect(() => {
+  // ── Logrotate State ──────────────────────────────────────────────────────────
+  const [logrotateReport, setLogrotateReport] = useState<LogrotateReport | null>(null);
+  const [logrotateLoading, setLogrotateLoading] = useState(false);
+  const [logrotatePolicy, setLogrotatePolicy] = useState<LogrotatePolicy>({
+    enabled: true,
+    frequency: 'daily',
+    rotate_count: 7,
+    max_size: '50M',
+    compress: true,
+    delay_compress: true,
+    rotate_netora: true,
+  });
+  const [savingLogrotate, setSavingLogrotate] = useState(false);
+  const [testingLogrotate, setTestingLogrotate] = useState(false);
+  const [forceRotating, setForceRotating] = useState(false);
+  const [consoleOutput, setConsoleOutput] = useState<string | null>(null);
+  const [logrotateMsg, setLogrotateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const fetchLogrotate = async () => {
+    setLogrotateLoading(true);
+    try {
+      const rep = await api.getLogrotateReport(nodeId);
+      setLogrotateReport(rep);
+      if (rep.active_policy && rep.active_policy.frequency) {
+        setLogrotatePolicy(rep.active_policy);
+      } else if (rep.ai_recommendation?.recommended_policy) {
+        setLogrotatePolicy(rep.ai_recommendation.recommended_policy);
+      }
+    } catch (err: any) {
+      console.warn('Failed to fetch logrotate report:', err);
+    } finally {
+      setLogrotateLoading(false);
+    }
+  };
+
+  useEffect(() => {
     setLocalConfig(config);
   }, [config]);
+
+  useEffect(() => {
+    if (nodeId) {
+      fetchLogrotate();
+    }
+  }, [nodeId]);
+
+  const applyAIPolicy = () => {
+    if (logrotateReport?.ai_recommendation?.recommended_policy) {
+      const rec = logrotateReport.ai_recommendation.recommended_policy;
+      setLogrotatePolicy(rec);
+      setLogrotateMsg({
+        type: 'success',
+        text: `Rekomendasi AI (${logrotateReport.ai_recommendation.title}) diterapkan ke form. Klik 'Terapkan Logrotate' untuk menyimpan ke host.`,
+      });
+    }
+  };
+
+  const applyPresetLogrotate = (preset: { frequency: string; rotate_count: number; max_size: string; compress: boolean; delay_compress: boolean }) => {
+    setLogrotatePolicy({
+      ...logrotatePolicy,
+      ...preset,
+    });
+    setLogrotateMsg({
+      type: 'success',
+      text: `Preset diterapkan ke form tuning (${preset.frequency}, ${preset.rotate_count}x, maxsize ${preset.max_size}).`,
+    });
+  };
+
+  const handleApplyLogrotate = async () => {
+    setSavingLogrotate(true);
+    setLogrotateMsg(null);
+    try {
+      const res = await api.applyLogrotate(nodeId, logrotatePolicy);
+      if (res.success) {
+        setLogrotateMsg({ type: 'success', text: res.message });
+        if (res.dry_run_output) {
+          setConsoleOutput(res.dry_run_output);
+        }
+        await fetchLogrotate();
+      } else {
+        setLogrotateMsg({ type: 'error', text: res.message });
+        if (res.dry_run_output) {
+          setConsoleOutput(res.dry_run_output);
+        }
+      }
+    } catch (err: any) {
+      setLogrotateMsg({ type: 'error', text: err.message || 'Gagal menerapkan konfigurasi logrotate' });
+    } finally {
+      setSavingLogrotate(false);
+    }
+  };
+
+  const handleTestLogrotate = async () => {
+    setTestingLogrotate(true);
+    setLogrotateMsg(null);
+    try {
+      const res = await api.testLogrotate(nodeId, logrotatePolicy);
+      setConsoleOutput(res.output || (res.error ? `Error: ${res.error}` : 'Dry run completed without output.'));
+      setLogrotateMsg({
+        type: res.success ? 'success' : 'error',
+        text: res.success ? 'Uji validasi dry-run (logrotate -d) sukses! Konfigurasi valid dan aman.' : 'Uji validasi menemukan masalah pada syntax atau hak akses.',
+      });
+    } catch (err: any) {
+      setLogrotateMsg({ type: 'error', text: err.message || 'Gagal menguji konfigurasi' });
+    } finally {
+      setTestingLogrotate(false);
+    }
+  };
+
+  const handleForceRotate = async () => {
+    if (!window.confirm('Rotasi darurat akan memotong file log saat ini dan mengompresinya untuk mengosongkan ruang disk sekarang. Lanjutkan?')) {
+      return;
+    }
+    setForceRotating(true);
+    setLogrotateMsg(null);
+    try {
+      const res = await api.forceRotateLogrotate(nodeId);
+      setConsoleOutput(res.output);
+      setLogrotateMsg({
+        type: 'success',
+        text: 'Rotasi paksa (logrotate -f) berhasil dijalankan! Ruang disk telah dibebaskan.',
+      });
+      await fetchLogrotate();
+    } catch (err: any) {
+      setLogrotateMsg({ type: 'error', text: err.message || 'Gagal menjalankan rotasi darurat' });
+    } finally {
+      setForceRotating(false);
+    }
+  };
 
   if (!localConfig) return null;
 
@@ -174,6 +309,49 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
         >
           {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? 'Applying...' : 'Apply Tuning'}
+        </button>
+      </div>
+
+      {/* ── Tab Switcher ───────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 border-b border-gray-800 pb-3">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+            activeTab === 'all'
+              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          Semua Sistem Tuning
+        </button>
+        <button
+          onClick={() => setActiveTab('compute')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+            activeTab === 'compute'
+              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+          }`}
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          CPU & Cache Engine
+        </button>
+        <button
+          onClick={() => setActiveTab('logrotate')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+            activeTab === 'logrotate'
+              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+          }`}
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Logrotate & Storage AI Guard
+          {logrotateReport?.telemetry.health_status === 'WARNING' && (
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Peringatan logrotate terdeteksi"></span>
+          )}
+          {logrotateReport?.telemetry.health_status === 'CRITICAL' && (
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Masalah kritis logrotate!"></span>
+          )}
         </button>
       </div>
 
@@ -265,10 +443,13 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
         </div>
       </div>
 
-      {/* ── Disk Critical Alert ────────────────────────────────────────────── */}
-      {disk.level === 'critical' && detectedDiskTotal > 0 && (
-        <div className="bg-red-950/40 border border-red-700 rounded-xl p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+      {/* ── Compute Tuning (Profiles & Threads) ────────────────────────── */}
+      {(activeTab === 'all' || activeTab === 'compute') && (
+        <>
+          {/* ── Disk Critical Alert ────────────────────────────────────────────── */}
+          {disk.level === 'critical' && detectedDiskTotal > 0 && (
+            <div className="bg-red-950/40 border border-red-700 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
           <div>
             <div className="text-sm font-bold text-red-300">Disk Critically Full — {disk.pct}% Used</div>
             <p className="text-xs text-red-400/80 mt-1">
@@ -633,6 +814,552 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
           </label>
         </div>
       </div>
+    </>
+  )}
+
+  {/* ── Logrotate & Host Storage Section ────────────────────────────────────────── */}
+  {(activeTab === 'all' || activeTab === 'logrotate') && (
+    <div className="space-y-6 pt-4 border-t border-gray-800/80">
+      {/* Section Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              HOST SYSTEM TUNING
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              AI REASONING ADVISOR
+            </span>
+          </div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2 mt-1">
+            <RotateCcw className="w-5 h-5 text-emerald-400" />
+            Host Log Rotation &amp; Storage Tuning (Logrotate)
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Pengelolaan dan auto-tuning rotasi file log query DNS Unbound agar tidak membebani kapasitas disk host server.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchLogrotate}
+            disabled={logrotateLoading}
+            className="px-3 py-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg text-xs text-gray-300 font-medium transition-all flex items-center gap-2"
+            title="Muat ulang telemetri log file host"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${logrotateLoading ? 'animate-spin text-cyan-400' : ''}`} />
+            <span>Refresh Status</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Feedback Message */}
+      {logrotateMsg && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 ${
+            logrotateMsg.type === 'success'
+              ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+              : 'bg-red-950/40 border-red-800/60 text-red-300'
+          }`}
+        >
+          {logrotateMsg.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+          )}
+          <span>{logrotateMsg.text}</span>
+        </div>
+      )}
+
+      {/* Issues Alert Box (if issues detected) */}
+      {logrotateReport?.telemetry.issues && logrotateReport.telemetry.issues.length > 0 && (
+        <div className="bg-amber-950/30 border border-amber-800/60 rounded-xl p-4 text-xs text-amber-200 space-y-2">
+          <div className="flex items-center gap-2 font-semibold text-amber-400">
+            <ShieldAlert className="w-4 h-4" />
+            <span>Peringatan Konfigurasi Logrotate Terdeteksi:</span>
+          </div>
+          <ul className="list-disc list-inside space-y-1 text-gray-300 pl-1 text-[11px]">
+            {logrotateReport.telemetry.issues.map((issue, idx) => (
+              <li key={idx}>{issue}</li>
+            ))}
+          </ul>
+          <div className="pt-2 flex items-center gap-3">
+            <button
+              onClick={applyAIPolicy}
+              className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Perbaiki dengan Rekomendasi AI
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Telemetry Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Active Log Size */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] text-gray-400 uppercase tracking-wider truncate">Log Aktif Unbound</div>
+            <div className="text-xl font-bold text-white font-mono">
+              {logrotateReport?.telemetry.unbound_log_size_human || '0 B'}
+            </div>
+            <div className="text-[10px] text-gray-500 truncate">/var/log/unbound/unbound.log</div>
+          </div>
+        </div>
+
+        {/* Card 2: Rotated Archives */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+            <RotateCcw className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] text-gray-400 uppercase tracking-wider truncate">Arsip Terotasi</div>
+            <div className="text-xl font-bold text-white font-mono">
+              {logrotateReport?.telemetry.rotated_files_size_human || '0 B'}
+            </div>
+            <div className="text-[10px] text-gray-500">
+              {logrotateReport?.telemetry.rotated_files_count || 0} file arsip (.gz)
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Total Footprint */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <HardDrive className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] text-gray-400 uppercase tracking-wider truncate">Total Log di Disk</div>
+            <div className="text-xl font-bold text-white font-mono">
+              {logrotateReport?.telemetry.total_log_size_human || '0 B'}
+            </div>
+            <div className="text-[10px] text-gray-500 truncate">
+              Updater: {logrotateReport?.telemetry.netora_log_size_human || '0 B'}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: Health Status */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex items-center gap-3.5">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+              logrotateReport?.telemetry.health_status === 'HEALTHY'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : logrotateReport?.telemetry.health_status === 'WARNING'
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                : 'bg-red-500/10 border-red-500/30 text-red-400'
+            }`}
+          >
+            {logrotateReport?.telemetry.health_status === 'HEALTHY' ? (
+              <ShieldCheck className="w-5 h-5" />
+            ) : (
+              <ShieldAlert className="w-5 h-5" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] text-gray-400 uppercase tracking-wider truncate">Status Rotasi</div>
+            <div className="text-sm font-bold text-white truncate">
+              {logrotateReport?.telemetry.health_status === 'HEALTHY'
+                ? 'Sehat & Terproteksi'
+                : logrotateReport?.telemetry.health_status === 'WARNING'
+                ? 'Perlu Penyesuaian'
+                : 'Kritis / Rentan'}
+            </div>
+            <div className="text-[10px] text-gray-400 truncate">
+              su directive:{' '}
+              <span
+                className={
+                  logrotateReport?.telemetry.has_su_directive ? 'text-emerald-400 font-semibold' : 'text-red-400 font-bold'
+                }
+              >
+                {logrotateReport?.telemetry.has_su_directive ? 'AMAN' : 'TIDAK ADA'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Recommendation Hero Card */}
+      {logrotateReport?.ai_recommendation && (
+        <div className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/30 via-gray-900 to-gray-950 p-5 shadow-xl">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                  {logrotateReport.ai_recommendation.badge}
+                </div>
+                <h3 className="text-sm font-semibold text-white">
+                  {logrotateReport.ai_recommendation.title}
+                </h3>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                {logrotateReport.ai_recommendation.projected_saving}
+              </span>
+              <button
+                onClick={applyAIPolicy}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black text-xs font-bold rounded-lg transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Auto-Tune dengan AI
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-300 leading-relaxed bg-black/30 rounded-xl p-3.5 border border-gray-800/60 font-sans">
+            {logrotateReport.ai_recommendation.reasoning}
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-gray-400">
+            <span className="text-gray-500">Faktor Deteksi:</span>
+            <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-300">
+              {logrotateReport.ai_recommendation.hardware_factor}
+            </span>
+            <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-300">
+              Rekomendasi:{' '}
+              <strong className="text-white">
+                {logrotateReport.ai_recommendation.recommended_policy.frequency},{' '}
+                {logrotateReport.ai_recommendation.recommended_policy.rotate_count}x retensi, maxsize{' '}
+                {logrotateReport.ai_recommendation.recommended_policy.max_size}
+              </strong>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Preset Selector */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
+          Pilihan Preset Auto-Tuning
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Preset 1 */}
+          <button
+            type="button"
+            onClick={() =>
+              applyPresetLogrotate({
+                frequency: 'daily',
+                rotate_count: 3,
+                max_size: '25M',
+                compress: true,
+                delay_compress: true,
+              })
+            }
+            className={`p-3.5 rounded-xl border text-left transition-all ${
+              logrotatePolicy.rotate_count <= 3 && logrotatePolicy.max_size === '25M'
+                ? 'bg-emerald-950/30 border-emerald-500/50 shadow-md'
+                : 'bg-gray-900/60 border-gray-800 hover:border-gray-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Ultra Storage Saver</span>
+              {logrotatePolicy.rotate_count <= 3 && logrotatePolicy.max_size === '25M' && (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+            </div>
+            <div className="text-[11px] text-emerald-400 font-mono mt-1">Daily • 3x • Max 25MB • Gzip</div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Ideal untuk VPS / Edge node dengan disk &le;10GB atau pemakaian tinggi (&ge;75%).
+            </p>
+          </button>
+
+          {/* Preset 2 */}
+          <button
+            type="button"
+            onClick={() =>
+              applyPresetLogrotate({
+                frequency: 'daily',
+                rotate_count: 7,
+                max_size: '50M',
+                compress: true,
+                delay_compress: true,
+              })
+            }
+            className={`p-3.5 rounded-xl border text-left transition-all ${
+              logrotatePolicy.rotate_count === 7 && logrotatePolicy.max_size === '50M'
+                ? 'bg-cyan-950/30 border-cyan-500/50 shadow-md'
+                : 'bg-gray-900/60 border-gray-800 hover:border-gray-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Balanced Standard</span>
+              {logrotatePolicy.rotate_count === 7 && logrotatePolicy.max_size === '50M' && (
+                <Check className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+            </div>
+            <div className="text-[11px] text-cyan-400 font-mono mt-1">Daily • 7x • Max 50MB • Gzip</div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Ideal untuk server edge regional dengan disk 10GB–40GB. 1 minggu histori query.
+            </p>
+          </button>
+
+          {/* Preset 3 */}
+          <button
+            type="button"
+            onClick={() =>
+              applyPresetLogrotate({
+                frequency: 'weekly',
+                rotate_count: 30,
+                max_size: '100M',
+                compress: true,
+                delay_compress: false,
+              })
+            }
+            className={`p-3.5 rounded-xl border text-left transition-all ${
+              logrotatePolicy.rotate_count >= 14 && logrotatePolicy.max_size === '100M'
+                ? 'bg-purple-950/30 border-purple-500/50 shadow-md'
+                : 'bg-gray-900/60 border-gray-800 hover:border-gray-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Carrier Audit Retention</span>
+              {logrotatePolicy.rotate_count >= 14 && logrotatePolicy.max_size === '100M' && (
+                <Check className="w-3.5 h-3.5 text-purple-400" />
+              )}
+            </div>
+            <div className="text-[11px] text-purple-400 font-mono mt-1">Weekly • 30x • Max 100MB • Gzip</div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Ideal untuk ISP Core dengan disk &gt;40GB. Menyimpan hingga 30 hari audit query log.
+            </p>
+          </button>
+        </div>
+      </div>
+
+      {/* Interactive Custom Tuning Form */}
+      <div className="bg-gray-900/80 border border-gray-800 rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+          <h3 className="text-xs font-bold text-white flex items-center gap-2 uppercase tracking-wider">
+            <Sliders className="w-4 h-4 text-emerald-400" />
+            Parameter Kustom Rotasi Log Server
+          </h3>
+          <span className="text-[11px] text-gray-400">Target: /etc/logrotate.d/unbound</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          {/* Frequency */}
+          <div>
+            <label className="block text-gray-400 mb-1">Frekuensi Rotasi (Interval)</label>
+            <select
+              value={logrotatePolicy.frequency}
+              onChange={(e) =>
+                setLogrotatePolicy({
+                  ...logrotatePolicy,
+                  frequency: e.target.value,
+                })
+              }
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono"
+            >
+              <option value="daily">daily (Harian - Disarankan)</option>
+              <option value="weekly">weekly (Mingguan)</option>
+              <option value="monthly">monthly (Bulanan)</option>
+              <option value="hourly">hourly (Per Jam - Khusus Trafik Masif)</option>
+            </select>
+          </div>
+
+          {/* Rotate Count */}
+          <div>
+            <label className="block text-gray-400 mb-1">Jumlah Retensi Arsip (rotate)</label>
+            <input
+              type="number"
+              min={1}
+              max={90}
+              value={logrotatePolicy.rotate_count}
+              onChange={(e) =>
+                setLogrotatePolicy({
+                  ...logrotatePolicy,
+                  rotate_count: parseInt(e.target.value) || 1,
+                })
+              }
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono"
+            />
+            <span className="text-[10px] text-gray-500">Maksimum file log arsip yang disimpan sebelum dihapus.</span>
+          </div>
+
+          {/* Max Size */}
+          <div>
+            <label className="block text-gray-400 mb-1">Ambang Batas Ukuran (maxsize)</label>
+            <select
+              value={logrotatePolicy.max_size}
+              onChange={(e) =>
+                setLogrotatePolicy({
+                  ...logrotatePolicy,
+                  max_size: e.target.value,
+                })
+              }
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono"
+            >
+              <option value="10M">10M (Sangat Ketat - Rekomendasi Disk &lt;5GB)</option>
+              <option value="15M">15M (Ketat)</option>
+              <option value="25M">25M (Optimal Disk Rendah)</option>
+              <option value="50M">50M (Standar Rekomendasi)</option>
+              <option value="100M">100M (Kapasitas Besar)</option>
+              <option value="250M">250M (Audit ISP Longgar)</option>
+              <option value="500M">500M (Super Kapasitas)</option>
+            </select>
+            <span className="text-[10px] text-gray-500">Rotasi dipicu lebih awal jika file mencapai batas ini.</span>
+          </div>
+        </div>
+
+        {/* Checkboxes / Toggles */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-gray-800/80">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={logrotatePolicy.compress}
+              onChange={(e) =>
+                setLogrotatePolicy({
+                  ...logrotatePolicy,
+                  compress: e.target.checked,
+                })
+              }
+              className="mt-0.5 rounded bg-gray-950 border-gray-700 text-emerald-500 w-4 h-4"
+            />
+            <div>
+              <span className="text-xs font-semibold text-white">Kompresi Gzip (compress)</span>
+              <p className="text-[10px] text-gray-400">Kompres file arsip dengan gzip (menghemat hingga ~90% ruang log).</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={logrotatePolicy.delay_compress}
+              onChange={(e) =>
+                setLogrotatePolicy({
+                  ...logrotatePolicy,
+                  delay_compress: e.target.checked,
+                })
+              }
+              className="mt-0.5 rounded bg-gray-950 border-gray-700 text-emerald-500 w-4 h-4"
+            />
+            <div>
+              <span className="text-xs font-semibold text-white">Tunda Kompresi (delaycompress)</span>
+              <p className="text-[10px] text-gray-400">
+                Menunda kompresi 1 siklus untuk mencegah lonjakan CPU saat Unbound melayani DNS.
+              </p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={logrotatePolicy.rotate_netora}
+              onChange={(e) =>
+                setLogrotatePolicy({
+                  ...logrotatePolicy,
+                  rotate_netora: e.target.checked,
+                })
+              }
+              className="mt-0.5 rounded bg-gray-950 border-gray-700 text-emerald-500 w-4 h-4"
+            />
+            <div>
+              <span className="text-xs font-semibold text-white">Rotasi Log Updater Netora</span>
+              <p className="text-[10px] text-gray-400">Ikut merotasi /var/log/netora-dns/*.log via copytruncate.</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Live Config Preview */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
+            <span className="flex items-center gap-1.5 font-mono text-[11px]">
+              <FileCode className="w-3.5 h-3.5 text-cyan-400" />
+              Pratinjau /etc/logrotate.d/unbound:
+            </span>
+            <span className="text-[10px] text-gray-500">su unbound unbound disertakan otomatis</span>
+          </div>
+          <pre className="bg-black/60 border border-gray-800 rounded-xl p-3.5 text-[11px] font-mono text-emerald-400 overflow-x-auto leading-relaxed">
+{`/var/log/unbound/unbound.log {
+    ${logrotatePolicy.frequency}
+    rotate ${logrotatePolicy.rotate_count}
+    maxsize ${logrotatePolicy.max_size}
+    missingok
+    notifempty
+    ${logrotatePolicy.compress ? 'compress' : 'nocompress'}
+${logrotatePolicy.delay_compress ? '    delaycompress\n' : ''}    sharedscripts
+    su unbound unbound
+    postrotate
+        /usr/sbin/unbound-control log_reopen >/dev/null 2>&1 || true
+    endscript
+}`}
+          </pre>
+        </div>
+
+        {/* Action Buttons Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-800">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleTestLogrotate}
+              disabled={testingLogrotate}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-all border border-gray-700 flex items-center gap-2 disabled:opacity-50"
+            >
+              <Terminal className={`w-3.5 h-3.5 ${testingLogrotate ? 'animate-spin text-cyan-400' : ''}`} />
+              {testingLogrotate ? 'Menguji Dry Run...' : 'Uji Validasi (Dry Run)'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleForceRotate}
+              disabled={forceRotating}
+              className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold rounded-lg transition-all border border-amber-500/30 flex items-center gap-2 disabled:opacity-50"
+              title="Paksa rotasi segera untuk mengosongkan disk sekarang juga"
+            >
+              <Zap className={`w-3.5 h-3.5 ${forceRotating ? 'animate-spin' : ''}`} />
+              {forceRotating ? 'Memutar Log...' : 'Rotasi Sekarang (Paksa & Kosongkan)'}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleApplyLogrotate}
+            disabled={savingLogrotate}
+            className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black text-xs font-bold rounded-lg transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2 disabled:opacity-50"
+          >
+            {savingLogrotate ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {savingLogrotate ? 'Menerapkan...' : 'Terapkan Konfigurasi Logrotate'}
+          </button>
+        </div>
+
+        {/* Console Output Terminal */}
+        {consoleOutput && (
+          <div className="mt-4 pt-4 border-t border-gray-800">
+            <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+              <span className="flex items-center gap-1.5 font-mono text-[11px] text-gray-300">
+                <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                Output Eksekusi Konsol Logrotate:
+              </span>
+              <button
+                onClick={() => setConsoleOutput(null)}
+                className="text-[10px] text-gray-500 hover:text-gray-300 underline"
+              >
+                Tutup Konsol
+              </button>
+            </div>
+            <pre className="bg-black border border-gray-800 rounded-xl p-4 text-[11px] font-mono text-cyan-300 overflow-x-auto max-h-60 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+              {consoleOutput}
+            </pre>
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )}
+</div>
+);
 };

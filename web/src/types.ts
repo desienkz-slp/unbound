@@ -117,6 +117,61 @@ export interface DesiredState {
     interface: string;
     port: number;
   };
+  logrotate?: LogrotatePolicy;
+}
+
+export interface LogrotatePolicy {
+  enabled: boolean;
+  frequency: string;
+  rotate_count: number;
+  max_size: string;
+  compress: boolean;
+  delay_compress: boolean;
+  rotate_netora: boolean;
+}
+
+export interface LogTelemetry {
+  unbound_log_size_bytes: number;
+  unbound_log_size_human: string;
+  rotated_files_count: number;
+  rotated_files_size_bytes: number;
+  rotated_files_size_human: string;
+  total_log_size_bytes: number;
+  total_log_size_human: string;
+  netora_log_size_bytes: number;
+  netora_log_size_human: string;
+  last_rotated_at?: string;
+  config_path: string;
+  logrotate_installed: boolean;
+  has_su_directive: boolean;
+  health_status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+  issues?: string[];
+}
+
+export interface LogrotateAIRecommendation {
+  profile_name: string;
+  badge: string;
+  title: string;
+  reasoning: string;
+  hardware_factor: string;
+  projected_saving: string;
+  recommended_policy: LogrotatePolicy;
+}
+
+export interface LogrotateReport {
+  node_id: string;
+  active_policy: LogrotatePolicy;
+  active_config_raw: string;
+  telemetry: LogTelemetry;
+  ai_recommendation: LogrotateAIRecommendation;
+}
+
+export interface LogrotateApplyResult {
+  success: boolean;
+  message: string;
+  dry_run_output: string;
+  unbound_config: string;
+  netora_config?: string;
 }
 
 export interface NodeRecord {

@@ -583,6 +583,11 @@ AAEOF
         cp -f "${target_release_dir}/deploy/systemd/netora-dns-updater.service" /etc/systemd/system/netora-dns-updater.service 2>/dev/null && systemctl daemon-reload || true
     fi
 
+    # Update host logrotate configuration if present in release
+    if [[ -f "${target_release_dir}/conf/logrotate-unbound.conf" ]]; then
+        cp -f "${target_release_dir}/conf/logrotate-unbound.conf" /etc/logrotate.d/unbound 2>/dev/null || true
+    fi
+
     # Update Web UI static assets if present in release
     if [[ -d "${target_release_dir}/web/dist" ]]; then
         mkdir -p /var/www/netora-ui

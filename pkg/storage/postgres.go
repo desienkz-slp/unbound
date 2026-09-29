@@ -46,8 +46,10 @@ func NewPostgresStore(connStr string) (*PostgresStore, error) {
 		_, _ = db.Exec(initialSchemaSQL)
 	}
 
-	// Idempotent column check for node resolution_mode
+	// Idempotent column checks for backward compatibility
 	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS resolution_mode VARCHAR(32) DEFAULT 'RECURSIVE';`)
+	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT NOT NULL DEFAULT 0;`)
+	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_free_gb INT NOT NULL DEFAULT 0;`)
 
 	return &PostgresStore{db: db}, nil
 }
