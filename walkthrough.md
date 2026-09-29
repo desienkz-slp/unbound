@@ -3,7 +3,7 @@
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
 > **Target Node Prod:** `172.18.20.146` (`netora-dns1` — Unbound 1.19.2)  
-> **Versi Rilis:** `v1.0.98 (Build 98)` / Commit: `c7c55ea`  
+> **Versi Rilis:** `v1.0.100 (Build 100)` / Commit: `23ae32f`  
 
 ---
 
@@ -286,6 +286,85 @@ Sesuai instruksi dan rencana kerja 4 fase, tiga fitur kelas *Carrier-Grade ISP* 
    - Resolusi DNS live:
      - `google.com` -> `142.250.4.139`, `142.250.4.102` (RESOLVED)
      - `cf.shopee.co.id` -> `103.189.120.8`, `103.189.120.17` via Akamai CDN (RESOLVED)
+
+---
+
+## 8. Investigasi & Solusi Akar Masalah Upstream Resolver (Hotfix v1.0.100)
+
+### A. Gejala Masalah (User Report)
+Pengguna melaporkan pesan error yang selalu muncul ketika mencoba menerapkan pengaturan upstream forwarder di Web UI:
+```text
+health check failed after apply (rolled back): lookup google.com on 1.1.1.1:53: dial udp 127.0.0.1:53: i/o timeout (rollback error: <nil>)
+```
+
+### B. Investigasi Nyata & Akar Masalah (Root Cause Analysis)
+Berdasarkan investigasi log server `/var/log/unbound/unbound.log` dan audit Postgres pada server produksi (`172.18.20.146`), ditemukan **2 akar masalah utama**:
+
+1. **Akar Masalah 1: Pencampuran Protokol UDP (Port 53) & DoT (Port 853) dalam Satu Forward-Zone (Screenshot 1)**
+   - Pada Screenshot 1, daftar upstream aktif mencampur:
+     - Row 1: Google Primary (UDP port 53)
+     - Row 2: Cloudflare Primary (UDP port 53)
+     - Row 3: Google Public DNS Primary (DoT port 853 dengan `dns.google`)
+   - Karena upstream #3 bertipe TLS, generator Unbound mengaktifkan direktif:
+     ```conf
+     forward-tls-upstream: yes
+     ```
+   - Dalam arsitektur Unbound, direktif `forward-tls-upstream: yes` berlaku untuk **seluruh** alamat `forward-addr` di dalam zona tersebut. Akibatnya, Unbound mencoba membuka koneksi TLS ke `8.8.8.8:53` dan `1.1.1.1:53`. Port 53 adalah port plain DNS standar yang menolak negosiasi TLS, sehingga seluruh query ke upstream Primary & Secondary gagal/time out.
+
+2. **Akar Masalah 2: Inisialisasi OpenSSL CA Bundle Hanya Terjadi Saat Daemon Startup (Screenshot 3)**
+   - Pada Screenshot 3, pengguna menerapkan preset **1-Klik Rekomendasi CDN Terdekat (Semua DoT port 853)**. Namun apply tetap gagal dengan error log nyata:
+     ```text
+     [1790672431] unbound[88397:3] error: ssl handshake failed crypto error:0A000086:SSL routines::certificate verify failed
+     ```
+   - Dokumentasi resmi Unbound (`man unbound.conf`) menyatakan:
+     > `tls-cert-bundle: ... It is read at start up before permission drop and chroot.`
+   - Direktif `tls-cert-bundle` **hanya dibaca saat Unbound pertama kali dijalankan sebagai proses sistem (*start up*)**.
+   - Ketika konfigurasi diperbarui via REST API, fungsi `requiresDaemonRestart` sebelumnya hanya memeriksa perubahan socket (`interface`, `port`, `num-threads`), sehingga sistem hanya menjalankan `unbound-control reload`.
+   - Perintah `unbound-control reload` **tidak dapat menginisialisasi ulang OpenSSL CA bundle** ke dalam memori. Akibatnya, Unbound tidak memiliki sertifikat root CA untuk memverifikasi sertifikat TLS milik `cloudflare-dns.com` dan `dns.google`, menyebabkan kegagalan negosiasi SSL (`certificate verify failed`) dan query health check timeout.
+
+---
+
+### C. Solusi Rekayasa yang Diterapkan
+1. **Model & Validasi Semantik ([`pkg/model/validation.go`](file:///c:/xampp/htdocs/auto-install/unbound/pkg/model/validation.go)):**
+   - Menambahkan aturan validasi semantik: Jika mode resolusi adalah `FORWARDING` atau `HYBRID`, sistem memeriksa seluruh upstream aktif.
+   - Jika terdeteksi pencampuran antara protokol TLS (DoT) dan non-TLS (UDP), sistem langsung menolak dengan pesan informatif sebelum menyentuh daemon Unbound:
+     *"Pencampuran protokol terdeteksi: Semua upstream forwarder aktif harus menggunakan protokol yang seragam (seluruhnya UDP standar port 53 atau seluruhnya DoT terenkripsi port 853). Unbound tidak mendukung pencampuran TLS dan non-TLS dalam satu zona forwarder."*
+   - Menambahkan unit test di `pkg/model/validation_test.go` (100% PASS).
+
+2. **Template Unbound ([`pkg/configengine/templates.go`](file:///c:/xampp/htdocs/auto-install/unbound/pkg/configengine/templates.go)):**
+   - Menjadikan `tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"` permanen di blok `server:`, sehingga Unbound selalu memuat sertifikat CA saat daemon pertama kali menyala, siap melayani query DoT kapan pun diaktifkan.
+
+3. **Engine Deteksi Restart Otomatis ([`pkg/configengine/engine.go`](file:///c:/xampp/htdocs/auto-install/unbound/pkg/configengine/engine.go)):**
+   - Menambahkan `forward-tls-upstream:`, `forward-zone:`, `forward-addr:`, dan `tls-cert-bundle:` ke dalam `restartPrefixes`.
+   - Ketika konfigurasi upstream berpindah antar protokol (misal dari UDP ke DoT) atau forwarder diubah, engine secara otomatis melakukan **clean daemon restart** (`systemctl restart unbound`) alih-alih hanya reload, menjamin sertifikat CA dan context OpenSSL diinisialisasi secara sempurna.
+   - Meningkatkan jeda retry probe health check pasca restart menjadi 1000ms untuk memberi waktu Unbound mengikat socket jaringan.
+
+4. **Web UI Proteksi & Panduan Operator ([`web/src/views/DNSConfigView.tsx`](file:///c:/xampp/htdocs/auto-install/unbound/web/src/views/DNSConfigView.tsx)):**
+   - Menambahkan **Protocol Conflict Warning Banner** warna merah di atas tabel upstream jika pengguna mengaktifkan kombinasi UDP dan DoT sekaligus.
+   - Menambahkan tombol 1-klik perbaikan:
+     - **"Set Semua ke DoT (853)"** (Mengubah seluruh baris menjadi DoT dengan port 853 dan SNI valid).
+     - **"Set Semua ke UDP (53)"** (Mengubah seluruh baris menjadi UDP dengan port 53).
+   - Menyinkronkan port otomatis pada dropdown `Protocol` (memilih DoT otomatis mengisi port 853, memilih UDP otomatis mengisi port 53).
+   - Memvalidasi konsistensi protokol pada `handleApply` di sisi client.
+
+---
+
+### D. Hasil Pengujian Nyata (Real Verification Output)
+1. **Pengujian Test Case A (Mixed UDP + DoT di Server Dev & Prod):**
+   - Hasil: **Ditolak secara aman & presisi**
+   - Pesan: `Pencampuran protokol terdeteksi: Semua upstream forwarder aktif harus menggunakan protokol yang seragam...`
+2. **Pengujian Test Case B (Preset Rekomendasi 4 DoT di Server 146 Prod):**
+   - `Atomic Apply`: **SUCCESS (Duration: 3503ms)**
+   - `Syntax Check`: **VALID (`unbound-checkconf: no errors`)**
+   - `Daemon Restart`: **SUCCESS (PID 102406 active)**
+   - `Health Check`: **PASS (`healthy, latency=1.232s`)**
+   - `Log Daemon`: `NOERROR` pada seluruh query (tanpa error SSL handshake).
+3. **Pengujian Test Case C (Pure UDP 53 di Server 146 Prod):**
+   - `Atomic Apply`: **SUCCESS**
+   - `DNS Resolution Live`:
+     - `google.com` -> `74.125.200.100` (RESOLVED)
+     - `cf.shopee.co.id` -> `103.115.76.33` (RESOLVED via Akamai)
+
 
 
 
