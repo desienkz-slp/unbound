@@ -438,3 +438,50 @@ o:**
      - locked_queries: **848**
      - vg_processing_time_ms: **31.5 ms**
    - Hasil: **Statistik tetap kontinu, stabil, dan tidak pernah drop ke 0 lagi.**
+
+---
+
+## 10. Penghapusan Baris Netora Build & Version pada Sidebar Footer
+
+### A. Permasalahan & Permintaan Pengguna
+Pengguna meminta agar pada panel sidebar samping, baris **Netora Build** beserta versinya dihilangkan dari kartu status footer, sehingga kartu tersebut hanya menampilkan indikator status Data Plane (RESOLVING / DEGRADED).
+
+---
+
+### B. Perubahan Komponen ([web/src/components/Sidebar.tsx](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/Sidebar.tsx))
+1. Menghapus baris pemisah dan elemen teks build version:
+   `	sx
+   // DIHAPUS:
+   <div className="flex items-center justify-between pt-1.5 border-t border-gray-800/60 text-xs">
+     <span className="text-gray-400 font-sans">Netora Build</span>
+     <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
+   </div>
+   `
+2. Menghapus impor localVersion yang tidak lagi digunakan agar bundle bersih tanpa dead code.
+3. Menyederhanakan kontainer status menjadi:
+   `	sx
+   {/* Footer System Status */}
+   <div className="mt-6 pt-4 border-t border-gray-800/80">
+     <div className="bg-gray-900/70 border border-gray-800 rounded-lg p-2.5">
+       <div className="flex items-center justify-between text-xs">
+         <span className="text-gray-300 font-medium flex items-center gap-1.5">
+           <Activity className={w-3.5 h-3.5 } />
+           Data Plane
+         </span>
+         <span
+           className={	ext-[10px] px-2 py-0.5 rounded font-mono font-medium }
+         >
+           {unboundStatus ? 'RESOLVING' : 'DEGRADED'}
+         </span>
+       </div>
+     </div>
+   </div>
+   `
+
+---
+
+### C. Kompilasi & Deployment
+1. **Frontend Build:** 
+pm run build berhasil mengompilasi bundle baru index-CeBVDx97.js (523 kB) tanpa error lint maupun TypeScript.
+2. **Git Commit & Push:** Di-push ke GitHub repository dengan commit cf6f116 pada rilis 1.0.104 (Build 104).
+3. **Penyebaran Produksi (Server 172.18.20.146):** Auto-update selesai dengan sukses (SUCCESS), file index-CeBVDx97.js aktif disajikan secara langsung ke pengguna browser.
