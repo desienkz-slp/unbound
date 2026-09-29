@@ -132,11 +132,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Footer Netora Build Version */}
+      {/* Footer System Status & Netora Build Version */}
       <div className="mt-6 pt-4 border-t border-gray-800/80">
-        <div className="bg-gray-900/60 border border-gray-800/80 rounded-lg px-3 py-2 flex items-center justify-between text-xs">
-          <span className="text-gray-400 font-sans">Netora Build</span>
-          <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
+        <div className="bg-gray-900/70 border border-gray-800 rounded-lg p-2.5 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-gray-300 font-medium flex items-center gap-1.5">
+              <Activity className={`w-3.5 h-3.5 ${unboundStatus ? 'text-emerald-400' : 'text-red-400'}`} />
+              Data Plane
+            </span>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium ${
+                unboundStatus
+                  ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
+                  : 'bg-red-950/80 text-red-400 border border-red-800/60'
+              }`}
+            >
+              {unboundStatus ? 'RESOLVING' : 'DEGRADED'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between pt-1.5 border-t border-gray-800/60 text-xs">
+            <span className="text-gray-400 font-sans">Netora Build</span>
+            <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
+          </div>
         </div>
       </div>
     </aside>
