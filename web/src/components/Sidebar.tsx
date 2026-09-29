@@ -11,7 +11,6 @@ import {
   Search,
   Sparkles,
   UserCheck,
-  Wrench,
 } from 'lucide-react';
 
 export type NavTab =
@@ -133,30 +132,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Footer Data Plane Status Badge */}
+      {/* Footer Netora Build Version */}
       <div className="mt-6 pt-4 border-t border-gray-800/80">
-        <div className="bg-gray-900/80 border border-gray-800 rounded-lg p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
-              <Wrench className="w-3.5 h-3.5 text-cyan-400" /> Data Plane
-            </span>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium ${
-                unboundStatus
-                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                  : 'bg-red-950 text-red-400 border border-red-800'
-              }`}
-            >
-              {unboundStatus ? 'RESOLVING' : 'DEGRADED'}
-            </span>
-          </div>
-          <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
-            Data plane remains fully independent of control plane failures.
-          </p>
-          <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-gray-800/60 text-[11px]">
-            <span className="text-gray-400 font-sans">Netora Build</span>
-            <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
-          </div>
+        <div className="bg-gray-900/60 border border-gray-800/80 rounded-lg px-3 py-2 flex items-center justify-between text-xs">
+          <span className="text-gray-400 font-sans">Netora Build</span>
+          <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
         </div>
       </div>
     </aside>
