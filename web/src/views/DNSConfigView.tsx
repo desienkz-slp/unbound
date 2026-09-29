@@ -361,6 +361,26 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
   const handleApply = async () => {
     setSaving(true);
     setMessage(null);
+
+    const activeUps = (localState.upstreams || []).filter((u) => u.enabled);
+    if (localState.resolution_mode !== 'RECURSIVE') {
+      if (activeUps.length === 0) {
+        setMessage({ type: 'error', text: 'Mode Forwarding atau Hybrid memerlukan minimal 1 upstream resolver aktif.' });
+        setSaving(false);
+        return;
+      }
+      const hasTLS = activeUps.some((u) => u.type === 'DOT' || u.type === 'DOH' || u.port === 853 || !!u.tls_name);
+      const hasPlain = activeUps.some((u) => !(u.type === 'DOT' || u.type === 'DOH' || u.port === 853 || !!u.tls_name));
+      if (hasTLS && hasPlain) {
+        setMessage({
+          type: 'error',
+          text: 'Pencampuran protokol terdeteksi: Semua upstream aktif harus menggunakan protokol yang seragam (seluruhnya UDP standar port 53 atau seluruhnya DoT terenkripsi port 853). Unbound tidak mendukung pencampuran TLS dan non-TLS dalam satu zona forwarder.',
+        });
+        setSaving(false);
+        return;
+      }
+    }
+
     try {
       const payload: DesiredState = {
         ...localState,
@@ -1333,6 +1353,67 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                   </button>
                 </div>
 
+                {/* Protocol Conflict Warning Banner */}
+                {(() => {
+                  const activeUps = (localState.upstreams || []).filter((u) => u.enabled);
+                  const hasTLS = activeUps.some((u) => u.type === 'DOT' || u.type === 'DOH' || u.port === 853 || !!u.tls_name);
+                  const hasPlain = activeUps.some((u) => !(u.type === 'DOT' || u.type === 'DOH' || u.port === 853 || !!u.tls_name));
+                  if (hasTLS && hasPlain && localState.resolution_mode !== 'RECURSIVE') {
+                    return (
+                      <div className="p-3 bg-rose-950/40 border border-rose-800/80 rounded-xl text-rose-200 text-xs flex flex-wrap items-center justify-between gap-3 shadow-md">
+                        <div className="flex items-center gap-2.5">
+                          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                          <div>
+                            <div className="font-bold text-rose-100">Perhatian: Pencampuran Protokol Terdeteksi</div>
+                            <div className="text-[11px] text-rose-300">
+                              Daftar upstream aktif mencampur UDP standar (Port 53) dan DoT (Port 853). Unbound mewajibkan seluruh upstream aktif dalam satu zona menggunakan protokol yang seragam.
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = (localState.upstreams || []).map((u) => ({
+                                ...u,
+                                type: 'DOT' as const,
+                                port: 853,
+                                tls_name:
+                                  u.tls_name ||
+                                  (u.ip === '8.8.8.8' || u.ip === '8.8.4.4'
+                                    ? 'dns.google'
+                                    : u.ip === '1.1.1.1' || u.ip === '1.0.0.1'
+                                    ? 'cloudflare-dns.com'
+                                    : ''),
+                              }));
+                              setLocalState({ ...localState, upstreams: updated });
+                            }}
+                            className="px-2.5 py-1 bg-rose-900/80 hover:bg-rose-800 text-white rounded font-semibold text-xs transition-colors border border-rose-700"
+                          >
+                            Set Semua ke DoT (853)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = (localState.upstreams || []).map((u) => ({
+                                ...u,
+                                type: 'UDP' as const,
+                                port: 53,
+                                tls_name: '',
+                              }));
+                              setLocalState({ ...localState, upstreams: updated });
+                            }}
+                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded font-semibold text-xs transition-colors border border-gray-700"
+                          >
+                            Set Semua ke UDP (53)
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <div className="overflow-x-auto rounded-xl border border-gray-800">
                   <table className="w-full text-left text-xs font-mono">
                     <thead className="bg-gray-950 text-gray-400 border-b border-gray-800">
@@ -1458,7 +1539,19 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                             <td className="py-2.5 px-3">
                               <select
                                 value={up.type}
-                                onChange={(e) => updateUpstream(idx, { type: e.target.value })}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  const newPort = val === 'DOT' ? 853 : up.port === 853 ? 53 : up.port;
+                                  const newTls =
+                                    val === 'DOT' && !up.tls_name
+                                      ? up.ip === '8.8.8.8' || up.ip === '8.8.4.4'
+                                        ? 'dns.google'
+                                        : up.ip === '1.1.1.1' || up.ip === '1.0.0.1'
+                                        ? 'cloudflare-dns.com'
+                                        : ''
+                                      : up.tls_name;
+                                  updateUpstream(idx, { type: val, port: newPort, tls_name: newTls });
+                                }}
                                 className="bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 font-mono focus:border-cyan-500"
                               >
                                 <option value="DOT">DoT (TLS)</option>

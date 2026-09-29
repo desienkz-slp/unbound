@@ -105,6 +105,8 @@ func ValidateDesiredState(state *DesiredState) []ValidationError {
 		// Upstreams optional, but DNSSEC should be configured
 	case ModeForwarding, ModeHybrid:
 		activeUpstreams := 0
+		hasTLS := false
+		hasPlain := false
 		for idx, up := range state.Upstreams {
 			prefix := fmt.Sprintf("upstreams[%d]", idx)
 			if !up.Enabled {
@@ -120,12 +122,23 @@ func ValidateDesiredState(state *DesiredState) []ValidationError {
 			if up.Port <= 0 || up.Port > 65535 {
 				errs = append(errs, ValidationError{Field: prefix + ".port", Message: fmt.Sprintf("invalid upstream port: %d", up.Port)})
 			}
+
+			if up.Type == UpstreamDoT || up.Type == UpstreamDoH || up.Port == 853 || up.TLSName != "" {
+				hasTLS = true
+			} else {
+				hasPlain = true
+			}
 		}
 
 		if activeUpstreams == 0 {
 			errs = append(errs, ValidationError{
 				Field:   "upstreams",
 				Message: fmt.Sprintf("resolution mode '%s' requires at least one active upstream server", state.ResolutionMode),
+			})
+		} else if hasTLS && hasPlain {
+			errs = append(errs, ValidationError{
+				Field:   "upstreams",
+				Message: "Pencampuran protokol terdeteksi: Semua upstream forwarder aktif harus menggunakan protokol yang seragam (seluruhnya UDP standar port 53 atau seluruhnya DoT terenkripsi port 853). Unbound tidak mendukung pencampuran TLS dan non-TLS dalam satu zona forwarder.",
 			})
 		}
 	default:

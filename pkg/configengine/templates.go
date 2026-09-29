@@ -131,9 +131,7 @@ server:
 {{- else }}
   module-config: "iterator"
 {{- end }}
-{{- if .HasTLSUpstream }}
   tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"
-{{- end }}
 
   # --- 10. Auxiliary Configuration Directives ---
   include: "{{ .ConfigDir }}/conf.d/*.conf"

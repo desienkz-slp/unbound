@@ -221,7 +221,7 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 		var health *HealthResult
 		for attempt := 1; attempt <= 4; attempt++ {
 			if attempt > 1 {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(1000 * time.Millisecond)
 			}
 			health = e.healthChecker.CheckResolution(ctx, targetIP, targetPort, "udp", "google.com")
 			if health != nil && health.Healthy {
@@ -510,6 +510,10 @@ func extractRestartDirectives(confPath string) ([]string, error) {
 		"ip-freebind:",
 		"do-ip4:",
 		"do-ip6:",
+		"forward-tls-upstream:",
+		"forward-zone:",
+		"forward-addr:",
+		"tls-cert-bundle:",
 	}
 
 	scanner := bufio.NewScanner(f)
