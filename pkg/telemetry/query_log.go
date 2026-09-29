@@ -66,16 +66,20 @@ type DetailedStatsReport struct {
 
 // QueryLogTailer continuously tails /var/log/unbound/unbound.log and aggregates real metrics in memory.
 type QueryLogTailer struct {
-	logPath      string
-	unboundBin   string
-	mu           sync.RWMutex
-	clientCounts map[string]int64
-	domainCounts map[string]int64
-	domainBlocked map[string]bool
-	blockedCounts map[string]int64
-	totalLogQueries int64
-	totalLogBlocked int64
-	lastOffset   int64
+	logPath              string
+	unboundBin           string
+	mu                   sync.RWMutex
+	clientCounts         map[string]int64
+	domainCounts         map[string]int64
+	domainBlocked        map[string]bool
+	blockedCounts        map[string]int64
+	totalLogQueries      int64
+	totalLogBlocked      int64
+	totalLogCacheHits    int64
+	totalLogCacheMisses  int64
+	totalLogElapsedSec   float64
+	totalLogElapsedCount int64
+	lastOffset           int64
 }
 
 var (
@@ -350,6 +354,23 @@ func (t *QueryLogTailer) parseLine(raw string) {
 			t.blockedCounts[domain]++
 			t.totalLogBlocked++
 		}
+
+		// Field 6 in Unbound log-replies is from_cache: "1" = hit, "0" = miss
+		if len(fields) >= 7 {
+			if fields[6] == "1" {
+				t.totalLogCacheHits++
+			} else if fields[6] == "0" {
+				t.totalLogCacheMisses++
+			}
+		}
+
+		// Field 5 in Unbound log-replies is time to resolve (seconds)
+		if len(fields) >= 6 {
+			if elapsedSec, err := strconv.ParseFloat(fields[5], 64); err == nil && elapsedSec >= 0 {
+				t.totalLogElapsedSec += elapsedSec
+				t.totalLogElapsedCount++
+			}
+		}
 	} else if len(fields) == 4 {
 		// Just a query line (in case log-replies is off)
 		// Only increment if we don't have reply lines
@@ -615,11 +636,40 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 		effectiveTotalQueries = effectiveBlockedQueries
 	}
 
+	// Cache Hits and Misses:
+	// Prioritize the cumulative log metrics which persist across Unbound reloads/restarts.
+	// Fall back to unbound-control stats_noreset if log-replies was off or log was truncated.
+	effectiveCacheHits := int64(cacheHits)
+	effectiveCacheMisses := int64(cacheMisses)
+
+	if t.totalLogCacheHits > 0 || t.totalLogCacheMisses > 0 {
+		if t.totalLogCacheHits >= effectiveCacheHits {
+			effectiveCacheHits = t.totalLogCacheHits
+		}
+		if t.totalLogCacheMisses >= effectiveCacheMisses {
+			effectiveCacheMisses = t.totalLogCacheMisses
+		}
+	}
+
+	if effectiveTotalQueries < (effectiveCacheHits + effectiveCacheMisses) {
+		effectiveTotalQueries = effectiveCacheHits + effectiveCacheMisses
+	}
+
+	// Calculate average processing time:
+	// If we have parsed reply elapsed times from the log, use real average processing time.
+	effectiveAvgTime := avgTime
+	if t.totalLogElapsedCount > 0 {
+		effectiveAvgTime = (t.totalLogElapsedSec / float64(t.totalLogElapsedCount)) * 1000.0
+	}
+	if effectiveAvgTime <= 0 {
+		effectiveAvgTime = 1.0
+	}
+
 	return &DetailedStatsReport{
 		TotalQueries:        effectiveTotalQueries,
-		CacheHits:           int64(cacheHits),
-		CacheMisses:         int64(cacheMisses),
-		AvgProcessingTimeMS: avgTime,
+		CacheHits:           effectiveCacheHits,
+		CacheMisses:         effectiveCacheMisses,
+		AvgProcessingTimeMS: effectiveAvgTime,
 		BlockedQueries:      effectiveBlockedQueries,
 		BlockedMalware:      malwareBlocked,
 		BlockedAdult:        adultBlocked,

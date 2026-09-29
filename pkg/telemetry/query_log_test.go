@@ -55,6 +55,12 @@ func TestQueryLogTailerParsing(t *testing.T) {
 	if report.BlockedQueries < 2 {
 		t.Errorf("expected at least 2 blocked queries (rak8s.com and sbobet.com), got %d", report.BlockedQueries)
 	}
+	if report.CacheHits != 4 {
+		t.Errorf("expected 4 cache hits, got %d", report.CacheHits)
+	}
+	if report.CacheMisses != 1 {
+		t.Errorf("expected 1 cache miss, got %d", report.CacheMisses)
+	}
 
 	if len(report.TopClients) < 2 {
 		t.Errorf("expected at least 2 clients, got %d", len(report.TopClients))

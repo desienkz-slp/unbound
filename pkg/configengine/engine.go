@@ -274,6 +274,7 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 	// Archive version files in history
 	versionArchiveDir := filepath.Join(e.historyDir, state.VersionID)
 	_ = e.writeFiles(versionArchiveDir, renderRes.Files)
+	e.pruneHistory(10)
 
 	result.Success = true
 	result.CompletedAt = time.Now().UTC()
@@ -558,4 +559,40 @@ func requiresDaemonRestart(oldConfPath, newConfPath string) bool {
 		}
 	}
 	return false
+}
+
+// pruneHistory removes older version backups and archives, keeping only the most recent `keep` directories.
+func (e *Engine) pruneHistory(keep int) {
+	if keep <= 0 {
+		keep = 10
+	}
+	entries, err := os.ReadDir(e.historyDir)
+	if err != nil {
+		return
+	}
+
+	type dirEntry struct {
+		name    string
+		modTime time.Time
+	}
+	var dirs []dirEntry
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if fi, err := entry.Info(); err == nil {
+				dirs = append(dirs, dirEntry{name: entry.Name(), modTime: fi.ModTime()})
+			}
+		}
+	}
+
+	if len(dirs) <= keep {
+		return
+	}
+
+	sort.Slice(dirs, func(i, j int) bool {
+		return dirs[i].modTime.After(dirs[j].modTime)
+	})
+
+	for _, d := range dirs[keep:] {
+		_ = os.RemoveAll(filepath.Join(e.historyDir, d.name))
+	}
 }

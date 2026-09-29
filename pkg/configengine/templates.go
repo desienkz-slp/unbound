@@ -116,6 +116,7 @@ server:
   # --- 8. Telemetry & Statistics ---
   statistics-interval: 0
   extended-statistics: yes
+  statistics-cumulative: yes
 
   # --- 9. DNSSEC Configuration ---
 {{- if .DNSSEC.Enabled }}

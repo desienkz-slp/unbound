@@ -141,8 +141,9 @@ export const OverviewView: React.FC<OverviewProps> = ({
         latency: health?.latency_ms ? `${health.latency_ms.toFixed(1)} ms` : '1.2 ms',
       }));
 
-  const cacheHitRatio = stats.totalQueries > 0
-    ? Math.min(100, Number((((stats.cacheHits || 0) / Math.max(1, stats.totalQueries)) * 100).toFixed(1))).toFixed(1)
+  const totalResolutions = (stats.cacheHits + stats.cacheMisses) > 0 ? (stats.cacheHits + stats.cacheMisses) : stats.totalQueries;
+  const cacheHitRatio = totalResolutions > 0
+    ? Math.min(100, Number((((stats.cacheHits || 0) / Math.max(1, totalResolutions)) * 100).toFixed(1))).toFixed(1)
     : '0.0';
 
   const blockedPct = stats.totalQueries > 0
