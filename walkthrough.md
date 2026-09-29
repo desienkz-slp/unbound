@@ -3,7 +3,7 @@
 > **Status:** Production Deployed & Verified 100% PASS  
 > **Target Node Dev:** `172.18.20.145` (`dns-dev` — Unbound 1.13.1)  
 > **Target Node Prod:** `172.18.20.146` (`netora-dns1` — Unbound 1.19.2)  
-> **Versi Rilis:** `v1.0.94 (Build 94)` / Commit: `1cee891`  
+> **Versi Rilis:** `v1.0.96 (Build 96)` / Commit: `c9bb127`  
 
 ---
 
@@ -209,22 +209,25 @@ Sesuai instruksi dan rencana kerja 4 fase, tiga fitur kelas *Carrier-Grade ISP* 
 
 ---
 
-## 6. Penyederhanaan Footer Sidebar (Netora Build Version Only — v1.0.94)
+## 6. Penataan Ulang Footer Sidebar (Status Resolving & Netora Build — v1.0.96)
 
-### A. Permintaan Pengguna
-Menghapus blok informasi Data Plane ("Data Plane RESOLVING" dan deskripsi) pada bagian bawah sidebar, dan hanya mempertahankan baris informasi **Netora Build version**.
+### A. Konfirmasi Kebutuhan Pengguna
+- Status resolusi DNS (**RESOLVING** hijau atau **DEGRADED** merah) **TIDAK BOLEH dihilangkan**, karena merupakan indikator vital keaktifan data plane DNS.
+- Teks deskripsi statis pendukung (*"Data plane remains fully independent of control plane failures."*) dihilangkan agar tampilan ringkas, rapi, dan tidak memakan ruang.
+- Informasi nomor rilis **Netora Build** tetap tampil berdampingan di bawah status resolusi.
 
-### B. Perubahan Kode
-1. **[`web/src/components/Sidebar.tsx`](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/Sidebar.tsx):**
-   - Menghapus badge status Data Plane (`RESOLVING` / `DEGRADED`) dan teks deskripsi pendukung.
-   - Menggantikan card footer dengan box minimalis yang ramping dan elegan berisi label `Netora Build` dan versi aktif (misal `v1.0.94`).
-   - Membersihkan import ikon `Wrench` yang sudah tidak digunakan (Dead Code Elimination).
-2. **[`scripts/netora-dns-update.sh`](file:///c:/xampp/htdocs/auto-install/unbound/scripts/netora-dns-update.sh):**
-   - Memperbaiki script auto-updater agar menyalin asset Web UI dari direktori `deploy/ui/` yang dilacak di git (sebelumnya hanya mengecek `web/dist/` yang di-ignore oleh `.gitignore`).
+### B. Perubahan Kode ([`web/src/components/Sidebar.tsx`](file:///c:/xampp/htdocs/auto-install/unbound/web/src/components/Sidebar.tsx))
+- Mengintegrasikan kembali status badge Data Plane:
+  - Label: `Data Plane` dengan ikon `Activity` (hijau jika resolving, merah jika degraded).
+  - Badge: `RESOLVING` (latar hijau gelap `bg-emerald-950/80` font mono) atau `DEGRADED` (latar merah gelap).
+- Menampilkan garis pemisah halus (`border-t border-gray-800/60`).
+- Menampilkan nomor versi `Netora Build` (contoh: `v1.0.96`).
+- Paragraf deskripsi statis yang memakan tempat telah dibersihkan secara permanen.
 
 ### C. Hasil Uji & Distribusi
-- Build Web UI: `index-1IdAYN5T.js` (`v1.0.94`).
-- Diuji di dev server `172.18.20.145`: Footer sidebar bersih, hanya menampilkan Netora Build version.
-- Diuji di prod server `172.18.20.146`: Diupdate via GitHub auto-update script, bundle baru aktif, DNS resolution tetap prima.
+- Build Web UI: `index-4SmV_1Lg.js` & `index-BzZTSn8c.css` (`v1.0.96`).
+- Diuji di dev server `172.18.20.145`: Status `RESOLVING` aktif hijau berdampingan dengan `Netora Build v1.0.96`.
+- Diuji di prod server `172.18.20.146`: Diperbarui melalui GitHub auto-update script, bundle baru aktif, dan DNS resolution tetap normal 100%.
+
 
 
