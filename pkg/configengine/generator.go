@@ -254,6 +254,32 @@ func filterOutWhitelisted(domains []string, whitelist map[string]bool) []string 
 	return filtered
 }
 
+// deduplicateBlocklists eliminates cross-category duplicate domains so each domain
+// only appears in exactly one Unbound conf file, preventing duplicate local-zone warnings.
+// Priority order (highest first): malware > ads > adult > gambling > custom.
+// A domain already claimed by a higher-priority list is stripped from all lower ones.
+func deduplicateBlocklists(malware, ads, adult, gambling, custom []string) ([]string, []string, []string, []string, []string) {
+	globalSeen := make(map[string]bool)
+
+	dedup := func(list []string) []string {
+		var out []string
+		for _, d := range list {
+			if !globalSeen[d] {
+				globalSeen[d] = true
+				out = append(out, d)
+			}
+		}
+		return out
+	}
+
+	malware  = dedup(malware)
+	ads      = dedup(ads)
+	adult    = dedup(adult)
+	gambling = dedup(gambling)
+	custom   = dedup(custom)
+	return malware, ads, adult, gambling, custom
+}
+
 // Generator transforms DesiredState into deterministic Unbound configuration files.
 type Generator struct {
 	mainTmpl       *template.Template
@@ -370,6 +396,12 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 	adsList := filterOutWhitelisted(loadWithFallback("ads.txt", DefaultAdsBlockedDomains), wlMap)
 	malwareList := filterOutWhitelisted(loadWithFallback("malware.txt", DefaultMalwareBlockedDomains), wlMap)
 	customList := filterOutWhitelisted(loadWithFallback("custom.txt", DefaultCustomBlockedDomains), wlMap)
+
+	// Cross-category deduplication: each domain only in one conf file (highest priority wins).
+	// Eliminates duplicate local-zone warnings in unbound-checkconf.
+	malwareList, adsList, adultList, gamblingList, customList = deduplicateBlocklists(
+		malwareList, adsList, adultList, gamblingList, customList,
+	)
 
 	// Prepare sorted, deterministic collections
 	ctx := &GeneratorContext{

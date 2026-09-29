@@ -118,3 +118,60 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// TestBlocklistManager_CrossFeedDeduplication verifies that a domain appearing in
+// multiple feed files is only written to the highest-priority feed's output file and
+// excluded from all lower-priority files, preventing duplicate local-zone warnings.
+func TestBlocklistManager_CrossFeedDeduplication(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "netora-dedup-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	confDir := filepath.Join(tmpDir, "conf.d")
+	_ = os.MkdirAll(confDir, 0755)
+
+	// "overlap.com" appears in BOTH malware and ads feeds
+	_ = os.WriteFile(filepath.Join(tmpDir, "malware.txt"), []byte("overlap.com\nmalware-only.com\n"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "ads.txt"), []byte("overlap.com\nads-only.com\n"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "whitelist.txt"), []byte(""), 0644)
+
+	offlineClient := &http.Client{
+		Transport: &mockTransport{statusCode: 404},
+	}
+
+	mgr := NewManager(ManagerOptions{
+		BlocklistDir: tmpDir,
+		ConfDDir:     confDir,
+		Interval:     1 * time.Hour,
+		Store:        storage.NewMemoryStore(),
+		NodeID:       "dedup-test-node",
+		HTTPClient:   offlineClient,
+	})
+
+	if _, err := mgr.SyncAll(context.Background(), "Dedup Test"); err != nil {
+		t.Fatalf("SyncAll failed: %v", err)
+	}
+
+	malwareCleaned, _ := os.ReadFile(filepath.Join(tmpDir, "malware.txt"))
+	adsCleaned, _ := os.ReadFile(filepath.Join(tmpDir, "ads.txt"))
+
+	malwareOut := string(malwareCleaned)
+	adsOut := string(adsCleaned)
+
+	// "overlap.com" must be in malware (higher priority)
+	if !strings.Contains(malwareOut, "overlap.com") {
+		t.Errorf("overlap.com should be present in malware.txt (higher priority)")
+	}
+	// "overlap.com" must NOT be in ads (lower priority — deduped out)
+	if strings.Contains(adsOut, "overlap.com") {
+		t.Errorf("overlap.com should NOT be in ads.txt — it was already claimed by malware feed")
+	}
+	// unique domains must still be present
+	if !strings.Contains(malwareOut, "malware-only.com") {
+		t.Errorf("malware-only.com should be present in malware.txt")
+	}
+	if !strings.Contains(adsOut, "ads-only.com") {
+		t.Errorf("ads-only.com should be present in ads.txt")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -285,15 +286,36 @@ func (m *Manager) SyncAll(ctx context.Context, trigger string) (*SyncReport, err
 	}
 
 	// Step 2: Download & sanitize blocklists
+	// Feed priority for cross-category dedup (highest first): MALWARE_ADS > ADS_TRACKING > ADULT > GAMBLING > CUSTOM
+	// A domain that appears in multiple feeds is only written to the highest-priority feed's conf file,
+	// preventing duplicate local-zone warnings in unbound-checkconf.
+	feedPriority := []string{"MALWARE_ADS", "ADS_TRACKING", "ADULT", "GAMBLING", "CUSTOM"}
+	priorityIndex := func(cat string) int {
+		for i, c := range feedPriority {
+			if c == cat {
+				return i
+			}
+		}
+		return len(feedPriority)
+	}
+
+	// Sort feeds by priority before processing
+	sortedFeeds := make([]FeedDefinition, 0, len(feeds))
+	for _, f := range feeds {
+		if f.Category != "WHITELIST" {
+			sortedFeeds = append(sortedFeeds, f)
+		}
+	}
+	sort.Slice(sortedFeeds, func(i, j int) bool {
+		return priorityIndex(sortedFeeds[i].Category) < priorityIndex(sortedFeeds[j].Category)
+	})
+
 	categoryCounts := make(map[string]int)
 	categoryCounts["WHITELIST"] = len(whitelistDomains)
 	totalDomains := 0
+	globalBlockSeen := make(map[string]bool) // cross-feed dedup
 
-	for _, feed := range feeds {
-		if feed.Category == "WHITELIST" {
-			continue
-		}
-
+	for _, feed := range sortedFeeds {
 		data, ok := m.downloadFeed(ctx, feed)
 		if !ok && len(data) == 0 {
 			// If download failed and local doesn't exist, read disk fallback
@@ -305,11 +327,13 @@ func (m *Manager) SyncAll(ctx context.Context, trigger string) (*SyncReport, err
 		seen := make(map[string]bool)
 
 		for _, d := range rawDomains {
-			if !whitelistMap[d] && !seen[d] {
+			if !whitelistMap[d] && !seen[d] && !globalBlockSeen[d] {
 				seen[d] = true
+				globalBlockSeen[d] = true
 				cleanedDomains = append(cleanedDomains, d)
 			}
 		}
+
 
 		// Write sanitized list back to disk
 		if len(cleanedDomains) > 0 {
