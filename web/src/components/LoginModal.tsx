@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { KeyRound, Lock, User, AlertCircle, ShieldCheck } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -9,9 +9,16 @@ interface LoginModalProps {
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => {
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      setPassword('');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

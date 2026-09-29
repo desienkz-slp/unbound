@@ -91,10 +91,18 @@ class ApiClient {
 
   async logout(): Promise<void> {
     try {
-      await this.request('/auth/logout', { method: 'POST' });
+      if (this.token) {
+        await this.request('/auth/logout', { method: 'POST' });
+      }
+    } catch (err) {
+      console.warn('Backend logout call failed, completing client-side logout:', err);
     } finally {
       this.setToken(null);
     }
+  }
+
+  async getMe(): Promise<{ user_id: string; username: string; role: string }> {
+    return this.request<{ user_id: string; username: string; role: string }>('/auth/me');
   }
 
   async updateProfile(data: {

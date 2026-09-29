@@ -148,6 +148,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// Auth Endpoints
 	mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
+	mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)
 	mux.HandleFunc("/api/v1/auth/me", s.requireAuth(s.handleMe))
 	mux.HandleFunc("/api/v1/auth/profile", s.requireAuth(s.handleUpdateProfile))
 
@@ -514,6 +515,39 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"role":      user.Role,
 			"full_name": user.FullName,
 		},
+	})
+}
+
+// Handler: Logout
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	tokenStr := ""
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+	} else if qToken := r.URL.Query().Get("token"); qToken != "" {
+		tokenStr = qToken
+	}
+
+	if tokenStr != "" {
+		if claims, err := auth.ValidateToken(tokenStr, s.jwtSecret); err == nil && claims != nil {
+			_ = s.store.LogAudit(r.Context(), &model.AuditRecord{
+				Actor:    claims.Username,
+				Action:   "USER_LOGOUT",
+				Target:   claims.UserID,
+				ClientIP: r.RemoteAddr,
+				Status:   "SUCCESS",
+			})
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Logged out successfully",
 	})
 }
 

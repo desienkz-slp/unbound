@@ -292,3 +292,36 @@ func TestAPI_UpdateProfileInvalidCurrentPassword(t *testing.T) {
 		t.Fatalf("expected 401 Unauthorized for wrong current password, got %d", w.Code)
 	}
 }
+
+func TestAPI_Logout(t *testing.T) {
+	server, _, token := setupTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	// 1. Logout with valid token
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from logout, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode logout response: %v", err)
+	}
+	if resp["success"] != true {
+		t.Errorf("expected success: true, got %v", resp["success"])
+	}
+
+	// 2. Logout without token should also succeed gracefully
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from tokenless logout, got %d", w2.Code)
+	}
+}

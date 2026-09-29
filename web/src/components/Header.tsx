@@ -111,11 +111,13 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <button
+          type="button"
           onClick={onLogout}
-          title="Sign out"
-          className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-800/60 rounded-lg transition-colors"
+          title="Keluar dari Akun (Logout)"
+          aria-label="Logout"
+          className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 border border-transparent rounded-lg transition-all cursor-pointer group"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="w-4 h-4 group-hover:scale-110 group-hover:text-red-400 transition-transform" />
         </button>
       </div>
     </header>

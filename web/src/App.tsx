@@ -30,6 +30,24 @@ export function App() {
 
   // Initial load
   const loadInitialData = async () => {
+    if (!api.getToken()) {
+      setShowLogin(true);
+      return;
+    }
+
+    try {
+      const me = await api.getMe();
+      if (me && me.username) {
+        setCurrentUser(me.username);
+      }
+    } catch (err: any) {
+      if (err.message === 'Unauthorized') {
+        setShowLogin(true);
+        return;
+      }
+      console.warn('Failed to verify session token:', err);
+    }
+
     let nodeList: NodeRecord[] = [];
     try {
       nodeList = await api.getNodes();
@@ -105,8 +123,16 @@ export function App() {
   };
 
   const handleLogout = async () => {
-    await api.logout();
-    setShowLogin(true);
+    try {
+      await api.logout();
+    } catch (err) {
+      console.warn('Logout error:', err);
+    } finally {
+      api.setToken(null);
+      setCurrentUser('');
+      setConfig(null);
+      setShowLogin(true);
+    }
   };
 
   return (
