@@ -4,7 +4,7 @@
   <p><strong>Autonomous High-Speed Unbound DNS Resolver with Real-Time NOC Telemetry, Suffix-Trie Filtering, and Zero-Downtime CI/CD Fleet Auto-Updates.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/Release-v1.0.75-cyan?style=flat-square" alt="Release" />
+    <img src="https://img.shields.io/badge/Release-v1.0.104-cyan?style=flat-square" alt="Release" />
     <img src="https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange?style=flat-square&logo=ubuntu" alt="Ubuntu" />
     <img src="https://img.shields.io/badge/Debian-11%20|%2012-red?style=flat-square&logo=debian" alt="Debian" />
     <img src="https://img.shields.io/badge/Unbound-1.13+-blue?style=flat-square&logo=dns" alt="Unbound" />
@@ -47,15 +47,39 @@ If your repository is private, provide your GitHub Personal Access Token (PAT).
 > [!IMPORTANT]
 > Use a **Fine-Grained PAT** (not classic token) scoped to **only this repository** with **Contents: Read-only** and **Metadata: Read-only** permissions. This is the minimum required scope for installation and auto-updates.
 
+#### Option A: One-Line Silent Fleet Installer (Recommended for Private Repo)
+
+```bash
+TOKEN="github_pat_yourFineGrainedTokenHere"
+
+curl -H "Authorization: token $TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- \
+  --silent \
+  --node-id "dns-jakarta-01" \
+  --mode recursive \
+  --web-port 8080 \
+  --admin-pass "SuperSecretNocPass123" \
+  --github-token "$TOKEN"
+```
+
+> [!NOTE]
+> * **Header `curl`**: Wajib menggunakan format `-H "Authorization: token $TOKEN"` agar GitHub mengizinkan pengunduhan script `install.sh` dari repository private.
+> * **Parameter `--github-token`**: Wajib dioper ke script agar proses `git clone` di server baru berjalan 100% otomatis tanpa meminta Username & Password interaktif.
+
+#### Option B: Export Environment Variable
 ```bash
 # Export your fine-grained PAT first
 export GITHUB_TOKEN="github_pat_yourFineGrainedTokenHere"
 
-# Then run the installer (token is saved to /etc/netora-dns/github.token for auto-updates)
-curl -H "Authorization: token $GITHUB_TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo -E bash
+# Run the installer (-E retains GITHUB_TOKEN for sudo)
+curl -H "Authorization: token $GITHUB_TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo -E bash -s -- \
+  --silent \
+  --node-id "dns-jakarta-01" \
+  --mode recursive \
+  --web-port 8080 \
+  --admin-pass "SuperSecretNocPass123"
 ```
 
-Or pass it directly as a flag:
+#### Option C: Local Script Execution
 ```bash
 sudo bash install.sh --github-token "github_pat_yourFineGrainedTokenHere" --silent
 ```
