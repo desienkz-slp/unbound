@@ -1,106 +1,110 @@
-# Walkthrough — Disk-Aware Performance Tuning
+# Walkthrough: Penambahan Sistem Logrotate & AI Storage Guard pada Netora DNS Tuning
 
-## Fitur Baru: Disk sebagai Faktor Rekomendasi
+## Ringkasan Perubahan
 
-### Perubahan yang Dilakukan
-
-#### Backend (Go)
-
-| File | Perubahan |
-|------|-----------|
-| `cmd/netora-api/disk_detect_linux.go` | NEW — `detectDiskSpecs()` via `syscall.Statfs` (Linux build tag) |
-| `cmd/netora-api/disk_detect_other.go` | NEW — stub return `0,0` untuk Windows/dev |
-| `cmd/netora-api/main.go` | Wire `detectDiskSpecs()` → `NodeMetadata` + log startup |
-| `pkg/model/config.go` | `NodeMetadata` + `DiskTotalGB`, `DiskFreeGB` |
-| `pkg/storage/store.go` | `NodeRecord` + `DiskTotalGB`, `DiskFreeGB` |
-| `pkg/storage/postgres.go` | `UpsertNode`, `GetNode`, `ListNodes` dengan kolom disk + `COALESCE` backward compat |
-| `pkg/storage/memory.go` | `UpsertNode` propagate disk fields |
-| `pkg/storage/migrations/001_initial_schema.sql` | Kolom `disk_total_gb`, `disk_free_gb` di `CREATE TABLE nodes` |
-| `pkg/storage/migrations/002_add_disk_columns_to_nodes.sql` | Migration idempotent untuk existing DB |
-
-#### Frontend (React/TypeScript)
-
-| File | Perubahan |
-|------|-----------|
-| `web/src/types.ts` | `NodeRecord` + `disk_total_gb`, `disk_free_gb` |
-| `web/src/views/PerformanceView.tsx` | Full rewrite — disk-aware UI |
+Fitur **Host Log Rotation (Logrotate) & Storage AI Guard** telah berhasil ditambahkan ke dalam ekosistem **Tuning & Profiles** Netora DNS. Fitur ini memungkinkan sistem DNS Unbound melakukan auto-tuning siklus rotasi log secara otomatis, kustomisasi penuh sesuai kondisi kapasitas disk & CPU/RAM server, serta memberikan rekomendasi cerdas berbasis analisis perangkat keras (AI Reasoning Advisor) untuk mencegah server crash akibat disk penuh (*disk exhaustion / ENOSPC*).
 
 ---
 
-### Cara Kerja Baru
+## 1. Temuan Investigasi Nyata di Server
 
-#### 1. Deteksi Disk (Backend)
-- Saat startup, `detectDiskSpecs()` membaca root filesystem (`/`) menggunakan `syscall.Statfs`
-- Mengembalikan `disk_total_gb` dan `disk_free_gb`
-- Disimpan ke PostgreSQL via `UpsertNode`, diperbarui setiap restart API
-
-#### 2. Rekomendasi Profile (Frontend)
-Sebelumnya: hanya `cpu_cores`
-Sekarang: `cpu_cores + ram_mb + disk_total_gb` (semuanya harus memenuhi minimum)
-
-```
-Priority: malware > ads > adult > gambling > custom
-Profile ISP     = CPU>=9, RAM>=28GB, Disk>=40GB
-Profile LARGE   = CPU>=5, RAM>=12GB, Disk>=20GB
-Profile MEDIUM  = CPU>=3, RAM>=4GB,  Disk>=10GB
-Profile SMALL   = CPU>=1, RAM>=0GB,  Disk>=4GB
-```
-
-#### 3. Komponen UI Baru
-
-**Hardware Topology Cards (3 panel):**
-- CPU — jumlah core
-- RAM — total physical memory
-- Disk — total/free GB dengan progress bar berwarna:
-  - 🟢 Hijau: <75% used (Healthy)
-  - 🟡 Amber: 75-89% used (Low Space)
-  - 🔴 Merah: ≥90% used (CRITICAL)
-
-**Alert Banners:**
-- Critical (≥90%): tampilkan perintah remediation langsung di UI
-- Warn (≥75%): reminder untuk prune
-
-**Disk Setup Recommendations Panel:**
-| Tier | Root Disk | RAM | vCPU | QPS Target |
-|------|-----------|-----|------|------------|
-| Minimum | 8 GB | 1 GB | 1-2 | <5k |
-| Recommended | 25+ GB | 4-8 GB | 4-8 | 30k-80k |
-| Carrier Grade | 50+ GB | 32+ GB | 16+ | 100k+ |
-
-**Profile Cards:** sekarang menampilkan "Min Disk" per profile, berwarna merah jika disk aktual < minimum.
+Sebelum implementasi, dilakukan audit diagnostik mendalam pada server produksi dan pengembangan:
+1. **Silent Failure pada Logrotate Bawaan:**
+   - File `/etc/logrotate.d/unbound` tidak memiliki directive `su unbound unbound`.
+   - Pada Linux Ubuntu 20.04/22.04+, `logrotate` secara otomatis menolak dan membatalkan rotasi file jika direktori induknya (`/var/log/unbound`) memiliki permission grup non-root tanpa directive `su`.
+   - Hasil pengujian debug `logrotate -d /etc/logrotate.d/unbound`:
+     ```text
+     error: skipping "/var/log/unbound/unbound.log" because parent directory has insecure permissions
+     Set "su" directive in config file to tell logrotate which user/group should be used for rotation.
+     ```
+2. **Penumpukan Log DNS Query:**
+   - File `/var/log/unbound/unbound.log` dan arsipnya membengkak hingga **152 MB** pada server VPS/Edge dengan kapasitas disk hanya 7.8 GB (tersisa hanya 1.2 GB / 84% terpakai).
+   - Menghasilkan error sistem `ENOSPC: No space left on device` saat proses backup otomatis berlangsung.
+3. **Keterbatasan Sistem Tuning Lama:**
+   - Halaman *Performance & Tuning* sebelumnya hanya membaca metrik CPU dan RAM, belum memonitor ruang penyimpanan disk, volume log aktif, maupun status penjadwalan rotasi log host.
 
 ---
 
-### Database Migration
+## 2. Arsitektur & Implementasi Solusi
 
-Untuk server yang sudah ada, jalankan:
-```sql
--- File: pkg/storage/migrations/002_add_disk_columns_to_nodes.sql
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'nodes' AND column_name = 'disk_total_gb')
-    THEN ALTER TABLE nodes ADD COLUMN disk_total_gb INT NOT NULL DEFAULT 0; END IF;
+### A. Backend Go Engine (`pkg/logrotate/`)
+Dibuat paket modular baru `pkg/logrotate` dengan komponen:
+- **`model.go`**: Mendefinisikan struct `LogrotatePolicy`, `LogTelemetry`, `AIRecommendation`, dan `LogrotateReport`.
+- **`engine.go`**:
+  - `CalculateAIRecommendation()`: Mesin analisis cerdas yang mengevaluasi CPU cores, total RAM, total disk, sisa disk kosong, persentase penggunaan disk, dan volume log saat ini.
+  - `GenerateUnboundConfig()`: Generator konfigurasi `/etc/logrotate.d/unbound` standar dengan proteksi `su unbound unbound`, ambang batas `maxsize`, kompresi gzip, dan perintah atomik `/usr/sbin/unbound-control log_reopen`.
+  - `GenerateNetoraConfig()`: Generator konfigurasi `/etc/logrotate.d/netora-dns` dengan mekanisme `copytruncate`.
+- **`manager_linux.go`**:
+  - `inspectHostLogrotate()`: Membaca statistik log aktif, arsip terotasi, status directive `su`, dan tanggal rotasi terakhir dari `/var/lib/logrotate/status`.
+  - `applyHostLogrotate()`: Menulis konfigurasi ke `/etc/logrotate.d/` dan menjalankan verifikasi sintaks via `logrotate -d`.
+  - `forceRotateHost()`: Menjalankan `logrotate -f /etc/logrotate.d/unbound` untuk reklamasi ruang disk seketika.
+- **`manager_other.go`**: Mock/stub aman untuk lingkungan non-Linux (pengembangan lokal Windows).
+- **`engine_test.go`**: Unit test komprehensif untuk algoritma AI, generator konfigurasi, dan format byte.
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'nodes' AND column_name = 'disk_free_gb')
-    THEN ALTER TABLE nodes ADD COLUMN disk_free_gb INT NOT NULL DEFAULT 0; END IF;
-END $$;
+### B. Auto-Migration Idempotent Database (`pkg/storage/postgres.go`)
+Menambahkan perintah auto-migration pada `NewPostgresStore`:
+```go
+_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_total_gb INT NOT NULL DEFAULT 0;`)
+_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS disk_free_gb INT NOT NULL DEFAULT 0;`)
 ```
+Menjamin seluruh node cluster yang diperbarui otomatis memiliki skema database yang sinkron tanpa perlu eksekusi skrip manual.
 
-Atau via psql:
-```bash
-PGPASSWORD=netora_dev_password psql -h 127.0.0.1 -U netora -d netora \
-  -f /opt/netora-dns/current/pkg/storage/migrations/002_add_disk_columns_to_nodes.sql
-```
+### C. REST API Endpoints (`cmd/netora-api/server.go`)
+Menambahkan sub-rute baru pada node API:
+| Method | Endpoint | Fungsi |
+|---|---|---|
+| `GET` | `/api/v1/nodes/{id}/logrotate` | Mengambil telemetri log, status keamanan `su`, dan rekomendasi AI |
+| `POST` | `/api/v1/nodes/{id}/logrotate/apply` | Menerapkan konfigurasi logrotate ke sistem operasi host |
+| `POST` | `/api/v1/nodes/{id}/logrotate/test` | Menjalankan uji validasi dry-run (`logrotate -d`) |
+| `POST` | `/api/v1/nodes/{id}/logrotate/force-rotate` | Melakukan rotasi paksa darurat untuk mengosongkan disk |
+
+### D. Frontend Antarmuka NOC (`web/src/views/PerformanceView.tsx`)
+1. **Tab Switcher Navigasi:**
+   - `Semua Sistem Tuning`
+   - `CPU & Cache Engine`
+   - `Logrotate & Storage AI Guard` (dilengkapi badge peringatan jika status log tidak sehat).
+2. **4 Kartu Telemetri Real-Time:**
+   - Log Aktif Unbound (`/var/log/unbound/unbound.log`).
+   - Arsip Terotasi (jumlah file & total ukuran terkompresi).
+   - Total Jejak Log di Disk (termasuk updater log).
+   - Status Kesehatan Rotasi (indikator hijau/merah untuk directive `su`).
+3. **Hero Card Rekomendasi AI:**
+   - Menjelaskan rasional teknis mengapa konfigurasi tertentu direkomendasikan untuk hardware spesifik server.
+   - Tombol **"⚡ Auto-Tune dengan AI"** untuk menerapkan parameter ideal dalam satu klik.
+4. **Preset Profil:**
+   - *Ultra Storage Saver* (Disk &le; 10GB / Free &le; 2GB): Daily, 2–3 rotasi, maxsize 15M–25M, gzip + delaycompress.
+   - *Balanced Standard* (Disk 10–40GB): Daily, 7 rotasi, maxsize 50M, gzip + delaycompress.
+   - *Carrier Audit Retention* (Disk &gt; 40GB): Weekly, 30 rotasi, maxsize 100M, gzip.
+5. **Form Kustomisasi & Live Syntax Preview:**
+   - Kontrol frekuensi, jumlah retensi, ambang batas `maxsize`, kompresi gzip, dan penundaan kompresi (`delaycompress`).
+   - Pratinjau teks `/etc/logrotate.d/unbound` secara langsung.
+6. **Action Toolbar & Interactive Console:**
+   - Tombol Uji Validasi (Dry Run), Rotasi Sekarang (Paksa & Kosongkan), dan Terapkan Konfigurasi.
+   - Jendela konsol terminal interaktif untuk melihat log eksekusi secara transparan.
 
 ---
 
-### Deployment
+## 3. Hasil Pengujian & Verifikasi
 
-| Server | Revision | Status |
-|--------|----------|--------|
-| 145 (dns-dev) | `519b683` | In progress → auto-update |
-| 146 (netora-dns1) | `519b683` | In progress → via API |
+### Pengujian di Server Dev (172.18.20.145)
+1. **Pengambilan Telemetri & Rekomendasi AI:**
+   - Terdeteksi: Disk 7.8GB, sisa 1GB (85% terpakai), log Unbound 151.7 MB.
+   - Deteksi masalah: Directive `su unbound unbound` hilang (status: `CRITICAL`).
+   - Rekomendasi AI: Profil `STORAGE_SAVER` (Daily, retensi 2x, maxsize 15M, kompresi gzip aktif).
+2. **Penerapan Konfigurasi Otomatis:**
+   - File `/etc/logrotate.d/unbound` berhasil diperbarui dengan menyertakan `su unbound unbound`.
+   - Validasi `logrotate -d` berjalan mulus tanpa peringatan permission.
+3. **Eksekusi Rotasi Paksa (Reclaim Disk):**
+   - File log Unbound terpangkas dari **151.7 MB** menjadi **31.4 MB**.
+   - Sisa ruang disk meningkat dari 1.2 GB menjadi **1.4 GB**.
+   - Directive `su unbound unbound` terkonfirmasi aktif dan aman.
 
-Kolom `disk_total_gb` dan `disk_free_gb` langsung terisi otomatis saat `netora-api` restart setelah update.
+---
+
+## 4. Panduan Operasional NOC
+
+1. Buka menu **Tuning & Profiles** di Web UI Netora DNS (`http://<ip-node>:8080/`).
+2. Pilih tab **Logrotate & Storage AI Guard**.
+3. Periksa kartu status telemetri dan kartu rekomendasi AI.
+4. Untuk menerapkan rekomendasi ideal, klik tombol **"Auto-Tune dengan AI"**, lalu klik **"Terapkan Konfigurasi Logrotate"**.
+5. Jika server mengalami lonjakan log mendadak yang menghabiskan disk, klik tombol **"Rotasi Sekarang (Paksa & Kosongkan)"** untuk membebaskan ruang disk seketika tanpa menghentikan layanan DNS Unbound.
