@@ -42,12 +42,25 @@ curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh
 
 ### 3. Private GitHub Repository Installation
 
-If your repository is private, provide your GitHub Personal Access Token (PAT):
+If your repository is private, provide your GitHub Personal Access Token (PAT).
+
+> [!IMPORTANT]
+> Use a **Fine-Grained PAT** (not classic token) scoped to **only this repository** with **Contents: Read-only** and **Metadata: Read-only** permissions. This is the minimum required scope for installation and auto-updates.
 
 ```bash
-export GITHUB_TOKEN="ghp_yourPersonalAccessTokenHere"
+# Export your fine-grained PAT first
+export GITHUB_TOKEN="github_pat_yourFineGrainedTokenHere"
+
+# Then run the installer (token is saved to /etc/netora-dns/github.token for auto-updates)
 curl -H "Authorization: token $GITHUB_TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo -E bash
 ```
+
+Or pass it directly as a flag:
+```bash
+sudo bash install.sh --github-token "github_pat_yourFineGrainedTokenHere" --silent
+```
+
+The token is stored securely in `/etc/netora-dns/github.token` (mode `600`, root-only) and used by the autonomous auto-update engine for all subsequent pulls.
 
 ---
 
@@ -310,6 +323,7 @@ Netora DNS uses a decentralized pull-based deployment model:
 * **Atomic Swap:** Symlink `/opt/netora-dns/current` is atomically updated and Unbound is reloaded via `unbound-control reload`.
 * **Zero Configuration Loss:** Each node's unique IP topology (listeners `interface:`), local database data, and specific network bindings remain immutable across updates.
 * **Auto-Rollback on Failure:** If reload fails or post-activation health checks fail, the previous verified configuration is restored within seconds.
+* **Secure Token Storage:** GitHub token is stored at `/etc/netora-dns/github.token` (mode `600`). A **Fine-Grained PAT** with **Selected Repository + Contents: Read-only** scope is sufficient and recommended over classic all-repo tokens.
 
 ---
 
