@@ -354,7 +354,8 @@ func (s *Server) handleSystemUpdateStatus(w http.ResponseWriter, r *http.Request
 	if r.URL.Query().Get("check_remote") == "true" {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "git", "ls-remote", "https://github.com/desienkz-slp/unbound.git", "refs/heads/main")
+		repoURL := buildAuthenticatedRepoURL("https://github.com/desienkz-slp/unbound.git", "/etc/netora-dns/github.token")
+		cmd := exec.CommandContext(ctx, "git", "ls-remote", repoURL, "refs/heads/main")
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		if out, err := cmd.Output(); err == nil {
 			fields := strings.Fields(string(out))
@@ -1440,3 +1441,23 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, data interface{}) 
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
+
+// buildAuthenticatedRepoURL reads a GitHub token from tokenFile (must be mode 600/400)
+// and injects it into the HTTPS clone URL in-memory only. Token is never logged or stored.
+// If the token file is missing or the URL is not HTTPS, the original URL is returned unchanged.
+func buildAuthenticatedRepoURL(repoURL, tokenFile string) string {
+	if !strings.HasPrefix(repoURL, "https://") {
+		return repoURL
+	}
+	data, err := os.ReadFile(tokenFile)
+	if err != nil {
+		return repoURL
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return repoURL
+	}
+	cleanURL := strings.TrimPrefix(repoURL, "https://")
+	return "https://" + token + "@" + cleanURL
+}
+
