@@ -1,5 +1,4 @@
 import React from 'react';
-import localVersion from '../version.json';
 import {
   Activity,
   Cpu,
@@ -132,9 +131,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Footer System Status & Netora Build Version */}
+      {/* Footer System Status */}
       <div className="mt-6 pt-4 border-t border-gray-800/80">
-        <div className="bg-gray-900/70 border border-gray-800 rounded-lg p-2.5 space-y-2">
+        <div className="bg-gray-900/70 border border-gray-800 rounded-lg p-2.5">
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-300 font-medium flex items-center gap-1.5">
               <Activity className={`w-3.5 h-3.5 ${unboundStatus ? 'text-emerald-400' : 'text-red-400'}`} />
@@ -149,10 +148,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               {unboundStatus ? 'RESOLVING' : 'DEGRADED'}
             </span>
-          </div>
-          <div className="flex items-center justify-between pt-1.5 border-t border-gray-800/60 text-xs">
-            <span className="text-gray-400 font-sans">Netora Build</span>
-            <span className="font-mono text-cyan-400 font-semibold">{localVersion.version || 'v1.0.44'}</span>
           </div>
         </div>
       </div>
