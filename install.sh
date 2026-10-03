@@ -430,6 +430,28 @@ else
 fi
 
 mkdir -p /etc/unbound/conf.d
+
+# ------------------------------------------------------------------------------
+# Version-aware directive guards (keywords differ across Unbound releases)
+# ------------------------------------------------------------------------------
+# serve-expired-client-timeout was introduced in Unbound 1.9.0. Older distro
+# packages (e.g. Ubuntu 18.04 ships 1.6.7) reject this keyword, causing
+# unbound-checkconf to fail. Emit it only when the installed version supports it.
+UNBOUND_VERSION="$(unbound-checkconf -h 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+if [[ -z "$UNBOUND_VERSION" ]]; then
+  UNBOUND_VERSION="$(unbound -V 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+fi
+log_info "Detected Unbound version: ${UNBOUND_VERSION:-unknown}"
+
+version_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
+
+SERVE_EXPIRED_CLIENT_TIMEOUT_DIRECTIVE=""
+if [[ -n "$UNBOUND_VERSION" ]] && version_ge "$UNBOUND_VERSION" "1.9.0"; then
+  SERVE_EXPIRED_CLIENT_TIMEOUT_DIRECTIVE="  serve-expired-client-timeout: 1800"
+else
+  log_warn "Unbound < 1.9.0 detected; skipping 'serve-expired-client-timeout' (unsupported keyword)."
+fi
+
 cat > /etc/unbound/unbound.conf <<EOF
 # Netora DNS — Autonomous Carrier-Grade ISP Unbound Configuration
 # Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -467,7 +489,7 @@ server:
   prefetch-key: yes
   serve-expired: yes
   serve-expired-ttl: 86400
-  serve-expired-client-timeout: 1800
+${SERVE_EXPIRED_CLIENT_TIMEOUT_DIRECTIVE}
 
   # Access Control List
 ${ACL_DIRECTIVES}
