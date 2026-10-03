@@ -6,9 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -34,10 +38,10 @@ type RenderResult struct {
 // GeneratorContext holds prepared data for template evaluation.
 type GeneratorContext struct {
 	*model.DesiredState
-	ConfigDir            string
-	GeneratedAt          string
-	HasIPv6              bool
-	HasTLSUpstream       bool
+	ConfigDir              string
+	GeneratedAt            string
+	HasIPv6                bool
+	HasTLSUpstream         bool
 	ActiveListeners        []model.Listener
 	ActiveClientNetworks   []model.ClientNetwork
 	ActiveUpstreams        []model.UpstreamServer
@@ -56,6 +60,9 @@ type GeneratorContext struct {
 	MalwareRedirectIP      string
 	IsCustomBlockActive    bool
 	CustomRedirectIP       string
+	// SupportsServeExpiredAdvanced indicates the installed Unbound is >= 1.9.0,
+	// where serve-expired-client-timeout / serve-expired-reply-ttl are valid keywords.
+	SupportsServeExpiredAdvanced bool
 }
 
 // DefaultAdultBlockedDomains provides curated high-confidence adult/pornographic domains.
@@ -272,11 +279,11 @@ func deduplicateBlocklists(malware, ads, adult, gambling, custom []string) ([]st
 		return out
 	}
 
-	malware  = dedup(malware)
-	ads      = dedup(ads)
-	adult    = dedup(adult)
+	malware = dedup(malware)
+	ads = dedup(ads)
+	adult = dedup(adult)
 	gambling = dedup(gambling)
-	custom   = dedup(custom)
+	custom = dedup(custom)
 	return malware, ads, adult, gambling, custom
 }
 
@@ -364,6 +371,54 @@ func NewGenerator() (*Generator, error) {
 	}, nil
 }
 
+// unboundVersionRe extracts a semantic version (e.g. 1.17.1) from `unbound -V` output.
+var unboundVersionRe = regexp.MustCompile(`(\d+)\.(\d+)\.(\d+)`)
+
+var (
+	serveExpiredAdvancedOnce sync.Once
+	serveExpiredAdvancedOK   bool
+)
+
+// unboundSupportsServeExpiredAdvanced reports whether the locally installed Unbound
+// is >= 1.9.0, the release that introduced serve-expired-client-timeout and
+// serve-expired-reply-ttl. The result is detected once and cached for the process
+// lifetime. On any detection failure it conservatively returns false so that
+// unbound-checkconf never rejects the generated configuration on older distros.
+func unboundSupportsServeExpiredAdvanced() bool {
+	serveExpiredAdvancedOnce.Do(func() {
+		serveExpiredAdvancedOK = detectServeExpiredAdvanced()
+	})
+	return serveExpiredAdvancedOK
+}
+
+func detectServeExpiredAdvanced() bool {
+	for _, bin := range []string{"unbound", "/usr/sbin/unbound"} {
+		out, err := exec.Command(bin, "-V").CombinedOutput()
+		if err != nil {
+			continue
+		}
+		if major, minor, ok := parseUnboundVersion(string(out)); ok {
+			return major > 1 || (major == 1 && minor >= 9)
+		}
+	}
+	return false
+}
+
+// parseUnboundVersion returns the major and minor components of the first
+// semantic version found in the provided text.
+func parseUnboundVersion(text string) (major, minor int, ok bool) {
+	m := unboundVersionRe.FindStringSubmatch(text)
+	if len(m) < 3 {
+		return 0, 0, false
+	}
+	maj, err1 := strconv.Atoi(m[1])
+	min, err2 := strconv.Atoi(m[2])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return maj, min, true
+}
+
 // Generate renders the full set of configuration files from the desired state.
 func (g *Generator) Generate(state *model.DesiredState, configDir string) (*RenderResult, error) {
 	if errs := model.ValidateDesiredState(state); len(errs) > 0 {
@@ -405,23 +460,24 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 
 	// Prepare sorted, deterministic collections
 	ctx := &GeneratorContext{
-		DesiredState:           state,
-		ConfigDir:              configDir,
-		GeneratedAt:            time.Now().UTC().Format(time.RFC3339),
-		AdultBlockedDomains:    adultList,
-		GamblingBlockedDomains: gamblingList,
-		AdsBlockedDomains:      adsList,
-		MalwareBlockedDomains:  malwareList,
-		CustomBlockedDomains:   customList,
-		WhitelistedDomains:     whitelistList,
-		IsGamblingBlockActive:  isGamblingActive,
-		GamblingRedirectIP:     gamblingRedirect,
-		IsAdBlockActive:        state.AdBlock.Enabled,
-		AdRedirectIP:           state.AdBlock.RedirectIP,
-		IsMalwareBlockActive:   state.MalwareBlock.Enabled,
-		MalwareRedirectIP:      state.MalwareBlock.RedirectIP,
-		IsCustomBlockActive:    state.CustomBlock.Enabled,
-		CustomRedirectIP:       state.CustomBlock.RedirectIP,
+		DesiredState:                 state,
+		ConfigDir:                    configDir,
+		GeneratedAt:                  time.Now().UTC().Format(time.RFC3339),
+		AdultBlockedDomains:          adultList,
+		GamblingBlockedDomains:       gamblingList,
+		AdsBlockedDomains:            adsList,
+		MalwareBlockedDomains:        malwareList,
+		CustomBlockedDomains:         customList,
+		WhitelistedDomains:           whitelistList,
+		IsGamblingBlockActive:        isGamblingActive,
+		GamblingRedirectIP:           gamblingRedirect,
+		IsAdBlockActive:              state.AdBlock.Enabled,
+		AdRedirectIP:                 state.AdBlock.RedirectIP,
+		IsMalwareBlockActive:         state.MalwareBlock.Enabled,
+		MalwareRedirectIP:            state.MalwareBlock.RedirectIP,
+		IsCustomBlockActive:          state.CustomBlock.Enabled,
+		CustomRedirectIP:             state.CustomBlock.RedirectIP,
+		SupportsServeExpiredAdvanced: unboundSupportsServeExpiredAdvanced(),
 	}
 
 	// Filter and sort active listeners

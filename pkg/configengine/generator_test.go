@@ -165,10 +165,10 @@ func TestGenerator_AllFilterConfigs(t *testing.T) {
 
 	expectedFiles := map[string]bool{
 		"unbound.conf":                 false,
-		"conf.d/domain-insecure.conf": false,
-		"conf.d/local-records.conf":   false,
-		"conf.d/safesearch.conf":      false,
-		"conf.d/parental-control.conf":false,
+		"conf.d/domain-insecure.conf":  false,
+		"conf.d/local-records.conf":    false,
+		"conf.d/safesearch.conf":       false,
+		"conf.d/parental-control.conf": false,
 		"conf.d/gambling-filter.conf":  false,
 		"conf.d/adblock-filter.conf":   false,
 		"conf.d/malware-filter.conf":   false,
@@ -211,6 +211,11 @@ func TestGenerator_ResiliencyAndRateLimit(t *testing.T) {
 	state.RateLimit.RateLimitSize = "32m"
 	state.RateLimit.RateLimitSlabs = 4
 
+	// Deterministically enable the Unbound >= 1.9.0 advanced serve-expired keywords
+	// so this test does not depend on whether unbound is installed on the host.
+	serveExpiredAdvancedOnce.Do(func() {})
+	serveExpiredAdvancedOK = true
+
 	res, err := gen.Generate(state, "/etc/unbound")
 	if err != nil {
 		t.Fatalf("failed to generate config: %v", err)
@@ -239,4 +244,3 @@ func TestGenerator_ResiliencyAndRateLimit(t *testing.T) {
 		}
 	}
 }
-

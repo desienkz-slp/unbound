@@ -62,8 +62,10 @@ server:
 {{- if .Features.ServeExpired }}
   serve-expired-ttl: {{ .Features.ServeExpiredTTL }}
   serve-expired-ttl-reset: {{ if .Features.ServeExpiredTTLReset }}yes{{ else }}no{{ end }}
+{{- if .SupportsServeExpiredAdvanced }}
   serve-expired-client-timeout: {{ .Features.ServeExpiredClientTimeout }}
   serve-expired-reply-ttl: {{ .Features.ServeExpiredReplyTTL }}
+{{- end }}
 {{- end }}
   cache-min-ttl: {{ .Cache.MinTTL }}
   cache-max-ttl: {{ .Cache.MaxTTL }}
@@ -337,5 +339,3 @@ server:
   local-zone: "{{ . }}." transparent
 {{- end }}
 `
-
-
