@@ -266,10 +266,60 @@ apt-get install -y -q \
   sudo \
   bc \
   net-tools \
+  unattended-upgrades \
   postgresql \
   postgresql-contrib
 
 log_success "Base system packages installed."
+
+# ------------------------------------------------------------------------------
+# Automatic Security Updates (unattended-upgrades, security channel only)
+# ------------------------------------------------------------------------------
+# Keeps Unbound and all OS packages patched against security vulnerabilities
+# WITHOUT performing risky full-version upgrades that could break the resolver.
+# Only the distribution's security pocket is enabled.
+log_step "Configuring Automatic Security Updates"
+
+if command -v unattended-upgrade >/dev/null 2>&1 || command -v unattended-upgrades >/dev/null 2>&1; then
+  # Determine the correct origin codename token (Ubuntu vs Debian)
+  if [[ "${ID:-}" == "debian" ]]; then
+    SECURITY_ORIGIN='"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";'
+  else
+    SECURITY_ORIGIN='"${distro_id}:${distro_codename}-security";'
+  fi
+
+  cat > /etc/apt/apt.conf.d/50netora-unattended-upgrades <<EOF
+// Managed by Netora DNS installer — security updates only.
+Unattended-Upgrade::Allowed-Origins {
+    ${SECURITY_ORIGIN}
+    "\${distro_id}ESMApps:\${distro_codename}-apps-security";
+    "\${distro_id}ESM:\${distro_codename}-infra-security";
+};
+
+// Keep DNS resolver stable: never auto-reboot a production DNS node.
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Clean up obsolete dependencies and old kernels conservatively.
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// Email disabled by default; configure MTA separately if desired.
+Unattended-Upgrade::Mail "";
+EOF
+
+  cat > /etc/apt/apt.conf.d/20netora-auto-upgrades <<EOF
+// Managed by Netora DNS installer.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+  systemctl enable --now unattended-upgrades.service >/dev/null 2>&1 || true
+  log_success "Automatic security updates enabled (security pocket only; no auto-reboot)."
+else
+  log_warn "unattended-upgrades not available; skipping automatic security updates."
+fi
 
 # ------------------------------------------------------------------------------
 # Extreme OS & Kernel Tuning (Anti-Bengong & Carrier Scale)
