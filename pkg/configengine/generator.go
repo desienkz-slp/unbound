@@ -380,7 +380,7 @@ var (
 )
 
 // unboundSupportsServeExpiredAdvanced reports whether the locally installed Unbound
-// is >= 1.9.0, the release that introduced serve-expired-client-timeout and
+// is >= 1.10.0, the release that introduced serve-expired-client-timeout and
 // serve-expired-reply-ttl. The result is detected once and cached for the process
 // lifetime. On any detection failure it conservatively returns false so that
 // unbound-checkconf never rejects the generated configuration on older distros.
@@ -398,7 +398,7 @@ func detectServeExpiredAdvanced() bool {
 			continue
 		}
 		if major, minor, ok := parseUnboundVersion(string(out)); ok {
-			return major > 1 || (major == 1 && minor >= 9)
+			return major > 1 || (major == 1 && minor >= 10)
 		}
 	}
 	return false
