@@ -210,13 +210,15 @@ DNSStubListener=no
 EOF
     systemctl restart systemd-resolved || true
     
-    # Ensure local resolv.conf points to loopback
-    if [[ -f /etc/resolv.conf ]]; then
+    # Ensure local resolv.conf points to loopback.
+    # Preserve the ORIGINAL resolv.conf only on first run; re-running the installer
+    # must never overwrite the genuine backup with the already-modified loopback copy.
+    if [[ -f /etc/resolv.conf && ! -f /etc/resolv.conf.netora.bak ]]; then
       cp /etc/resolv.conf /etc/resolv.conf.netora.bak 2>/dev/null || true
-      rm -f /etc/resolv.conf
-      echo "nameserver 127.0.0.1" > /etc/resolv.conf
-      echo "nameserver 1.1.1.1" >> /etc/resolv.conf
     fi
+    rm -f /etc/resolv.conf
+    echo "nameserver 127.0.0.1" > /etc/resolv.conf
+    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
     log_success "systemd-resolved stub listener disabled."
   else
     log_warn "Port ${DNS_LISTEN_PORT} occupied by non-systemd service. Continuing with installation..."
