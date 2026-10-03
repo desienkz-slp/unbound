@@ -35,6 +35,7 @@ DB_PORT="5432"
 CLIENT_SUBNETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8"
 CHANNEL="development"
 ENABLE_AUTO_UPDATE="true"
+USE_UNBOUND_PPA="false"
 SILENT_MODE="false"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
@@ -93,6 +94,8 @@ Options:
   --channel <channel>       Update channel: 'production' or 'development' (default)
   --github-token <token>    GitHub Personal Access Token for private repo access
   --no-auto-update          Disable autonomous background updater timer
+  --unbound-ppa             (Ubuntu only) Install latest Unbound from NLnet Labs PPA
+                            (ppa:nlnetlabs/unbound) to enable full serve-stale features
   -h, --help                Show this help message and exit
 
 Environment Variables:
@@ -117,6 +120,7 @@ while [[ $# -gt 0 ]]; do
     --channel)            CHANNEL="$2"; shift 2 ;;
     --github-token)       GITHUB_TOKEN="$2"; shift 2 ;;
     --no-auto-update)     ENABLE_AUTO_UPDATE="false"; shift ;;
+    --unbound-ppa)        USE_UNBOUND_PPA="true"; shift ;;
     -h|--help)            print_help ;;
     *)                    log_warn "Unknown parameter: $1"; shift ;;
   esac
@@ -230,6 +234,24 @@ fi
 # ------------------------------------------------------------------------------
 log_step "Installing Required Packages"
 export DEBIAN_FRONTEND=noninteractive
+
+# Optional: pull the latest Unbound from NLnet Labs PPA (Ubuntu only) so that
+# modern serve-stale keywords (serve-expired-client-timeout, >=1.10.0) are available.
+if [[ "$USE_UNBOUND_PPA" == "true" ]]; then
+  if [[ "${ID:-}" == "ubuntu" ]]; then
+    log_info "Enabling NLnet Labs Unbound PPA (ppa:nlnetlabs/unbound)..."
+    apt-get update -y -q || true
+    apt-get install -y -q software-properties-common || true
+    if add-apt-repository -y ppa:nlnetlabs/unbound; then
+      log_success "NLnet Labs Unbound PPA enabled."
+    else
+      log_warn "Failed to add Unbound PPA; falling back to distro package."
+    fi
+  else
+    log_warn "--unbound-ppa is Ubuntu-only; current OS is '${ID:-unknown}'. Using distro package."
+  fi
+fi
+
 apt-get update -y -q
 apt-get install -y -q \
   unbound \
