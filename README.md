@@ -7,7 +7,7 @@
     <img src="https://img.shields.io/badge/Release-v1.0.104-cyan?style=flat-square" alt="Release" />
     <img src="https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange?style=flat-square&logo=ubuntu" alt="Ubuntu" />
     <img src="https://img.shields.io/badge/Debian-11%20|%2012-red?style=flat-square&logo=debian" alt="Debian" />
-    <img src="https://img.shields.io/badge/Unbound-1.13+-blue?style=flat-square&logo=dns" alt="Unbound" />
+    <img src="https://img.shields.io/badge/Unbound-1.6+%20(auto--detect)-blue?style=flat-square&logo=dns" alt="Unbound" />
     <img src="https://img.shields.io/badge/Throughput-30K+%20QPS-brightgreen?style=flat-square" alt="QPS" />
     <img src="https://img.shields.io/badge/Rollback-Atomic%20%3C150ms-emerald?style=flat-square" alt="Atomic Rollback" />
     <img src="https://img.shields.io/badge/License-Proprietary-purple?style=flat-square" alt="License" />
@@ -88,6 +88,34 @@ The token is stored securely in `/etc/netora-dns/github.token` (mode `600`, root
 
 > [!TIP]
 > Jika token GitHub Anda kadaluarsa (*expired*) atau ingin dirotasi di kemudian hari, lihat [Panduan Update / Rotasi GitHub Token](#-panduan-update--rotasi-github-token-di-server).
+
+### 4. Unbound Version & Serve-Stale Compatibility
+
+The installer **auto-detects** the installed Unbound version and adapts the generated
+configuration accordingly, so it runs safely on **Unbound 1.6 and newer** — including
+the default packages on Ubuntu 18.04 (1.6.7) and 20.04 (1.9.4).
+
+> [!NOTE]
+> The `serve-expired-client-timeout` directive requires **Unbound >= 1.10.0**. On older
+> versions it is automatically skipped (the base `serve-expired` / `serve-expired-ttl`
+> serve-stale behavior still applies), so `unbound-checkconf` never fails.
+
+To enable the **full** serve-stale feature set on Ubuntu, add the `--unbound-ppa` flag to
+install the latest Unbound from the official NLnet Labs PPA (`ppa:nlnetlabs/unbound`):
+
+```bash
+curl -H "Authorization: token $TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- \
+  --silent \
+  --node-id "dns-jakarta-01" \
+  --mode recursive \
+  --web-port 8080 \
+  --admin-pass "SuperSecretNocPass123" \
+  --github-token "$TOKEN" \
+  --unbound-ppa
+```
+
+The flag is **opt-in** and **Ubuntu-only**; if the PPA cannot be added it falls back to the
+distro package automatically.
 
 
 ---
