@@ -280,7 +280,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const recommendedId = getRecommendedProfile(detectedCores, detectedRAMMB, detectedDiskTotal);
   const disk = diskStatus(detectedDiskFree, detectedDiskTotal);
 
-  const applyProfile = (p: typeof profiles[0]) => {
+  const applyProfile = (p: typeof profiles[0], feedbackMsg?: string) => {
     setLocalConfig({
       ...localConfig,
       performance: {
@@ -300,6 +300,10 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
         msg_cache_size: p.msgCache,
         rrset_cache_size: p.rrsetCache,
       },
+    });
+    setMsg({
+      type: 'success',
+      text: feedbackMsg || `Profil '${p.name}' dipilih (${p.threads} Threads, ${p.slabs} Slabs, ${p.rrsetCache} Cache). Klik 'Apply Tuning' untuk menyimpan ke node.`,
     });
   };
 
@@ -599,27 +603,46 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
         <button
           onClick={() => {
             const p = profiles.find((x) => x.id === recommendedId);
-            if (p) applyProfile(p);
+            if (p) {
+              applyProfile(p, `Rekomendasi AI (${p.name}) berhasil diterapkan ke konfigurasi! Klik 'Apply Tuning' di atas untuk menyimpan ke server.`);
+            }
           }}
-          className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs rounded-lg transition-colors shrink-0"
+          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold text-xs rounded-lg transition-all shadow-md shadow-cyan-500/20 active:scale-95 flex items-center gap-1.5 shrink-0"
         >
-          Auto-Apply Recommended Profile
+          <Sparkles className="w-3.5 h-3.5" />
+          Auto-Apply Recommended Profile ({recommendedId})
         </button>
       </div>
 
       {/* ── Disk Setup Recommendations ─────────────────────────────────────── */}
       <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-bold text-white flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-emerald-400" />
-          Disk Setup Recommendations for DNS Servers
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-emerald-400" />
+            Disk Setup &amp; Architecture Recommendations
+          </h2>
+          <span className="text-[11px] text-gray-400">Klik kartu untuk memilih konfigurasi profil terkait</span>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           {/* Minimum */}
-          <div className="bg-gray-950/60 border border-gray-700 rounded-xl p-4 space-y-3">
-            <div className="flex items-center gap-2 font-bold text-gray-300">
-              <div className="w-2 h-2 rounded-full bg-gray-400" />
-              Minimum Setup
+          <div
+            onClick={() => {
+              const p = profiles.find((x) => x.id === 'SMALL');
+              if (p) applyProfile(p, "Profil 'SMALL' (Minimum Setup) dipilih. Klik 'Apply Tuning' untuk menyimpan.");
+            }}
+            className={`bg-gray-950/60 border rounded-xl p-4 space-y-3 cursor-pointer transition-all hover:border-gray-500 active:scale-[0.99] ${
+              localConfig.performance.profile === 'SMALL' ? 'border-cyan-500 bg-cyan-950/20 ring-1 ring-cyan-500/50' : 'border-gray-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-gray-300">
+                <div className="w-2 h-2 rounded-full bg-gray-400" />
+                Minimum Setup
+              </div>
+              {localConfig.performance.profile === 'SMALL' && (
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 font-mono border border-cyan-800">ACTIVE</span>
+              )}
             </div>
             <div className="space-y-1.5 text-gray-400 font-mono">
               <div className="flex justify-between"><span>Root (/)</span><span className="text-white">8 GB</span></div>
@@ -633,11 +656,27 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
           </div>
 
           {/* Recommended */}
-          <div className="bg-cyan-950/20 border border-cyan-800/50 rounded-xl p-4 space-y-3 relative">
+          <div
+            onClick={() => {
+              const targetId = recommendedId === 'LARGE' ? 'LARGE' : 'MEDIUM';
+              const p = profiles.find((x) => x.id === targetId) || profiles.find((x) => x.id === 'MEDIUM');
+              if (p) applyProfile(p, `Profil '${p.id}' (Recommended ISP Node) dipilih. Klik 'Apply Tuning' untuk menyimpan.`);
+            }}
+            className={`bg-cyan-950/20 border rounded-xl p-4 space-y-3 relative cursor-pointer transition-all hover:border-cyan-400 active:scale-[0.99] ${
+              localConfig.performance.profile === 'MEDIUM' || localConfig.performance.profile === 'LARGE'
+                ? 'border-cyan-500 ring-1 ring-cyan-500/50 shadow-lg shadow-cyan-500/10'
+                : 'border-cyan-800/50'
+            }`}
+          >
             <div className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded bg-cyan-900 text-cyan-300 font-mono">RECOMMENDED</div>
-            <div className="flex items-center gap-2 font-bold text-cyan-300">
-              <div className="w-2 h-2 rounded-full bg-cyan-400" />
-              Recommended ISP Node
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-cyan-300">
+                <div className="w-2 h-2 rounded-full bg-cyan-400" />
+                Recommended ISP Node
+              </div>
+              {(localConfig.performance.profile === 'MEDIUM' || localConfig.performance.profile === 'LARGE') && (
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 font-mono border border-cyan-800 mr-24">ACTIVE</span>
+              )}
             </div>
             <div className="space-y-1.5 text-gray-400 font-mono">
               <div className="flex justify-between"><span>Root (/)</span><span className="text-white">25+ GB</span></div>
@@ -652,10 +691,23 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
           </div>
 
           {/* Carrier Grade */}
-          <div className="bg-gray-950/60 border border-gray-700 rounded-xl p-4 space-y-3">
-            <div className="flex items-center gap-2 font-bold text-amber-300">
-              <div className="w-2 h-2 rounded-full bg-amber-400" />
-              Carrier Grade (ISP)
+          <div
+            onClick={() => {
+              const p = profiles.find((x) => x.id === 'ISP');
+              if (p) applyProfile(p, "Profil 'ISP' (Carrier Grade) dipilih. Klik 'Apply Tuning' untuk menyimpan.");
+            }}
+            className={`bg-gray-950/60 border rounded-xl p-4 space-y-3 cursor-pointer transition-all hover:border-amber-500 active:scale-[0.99] ${
+              localConfig.performance.profile === 'ISP' ? 'border-amber-500 bg-amber-950/20 ring-1 ring-amber-500/50' : 'border-gray-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-amber-300">
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+                Carrier Grade (ISP)
+              </div>
+              {localConfig.performance.profile === 'ISP' && (
+                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-950 text-amber-300 font-mono border border-amber-800">ACTIVE</span>
+              )}
             </div>
             <div className="space-y-1.5 text-gray-400 font-mono">
               <div className="flex justify-between"><span>Root (/)</span><span className="text-white">50+ GB</span></div>
