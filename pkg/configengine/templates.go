@@ -28,6 +28,8 @@ server:
   # Default policy: Deny loopback-adjacent leaks and unconfigured subnets
   access-control: 0.0.0.0/0 refuse
   access-control: ::/0 refuse
+  access-control: 127.0.0.0/8 allow
+  access-control: ::1 allow
 {{- range .ActiveClientNetworks }}
   access-control: {{ .CIDR }} {{ .Action }}
 {{- end }}

@@ -206,34 +206,83 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 
 	// 8. Health Check
 	if !e.skipHealth && e.healthChecker != nil {
-		// Probe loopback or first enabled listener
-		targetIP := "127.0.0.1"
-		targetPort := 53
+		// Collect candidate targets for probing
+		type probeTarget struct {
+			ip   string
+			port int
+		}
+		var candidates []probeTarget
+
+		// 1. Check if 127.0.0.1 or 0.0.0.0 is listened on
+		hasWildcard := false
+		hasLoopback := false
 		for _, l := range state.Listeners {
-			if l.Enabled && l.Role == model.RoleManagement {
-				targetIP = l.IP
-				targetPort = l.Port
-				break
+			if !l.Enabled {
+				continue
+			}
+			if l.IP == "0.0.0.0" || l.IP == "::" {
+				hasWildcard = true
+			}
+			if l.IP == "127.0.0.1" || l.IP == "::1" {
+				hasLoopback = true
 			}
 		}
 
-		// Probe loopback or first enabled listener with retries
+		if hasWildcard || hasLoopback {
+			candidates = append(candidates, probeTarget{ip: "127.0.0.1", port: 53})
+		}
+
+		// 2. Add Management role listeners
+		for _, l := range state.Listeners {
+			if l.Enabled && l.Role == model.RoleManagement {
+				candidates = append(candidates, probeTarget{ip: l.IP, port: l.Port})
+			}
+		}
+
+		// 3. Add any other enabled listeners
+		for _, l := range state.Listeners {
+			if l.Enabled {
+				candidates = append(candidates, probeTarget{ip: l.IP, port: l.Port})
+			}
+		}
+
+		// Fallback default if no candidates found
+		if len(candidates) == 0 {
+			candidates = append(candidates, probeTarget{ip: "127.0.0.1", port: 53})
+		}
+
+		// Probe across candidates with retries
 		var health *HealthResult
+		var lastErr string
+		probeSuccess := false
+
 		for attempt := 1; attempt <= 4; attempt++ {
 			if attempt > 1 {
 				time.Sleep(1000 * time.Millisecond)
 			}
-			health = e.healthChecker.CheckResolution(ctx, targetIP, targetPort, "udp", "google.com")
-			if health != nil && health.Healthy {
+			for _, target := range candidates {
+				h := e.healthChecker.CheckResolution(ctx, target.ip, target.port, "udp", "google.com")
+				if h != nil {
+					if h.Healthy {
+						health = h
+						probeSuccess = true
+						break
+					}
+					lastErr = h.ErrorMessage
+				}
+			}
+			if probeSuccess {
 				break
 			}
 		}
 
-		if health == nil || !health.Healthy {
+		if !probeSuccess {
 			// HEALTH CHECK FAILED -> AUTOMATIC ROLLBACK
 			errMsg := "unknown health check failure"
-			if health != nil {
+			if health != nil && health.ErrorMessage != "" {
 				errMsg = health.ErrorMessage
+			} else if lastErr != "" {
+				errMsg = lastErr
 			}
 			result.HealthCheckSuccess = false
 			result.HealthOutput = errMsg
