@@ -37,7 +37,8 @@ const jsonStr = JSON.stringify(versionData, null, 2) + '\n';
 const targets = [
   path.join(__dirname, '..', '..', 'version.json'),
   path.join(__dirname, '..', 'src', 'version.json'),
-  path.join(__dirname, '..', 'public', 'version.json')
+  path.join(__dirname, '..', 'public', 'version.json'),
+  path.join(__dirname, '..', '..', 'deploy', 'ui', 'version.json')
 ];
 
 for (const target of targets) {
