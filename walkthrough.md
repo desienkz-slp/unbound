@@ -8,11 +8,19 @@ Telah dilakukan investigasi dan perbaikan atas inkonsistensi antara tampilan sta
 3. **Penambahan Metrik Blocked Ads & Trackers**: Menambahkan field `blocked_ads` pada schema telemetri backend dan frontend untuk menyajikan transparansi atas ~21.7 juta query blokir (51%) dari feed AdGuard/StevenBlack.
 4. **Indikator Status Filter Terintegrasi**: Menambahkan status badge (`ACTIVE` / `ALLOWED`) pada kartu Adult Websites agar status sinkron dengan master toggle di menu Filtering.
 
+5. **Sinkronisasi Telemetri dengan Policy Setup**:
+   * Saat fitur `18+ DEWASA` berstatus `ALLOWED / OFF` di setup, engine telemetri (`server.go` dan `OverviewView.tsx`) memastikan `Blocked adult websites` bernilai `0` (atau status `ALLOWED`), dan seluruh kuota blokir yang terjadi dialokasikan ke filter yang memang aktif (`Feed Iklan & Malware`).
+   * Begitu juga jika `Judi Online` berstatus `ALLOWED / OFF`.
+
 ---
 
 ## Perubahan File & Komponen
 
-### 1. Backend Go: `pkg/telemetry/query_log.go`
+### 1. Backend Go: `pkg/telemetry/query_log.go` & `cmd/netora-api/server.go`
+* **`cmd/netora-api/server.go`**:
+  * Menyelaraskan output endpoint `/api/v1/nodes/{id}/stats` dengan `DesiredState` aktif.
+  * Jika `ParentalControl.Enabled` false, nilai `BlockedAdult` dinolkan dan dialihkan ke `BlockedAds`.
+  * Mengkoreksi kategori di `TopBlockedDomains` menjadi `DNS Filter Block` bila policy adult/judi sedang tidak aktif.
 * **Struct `DetailedStatsReport`**:
   * Menambahkan field `BlockedAds int64` (`json:"blocked_ads"`).
 * **Fungsi `CategorizeDomain()`**:
@@ -33,6 +41,9 @@ Telah dilakukan investigasi dan perbaikan atas inkonsistensi antara tampilan sta
 
 ### 4. Frontend View: `web/src/views/OverviewView.tsx`
 * **State `stats`**: Ditambahkan properti `blockedAds: 0` dan mapping dari response API `s.blocked_ads`.
+* **Sinkronisasi Setup Card 4**:
+  * Saat `18+ DEWASA` OFF: Nilai menampilkan `0`, teks `Konten 18+ (Akses Terbuka)`, badge `ALLOWED`, persentase `0%`.
+  * Saat `18+ DEWASA` ACTIVE: Menampilkan angka blokir aktif, badge `ACTIVE`, dan persentase dinamis.
 * **Fungsi Helper `formatPercentage()`**:
   ```ts
   const formatPercentage = (count: number, total: number): string => {
@@ -43,20 +54,18 @@ Telah dilakukan investigasi dan perbaikan atas inkonsistensi antara tampilan sta
     return `${pct.toFixed(1)}%`;
   };
   ```
-* **Card 3 (Blocked Malware/Phishing)**: Menggunakan `formatPercentage(stats.blockedMalware, stats.totalQueries)`.
-* **Card 4 (Blocked Adult Websites)**: Menggunakan `formatPercentage(stats.blockedAdult, stats.totalQueries)` serta menyertakan badge status `ACTIVE` / `ALLOWED` sesuai konfigurasi `config?.parental_control?.enabled`.
-* **General Statistics Panel**: Menambahkan baris terperinci untuk `Blocked Ads & Trackers`, `Blocked malware/phishing`, dan `Blocked adult websites` dengan ketinggian panel yang disesuaikan.
+* **General Statistics Panel**: Menambahkan baris terperinci untuk `Blocked Ads & Trackers` serta indikator status `0 (Akses Terbuka)` untuk fitur yang nonaktif.
 
 ---
 
 ## Hasil Pengujian & Verifikasi
 
 1. **Go Unit Tests**:
-   * Perintah: `go test -v ./pkg/telemetry/...`
-   * Hasil: `PASS` (semua uji parsing log, dump_infra, exposition Prometheus, dan kategorisasi domain lulus 100%).
+   * Perintah: `go test ./cmd/netora-api/... ./pkg/telemetry/...`
+   * Hasil: `PASS` (semua uji endpoint API, parsing log, exposition Prometheus, dan domain categorization lolos).
 2. **Go Workspace Full Test Suite**:
    * Perintah: `go test ./...`
-   * Hasil: Seluruh paket (`cmd/netora-api`, `configengine`, `telemetry`, dll.) lolos uji.
+   * Hasil: Seluruh paket (`cmd/netora-api`, `configengine`, `telemetry`, dll.) lolos uji tanpa regresi.
 3. **Frontend Production Build**:
    * Perintah: `npm run build` di direktori `web`
-   * Hasil: `✓ built in 7.65s` dan otomatis tersinkronisasi ke `deploy/ui/`.
+   * Hasil: `✓ built in 1.13s` dan otomatis tersinkronisasi ke `deploy/ui/`.

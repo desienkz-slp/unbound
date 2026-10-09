@@ -735,6 +735,31 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if tailer != nil {
 			report := tailer.GetDetailedReport(r.Context())
+			// Reconcile with active desired state so telemetry strictly matches the active filtering setup
+			if s.store != nil {
+				if cfg, err := s.store.GetDesiredState(r.Context(), nodeID); err == nil && cfg != nil {
+					isAdultActive := cfg.ParentalControl.Enabled && cfg.ParentalControl.BlockAdult
+					if !isAdultActive && report.BlockedAdult > 0 {
+						report.BlockedAds += report.BlockedAdult
+						report.BlockedAdult = 0
+					}
+					isGamblingActive := cfg.GamblingBlock.Enabled || (cfg.ParentalControl.Enabled && cfg.ParentalControl.BlockGambling)
+					if !isGamblingActive && report.BlockedGambling > 0 {
+						report.BlockedAds += report.BlockedGambling
+						report.BlockedGambling = 0
+					}
+					if !isAdultActive || !isGamblingActive {
+						for i := range report.TopBlockedDomains {
+							if !isAdultActive && report.TopBlockedDomains[i].Category == "18+ Adult" {
+								report.TopBlockedDomains[i].Category = "DNS Filter Block"
+							}
+							if !isGamblingActive && report.TopBlockedDomains[i].Category == "Judi Online" {
+								report.TopBlockedDomains[i].Category = "DNS Filter Block"
+							}
+						}
+					}
+				}
+			}
 			s.writeJSON(w, http.StatusOK, report)
 			return
 		}

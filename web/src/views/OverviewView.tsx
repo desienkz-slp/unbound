@@ -92,15 +92,25 @@ export const OverviewView: React.FC<OverviewProps> = ({
       if (resStats.status === 'fulfilled' && resStats.value) {
         const s = resStats.value;
         setStatsReport(s);
+
+        const isAdultActive = Boolean(config?.parental_control?.enabled && (config?.parental_control?.block_adult ?? true));
+        const isGamblingActive = Boolean(config?.gambling_block?.enabled || config?.parental_control?.block_gambling);
+
+        const adultBlocked = isAdultActive ? (s.blocked_adult ?? 0) : 0;
+        const gamblingBlocked = isGamblingActive ? (s.blocked_gambling ?? 0) : 0;
+        const malwareBlocked = s.blocked_malware ?? 0;
+        const totalBlocked = s.blocked_queries ?? 0;
+        const adsBlocked = s.blocked_ads ?? Math.max(0, totalBlocked - malwareBlocked - adultBlocked - gamblingBlocked);
+
         setStats({
           totalQueries: s.total_queries ?? 0,
           cacheHits: s.cache_hits ?? 0,
           cacheMisses: s.cache_misses ?? 0,
-          blockedFilters: s.blocked_queries ?? 0,
-          blockedMalware: s.blocked_malware ?? 0,
-          blockedAdult: s.blocked_adult ?? 0,
-          blockedGambling: s.blocked_gambling ?? 0,
-          blockedAds: s.blocked_ads ?? Math.max(0, (s.blocked_queries ?? 0) - (s.blocked_malware ?? 0) - (s.blocked_adult ?? 0) - (s.blocked_gambling ?? 0)),
+          blockedFilters: totalBlocked,
+          blockedMalware: malwareBlocked,
+          blockedAdult: adultBlocked,
+          blockedGambling: gamblingBlocked,
+          blockedAds: adsBlocked,
           enforcedSafeSearch: s.safe_search_enforced ?? 0,
           avgProcessingTime: Math.max(1, Math.round(s.avg_processing_time_ms || 1)),
         });
@@ -303,13 +313,15 @@ export const OverviewView: React.FC<OverviewProps> = ({
           <div className="flex items-start justify-between">
             <div>
               <span className="text-2xl lg:text-3xl font-bold font-mono text-purple-400 tracking-tight">
-                {stats.blockedAdult.toLocaleString()}
+                {isAdultFilterActive ? stats.blockedAdult.toLocaleString() : '0'}
               </span>
-              <div className="text-xs font-medium text-purple-300/80 mt-1">Blocked adult websites</div>
+              <div className="text-xs font-medium text-purple-300/80 mt-1">
+                {isAdultFilterActive ? 'Blocked adult websites' : 'Konten 18+ (Akses Terbuka)'}
+              </div>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-mono font-bold text-purple-400 bg-purple-950/60 border border-purple-900/60 px-2 py-0.5 rounded">
-                {formatPercentage(stats.blockedAdult, stats.totalQueries)}
+                {isAdultFilterActive ? formatPercentage(stats.blockedAdult, stats.totalQueries) : '0%'}
               </span>
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase font-bold border ${
@@ -325,11 +337,14 @@ export const OverviewView: React.FC<OverviewProps> = ({
           </div>
           <div className="pt-2">
             <div className="h-8 w-full flex items-end gap-1 opacity-70">
-              {[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2].map((h, i) => (
+              {(isAdultFilterActive && stats.blockedAdult > 0
+                ? [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+                : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+              ).map((h, i) => (
                 <div
                   key={i}
                   className="flex-1 bg-purple-900/30 rounded-t"
-                  style={{ height: `${h}%` }}
+                  style={{ height: `${Math.max(h, 4)}%` }}
                 />
               ))}
             </div>
@@ -386,7 +401,9 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
             <div className="py-1 flex items-center justify-between">
               <span className="text-purple-400">Blocked adult websites</span>
-              <span className="text-purple-400 font-bold">{stats.blockedAdult.toLocaleString()}</span>
+              <span className="text-purple-400 font-bold">
+                {isAdultFilterActive ? stats.blockedAdult.toLocaleString() : '0 (Akses Terbuka)'}
+              </span>
             </div>
 
             <div className="py-1 flex items-center justify-between">
