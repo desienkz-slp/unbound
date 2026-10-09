@@ -1,7 +1,7 @@
 # Walkthrough — Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
 
 ## Ringkasan Eksekusi
-Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh` dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
+Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh`, `uninstall.sh`, dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
 
 ---
 
@@ -66,7 +66,7 @@ Semua endpoint backend dan aksi sistem pada server 146 telah diuji langsung meng
 
 ## 4. Penyempurnaan Universal One-Line Installer (Zero-Friction Install)
 
-Menjawab kendala saat instalasi pada mesin fresh Ubuntu (Unbound 1.9.4 / Ubuntu 20.04 LTS), dilakukan penguatan otomatis pada `install.sh` dan dokumentasi `README.md` agar tetap menjadi **1 sistem instalasi tunggal tanpa intervensi manual**:
+Menjawab kendala saat instalasi pada mesin fresh Ubuntu (Unbound 1.9.4 / Ubuntu 20.04 LTS), dilakukan penguatan otomatis pada `install.sh`, `uninstall.sh`, dan dokumentasi `README.md` agar tetap menjadi **1 sistem instalasi tunggal tanpa intervensi manual**:
 
 1. **Pelepasan Port 53 Otomatis & Kompatibilitas Versi systemd**:
    * Pada Ubuntu 20.04 (systemd 245), folder drop-in `/etc/systemd/resolved.conf.d/` belum dibaca oleh systemd-resolved.
@@ -85,3 +85,17 @@ Menjawab kendala saat instalasi pada mesin fresh Ubuntu (Unbound 1.9.4 / Ubuntu 
 4. **Diagnostik Otomatis & Dokumentasi**:
    * Jika Unbound gagal start karena anomali sistem luar, `install.sh` otomatis mencetak 25 baris log diagnostik `journalctl` ke layar sebelum keluar.
    * `README.md` diperbarui untuk menegaskan bahwa platform tetap menggunakan **1 sistem instalasi satu-baris** yang menangani semua dependensi secara otonom.
+
+---
+
+## 5. Hasil Audit Seluruh File `.sh` pada README.md
+
+Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan valid, teruji sintaks (`bash -n`), dan konsisten:
+
+| Skrip di README.md | Posisi Baris | Status | Peran & Konsistensi |
+| :--- | :--- | :--- | :--- |
+| **`install.sh`** | Baris 31, 33, 40, 60, 70, 79, 89, 112 | **VALID & SINKRON** | Skrip installer tunggal universal untuk seluruh distro (Interactive, Silent, Private PAT). |
+| **`uninstall.sh`** | Baris 513, 515 | **VALID & SINKRON** | Skrip pembersih sistem lengkap yang mengembalikan `systemd-resolved` dan menghapus service. |
+| **`netora`** | Baris 234–270 | **VALID & SINKRON** | CLI manajemen terpasang di `/usr/local/bin/netora` (membungkus `scripts/netora-cli.sh`). |
+| **`netora-reset-password`** | Baris 308–316 | **VALID & SINKRON** | Helper darurat terpasang di `/usr/local/bin/netora-reset-password` (`scripts/netora-reset-password.sh`). |
+| **`netora update`** | Baris 476 | **VALID & SINKRON** | Menjalankan `/usr/local/sbin/netora-dns-update` (`scripts/netora-dns-update.sh`) untuk pull otomatis. |
