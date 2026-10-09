@@ -11,6 +11,9 @@ Telah dilakukan investigasi dan perbaikan atas inkonsistensi antara tampilan sta
 5. **Sinkronisasi Telemetri dengan Policy Setup**:
    * Saat fitur `18+ DEWASA` berstatus `ALLOWED / OFF` di setup, engine telemetri (`server.go` dan `OverviewView.tsx`) memastikan `Blocked adult websites` bernilai `0` (atau status `ALLOWED`), dan seluruh kuota blokir yang terjadi dialokasikan ke filter yang memang aktif (`Feed Iklan & Malware`).
    * Begitu juga jika `Judi Online` berstatus `ALLOWED / OFF`.
+6. **Penambahan KPI Card Khusus Judi Online (Judol)**:
+   * Menambahkan kartu ke-5 pada grid KPI Dashboard: **Blocked Judi Online (Judol)** dengan tema warna amber/orange, persentase dinamis, sparkline interaktif, dan status badge `ACTIVE` / `ALLOWED` yang otomatis sinkron dengan setup policy.
+   * Menambahkan baris `Blocked judi online` pada panel General Statistics.
 
 ---
 

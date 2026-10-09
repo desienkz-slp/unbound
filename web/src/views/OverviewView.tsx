@@ -173,6 +173,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
   };
 
   const isAdultFilterActive = Boolean(config?.parental_control?.enabled);
+  const isGamblingActive = Boolean(config?.gambling_block?.enabled || config?.parental_control?.block_gambling);
 
   return (
     <div className="space-y-6">
@@ -232,8 +233,8 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
       </div>
 
-      {/* 4 Top KPI Cards (AdGuard Home Style) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 5 Top KPI Cards (AdGuard Home Style + ISP Policy) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {/* Card 1: DNS Queries */}
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-36 flex flex-col justify-between relative overflow-hidden group hover:border-gray-700 transition-all shadow-sm">
           <div>
@@ -350,12 +351,55 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Card 5: Blocked Judi Online (Judol) */}
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-36 flex flex-col justify-between relative overflow-hidden group hover:border-amber-800/60 transition-all shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <span className="text-2xl lg:text-3xl font-bold font-mono text-amber-400 tracking-tight">
+                {isGamblingActive ? stats.blockedGambling.toLocaleString() : '0'}
+              </span>
+              <div className="text-xs font-medium text-amber-300/80 mt-1">
+                {isGamblingActive ? 'Blocked judi online & slot' : 'Situs judi (Akses Terbuka)'}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/60 border border-amber-900/60 px-2 py-0.5 rounded">
+                {isGamblingActive ? formatPercentage(stats.blockedGambling, stats.totalQueries) : '0%'}
+              </span>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase font-bold border ${
+                  isGamblingActive
+                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80'
+                    : 'bg-gray-950 text-gray-500 border-gray-800'
+                }`}
+                title={isGamblingActive ? 'Filter Judi Online Aktif' : 'Filter Judi Online Nonaktif / Terbuka'}
+              >
+                {isGamblingActive ? 'ACTIVE' : 'ALLOWED'}
+              </span>
+            </div>
+          </div>
+          <div className="pt-2">
+            <div className="h-8 w-full flex items-end gap-1 opacity-70">
+              {(isGamblingActive && stats.blockedGambling > 0
+                ? [4, 6, 8, 12, 10, 15, 8, 14, 18, 12, 16, 20]
+                : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+              ).map((h, i) => (
+                <div
+                  key={i}
+                  className="flex-1 bg-amber-900/30 rounded-t group-hover:bg-amber-500/50 transition-all"
+                  style={{ height: `${Math.max(h, 4)}%` }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Row 1: General statistics (Left) & Top clients (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Panel 1: General statistics */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 min-h-[340px] flex flex-col justify-between shadow-sm">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 min-h-[370px] flex flex-col justify-between shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
             <div>
               <h2 className="text-sm font-bold text-white">General statistics</h2>
@@ -407,6 +451,13 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </div>
 
             <div className="py-1 flex items-center justify-between">
+              <span className="text-amber-400">Blocked judi online</span>
+              <span className="text-amber-400 font-bold">
+                {isGamblingActive ? stats.blockedGambling.toLocaleString() : '0 (Akses Terbuka)'}
+              </span>
+            </div>
+
+            <div className="py-1 flex items-center justify-between">
               <span className="text-gray-300">Average processing time</span>
               <span className="text-white font-bold">{stats.avgProcessingTime} ms</span>
             </div>
@@ -414,7 +465,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
 
         {/* Panel 2: Top clients */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 min-h-[340px] flex flex-col shadow-sm">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 min-h-[370px] flex flex-col shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
             <div>
               <h2 className="text-sm font-bold text-white">Top clients</h2>
