@@ -466,14 +466,18 @@ while [[ $THREADS -lt $CORES ]]; do THREADS=$((THREADS * 2)); done
 [[ $THREADS -gt $CORES ]] && THREADS=$((THREADS / 2))
 [[ $THREADS -lt 1 ]] && THREADS=1
 
-if [[ $RAM_TOTAL_MB -le 1024 ]]; then
+if [[ $RAM_TOTAL_MB -le 512 ]]; then
+  MSG_CACHE="32m"; RRSET_CACHE="64m"; KEY_CACHE="16m"; NEG_CACHE="16m"
+elif [[ $RAM_TOTAL_MB -le 1024 ]]; then
   MSG_CACHE="64m"; RRSET_CACHE="128m"; KEY_CACHE="32m"; NEG_CACHE="32m"
 elif [[ $RAM_TOTAL_MB -le 2048 ]]; then
   MSG_CACHE="128m"; RRSET_CACHE="256m"; KEY_CACHE="64m"; NEG_CACHE="64m"
 elif [[ $RAM_TOTAL_MB -le 4096 ]]; then
   MSG_CACHE="256m"; RRSET_CACHE="512m"; KEY_CACHE="128m"; NEG_CACHE="128m"
-else
+elif [[ $RAM_TOTAL_MB -le 8192 ]]; then
   MSG_CACHE="512m"; RRSET_CACHE="1024m"; KEY_CACHE="256m"; NEG_CACHE="256m"
+else
+  MSG_CACHE="1024m"; RRSET_CACHE="2048m"; KEY_CACHE="512m"; NEG_CACHE="512m"
 fi
 
 # Build ACL Directives (always explicitly allow localhost loopbacks)

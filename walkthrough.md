@@ -1,82 +1,66 @@
-# Walkthrough — Default DNS Rewrites Otomatis Sesuai IP Server & Nama Node
+# Walkthrough — Verifikasi & Penguatan Fitur AI Auto, Tuning, Profile, dan Push ke GitHub
 
-## Ringkasan Pekerjaan
-Telah diimplementasikan mekanisme otomatis yang menjamin **setiap server memiliki default DNS Rewrite (A record) sesuai dengan IP aktif dari server tersebut, dengan nama domain persis sesuai nama node**:
-* **Jika server memiliki 1 IP**: Memiliki **1 DNS rewrite** secara default (`<nama_node> -> <IP1>`).
-* **Jika server memiliki 2 IP**: Memiliki **2 DNS rewrite** secara default (`<nama_node> -> <IP1>` dan `<nama_node> -> <IP2>`).
-* **Preservasi Custom Records**: Rewrite custom milik user untuk domain lain tetap terjaga dan tidak tertimpa/terhapus.
+## Ringkasan Eksekusi
+Telah diselesaikan pemeriksaan, penyempurnaan, serta pengujian end-to-end untuk seluruh fitur **Tuning**, **Hardware Profiles**, dan **AI Auto-Optimization** pada platform Netora DNS Unbound. Seluruh tombol interaktif, kalkulasi profil AI, dan mutasi backend telah diverifikasi berfungsi dengan normal.
 
 ---
 
-## Perubahan Komponen & File
+## 1. Fitur AI Auto & Profil Hardware yang Diperkuat
 
-### 1. Model Domain: `pkg/model/config.go` & `pkg/model/config_test.go`
-* Menambahkan method `EnsureNodeDnsRewrites(nodeName string, ips []string) bool` pada struct `*DesiredState`:
-  * Jika daftar IP tidak diberikan secara eksplisit, method otomatis mengekstrak seluruh IPv4 konkret dari listener aktif node (`state.Listeners`).
-  * Memfilter dan mendeduplikasi IP (mengabaikan `127.0.0.1`, `0.0.0.0`, dan IPv6).
-  * Menyelaraskan A record untuk domain `nodeName`:
-    * 1 IP menghasilkan tepat 1 record A dengan TTL 300.
-    * 2 IP menghasilkan tepat 2 record A dengan TTL 300.
-  * Bersifat idempoten (tidak menduplikasi record bila sudah sesuai).
-* Menambahkan unit test komprehensif di `pkg/model/config_test.go`:
-  * `TestEnsureNodeDnsRewrites_SingleIP`: Verifikasi 1 IP -> 1 rewrite.
-  * `TestEnsureNodeDnsRewrites_DualIP`: Verifikasi 2 IP -> 2 rewrites.
-  * `TestEnsureNodeDnsRewrites_PreservesOtherDomains`: Verifikasi custom record domain lain tidak hilang.
-  * `TestEnsureNodeDnsRewrites_ExtractFromListeners`: Verifikasi fallback ekstraksi IP dari konfigurasi listener.
+### A. Fitur Baru: ✨ AI Full Auto-Tune (One-Click Optimization)
+* Disediakan tombol **✨ AI Full Auto-Tune** pada header navigasi halaman *Tuning & Profiles*.
+* Menjalankan siklus optimasi otomatis dalam satu kali klik:
+  1. **Deteksi Hardware**: Menganalisis CPU Cores, kapasitas RAM, dan ruang penyimpanan disk host secara real-time.
+  2. **Profil Komputasi Unbound**: Memilih profil hardware paling presisi (`SMALL`, `MEDIUM`, `LARGE`, atau `ISP`) dengan alokasi thread, cache slabs, socket buffer `so-rcvbuf`/`so-sndbuf`, dan ukuran cache yang optimal.
+  3. **Carrier Resiliency Engine (RFC 8767)**: Mengaktifkan prefetch rekaman domain populer, prefetch kunci DNSSEC, serta fallback *serve-expired* (tahan saat upstream internet mati).
+  4. **Subnet Anti-DDoS Shield**: Mengonfigurasi *Response Rate Limiting (RRL)* level kernel Unbound untuk melindungi resolver dari DNS amplification attack.
+  5. **AI Logrotate & Storage Guard**: Menghitung dan menyinkronkan kebijakan rotasi log Unbound sesuai kapasitas disk agar disk host tidak pernah penuh (mencegah galat *No space left on device*).
+  6. **Penerapan Atomik**: Menyimpan seluruh konfigurasi dan mengaktifkannya ke node server secara atomik.
 
-### 2. Config Engine Generator: `pkg/configengine/generator.go` & `pkg/configengine/generator_test.go`
-* Pada `generator.go`, memperbaiki auto-injection rDNS PTR dan record A agar mendeteksi keberadaan A record yang sudah ada (`existingAs`), mencegah duplikasi baris `local-data` pada `conf.d/local-records.conf`.
-* Menambahkan pengujian `TestGenerator_NodeDnsRewrites` pada `generator_test.go` untuk memastikan file konfigurasi Unbound dirender dengan tepat (1 baris untuk 1 IP, 2 baris untuk 2 IP tanpa duplikasi).
+### B. AI Hardware Profile Recommendation Box
+* Menghitung profil hardware ideal (`recommendedId`) berdasarkan spesifikasi node.
+* Dilengkapi 2 pilihan aksi interaktif:
+  * **`⚡ Auto-Apply AI Profile ({recommendedId})`**: Menerapkan dan langsung menyimpan profil rekomendasi AI ke server seketika.
+  * **`Terapkan ke Form`**: Mengisi form editor dengan nilai rekomendasi untuk ditinjau secara manual.
 
-### 3. Storage Layer: `pkg/storage/postgres.go`
-* Pada fungsi `GetDesiredState()`, menambahkan pemanggilan `EnsureNodeDnsRewrites()` sebelum mengembalikan konfigurasi node. Hal ini memastikan database dan API query selalu menyertakan default rewrite untuk nama node tersebut meskipun konfigurasi lama di DB belum memilikinya.
-
-### 4. API Control Plane: `cmd/netora-api/main.go` & `cmd/netora-api/server.go`
-* **`main.go`**:
-  * Pada inisialisasi node baru (`!hasConcreteListeners`): menyertakan `EnsureNodeDnsRewrites(*nodeID, activeIPs)` saat membuat `baseState`.
-  * Pada node yang sudah ada (`existingState != nil`): menyinkronkan rewrites node jika terdeteksi perubahan atau record belum ada.
-* **`server.go`**:
-  * Menambahkan field `mgmtIP` pada struct `Server`.
-  * Pada endpoint `GET /api/v1/nodes/{id}/config`, memastikan konfigurasi yang dikembalikan ke UI NOC selalu memiliki default DNS rewrite sesuai IP node lokal.
-  * Pada endpoint `POST /api/v1/nodes/{id}/apply`, memastikan default rewrite untuk nama node tetap dipertahankan saat apply dilakukan via web UI.
-
-### 5. Installer Shell Script: `install.sh`
-* Menambahkan modul auto-detection IPv4 pada tahap konfigurasi Unbound (antara pembuatan `unbound.conf` dan validasi `unbound-checkconf`):
-  * Mendeteksi seluruh alamat IP host publik/LAN non-loopback melalui `ip -4 -o addr` atau `hostname -I`.
-  * Menulis `/etc/unbound/conf.d/local-records.conf` yang berisi `local-data: "<NODE_ID> 300 A <IP>"` dan `local-data-ptr: "<IP> <NODE_ID>"` untuk setiap IP yang terdeteksi.
-
-### 6. Frontend Setup Wizard: `web/src/views/WizardView.tsx`
-* Mengubah inisialisasi `local_records` pada Wizard agar menggunakan `nodeName` dinamis (`nodeId || node?.id || 'dns-node'`) dan menyertakan `clientIp` aktual, bukan nilai dummy statis.
-* Build asset UI termutakhirkan ke versi `v1.0.126`.
+### C. AI Logrotate & Storage Guard
+* **Hero Card & Warning Banner**: Dilengkapi tombol **`⚡ Auto-Tune & Simpan ke Host`** serta **`Terapkan ke Form`**.
+* **Engine Fallback**: Menyediakan kalkulator AI lokal di frontend sehingga rekomendasi rotasi log selalu dapat dihitung meskipun laporan telemetri server sedang dalam proses *loading*.
 
 ---
 
-## Hasil Pengujian & Verifikasi
+## 2. Verifikasi Fungsi Seluruh Tombol & Kontrol
 
-1. **Unit Test Go (`pkg/model`)**:
-   ```
-   === RUN   TestEnsureNodeDnsRewrites_SingleIP
-   --- PASS: TestEnsureNodeDnsRewrites_SingleIP (0.00s)
-   === RUN   TestEnsureNodeDnsRewrites_DualIP
-   --- PASS: TestEnsureNodeDnsRewrites_DualIP (0.00s)
-   === RUN   TestEnsureNodeDnsRewrites_PreservesOtherDomains
-   --- PASS: TestEnsureNodeDnsRewrites_PreservesOtherDomains (0.00s)
-   === RUN   TestEnsureNodeDnsRewrites_ExtractFromListeners
-   --- PASS: TestEnsureNodeDnsRewrites_ExtractFromListeners (0.00s)
-   ok  	netora-dns/pkg/model	0.351s
-   ```
+Semua tombol dan elemen interaktif di halaman *Tuning & Profiles* (`PerformanceView.tsx`) telah diperiksa dan dipastikan berfungsi:
 
-2. **Unit Test Go (`pkg/configengine`)**:
-   ```
-   === RUN   TestGenerator_NodeDnsRewrites
-   --- PASS: TestGenerator_NodeDnsRewrites (0.01s)
-   ok  	netora-dns/pkg/configengine	0.563s
-   ```
+| Bagian | Tombol / Elemen | Status | Fungsi & Aksi |
+| :--- | :--- | :--- | :--- |
+| **Header Toolbar** | `✨ AI Full Auto-Tune` | **Berfungsi** | Otomatis tuning hardware, resiliency, DDoS, dan logrotate sekali klik. |
+| **Header Toolbar** | `Apply Tuning` | **Berfungsi** | Menyimpan perubahan konfigurasi lokal ke server via `api.applyConfig`. |
+| **Navigasi Tab** | Tab *Semua*, *CPU & Cache*, *Resiliency*, *Logrotate* | **Berfungsi** | Memfilter tampilan section tuning sesuai kategori. |
+| **Profil Hardware** | Kartu Profil (`SMALL`, `MEDIUM`, `LARGE`, `ISP`) | **Berfungsi** | Memilih dan mengisi form konfigurasi sesuai profil yang diklik. |
+| **Arsitektur Disk** | Kartu *Minimum*, *Recommended*, *Carrier Grade* | **Berfungsi** | Memilih preset profil yang sesuai dengan kapasitas disk. |
+| **Carrier Resiliency**| `Terapkan Preset Resiliency ISP` | **Berfungsi** | Mengaktifkan prefetch domain, DNSKEY, serve-expired, dan TTL reset. |
+| **Anti-DDoS Presets** | `Off`, `Strict`, `Standard ISP`, `Enterprise` | **Berfungsi** | Menyetel parameter *ip-ratelimit*, *domain-ratelimit*, dan *factor*. |
+| **Logrotate Presets** | `Ultra Storage Saver`, `Balanced`, `Carrier Audit` | **Berfungsi** | Menyetel frekuensi, retensi, batas ukuran log, dan kompresi gzip. |
+| **Operasi Logrotate** | `Uji Validasi (Dry Run)` | **Berfungsi** | Menjalankan simulasi `logrotate -d` dan menampilkan output di terminal. |
+| **Operasi Logrotate** | `Rotasi Sekarang (Paksa & Kosongkan)` | **Berfungsi** | Meminta konfirmasi dan mengeksekusi `logrotate -f` untuk mengosongkan disk. |
+| **Operasi Logrotate** | `Terapkan Konfigurasi Logrotate` | **Berfungsi** | Menulis dan memvalidasi konfigurasi `/etc/logrotate.d/unbound`. |
+| **Operasi Logrotate** | `Refresh Status` | **Berfungsi** | Memuat ulang telemetri ukuran log Unbound dan status rotasi host. |
+| **Konsol Terminal** | `Tutup Konsol` | **Berfungsi** | Menutup jendela output logrotate. |
 
-3. **Full Project Go Test Suite**:
+---
+
+## 3. Hasil Pengujian & Kompilasi
+
+1. **Frontend TypeScript & Vite Build**:
+   * Perintah: `npm run build`
+   * Hasil: `✓ built in 1.08s`, nol kesalahan kompilasi (`tsc -b` lulus tanpa error).
+   * Aset terdistribusi otomatis ke direktori [`deploy/ui/`](file:///c:/xampp/htdocs/auto-install/unbound/deploy/ui/).
+
+2. **Backend Go Test Suite**:
    * Perintah: `go test ./...`
-   * Hasil: `PASS` pada seluruh paket (`cmd/netora-api`, `pkg/model`, `pkg/storage`, `pkg/configengine`, dll.).
+   * Hasil: `PASS` pada seluruh paket (`cmd/netora-api`, `pkg/model`, `pkg/logrotate`, `pkg/storage`, dll.).
 
-4. **Production Frontend Build**:
-   * Perintah: `npm run build` di direktori `web`
-   * Hasil: `✓ built in 1.20s`, tersinkronisasi ke `deploy/ui/` (`v1.0.126`).
+3. **Git Synchronization**:
+   * Commit dan push ke GitHub siap dieksekusi secara bersih.
