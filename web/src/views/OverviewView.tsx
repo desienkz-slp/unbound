@@ -60,20 +60,32 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
   const [isLiveTelemetry, setIsLiveTelemetry] = useState(false);
 
-  const [statsReport, setStatsReport] = useState<DetailedStatsReport | null>(null);
+  const [statsReport, setStatsReport] = useState<DetailedStatsReport | null>(() => {
+    try {
+      const cached = localStorage.getItem(`netora_report_${nodeId}`);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  });
 
-  // Live statistics state from Unbound
-  const [stats, setStats] = useState({
-    totalQueries: 0,
-    cacheHits: 0,
-    cacheMisses: 0,
-    blockedFilters: 0,
-    blockedMalware: 0,
-    blockedAdult: 0,
-    blockedGambling: 0,
-    blockedAds: 0,
-    enforcedSafeSearch: 0,
-    avgProcessingTime: 1, // ms
+  // Live statistics state from Unbound with localStorage caching to prevent resetting to 0 on reload
+  const [stats, setStats] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`netora_stats_${nodeId}`);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return {
+      totalQueries: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      blockedFilters: 0,
+      blockedMalware: 0,
+      blockedAdult: 0,
+      blockedGambling: 0,
+      blockedAds: 0,
+      enforcedSafeSearch: 0,
+      avgProcessingTime: 1, // ms
+    };
   });
 
   const fetchHealthAndStats = async () => {
@@ -93,16 +105,22 @@ export const OverviewView: React.FC<OverviewProps> = ({
         const s = resStats.value;
         setStatsReport(s);
 
-        const isAdultActive = Boolean(config?.parental_control?.enabled && (config?.parental_control?.block_adult ?? true));
-        const isGamblingActive = Boolean(config?.gambling_block?.enabled || config?.parental_control?.block_gambling);
+        let adultBlocked = s.blocked_adult ?? 0;
+        let gamblingBlocked = s.blocked_gambling ?? 0;
 
-        const adultBlocked = isAdultActive ? (s.blocked_adult ?? 0) : 0;
-        const gamblingBlocked = isGamblingActive ? (s.blocked_gambling ?? 0) : 0;
+        // Reconcile with policy only if config is loaded
+        if (config !== null) {
+          const isAdultActive = Boolean(config.parental_control?.enabled && (config.parental_control?.block_adult ?? true));
+          const isGamblingActive = Boolean(config.gambling_block?.enabled || config.parental_control?.block_gambling);
+          if (!isAdultActive) adultBlocked = 0;
+          if (!isGamblingActive) gamblingBlocked = 0;
+        }
+
         const malwareBlocked = s.blocked_malware ?? 0;
         const totalBlocked = s.blocked_queries ?? 0;
         const adsBlocked = s.blocked_ads ?? Math.max(0, totalBlocked - malwareBlocked - adultBlocked - gamblingBlocked);
 
-        setStats({
+        const newStats = {
           totalQueries: s.total_queries ?? 0,
           cacheHits: s.cache_hits ?? 0,
           cacheMisses: s.cache_misses ?? 0,
@@ -113,8 +131,15 @@ export const OverviewView: React.FC<OverviewProps> = ({
           blockedAds: adsBlocked,
           enforcedSafeSearch: s.safe_search_enforced ?? 0,
           avgProcessingTime: Math.max(1, Math.round(s.avg_processing_time_ms || 1)),
-        });
+        };
+
+        setStats(newStats);
         setIsLiveTelemetry(true);
+
+        try {
+          localStorage.setItem(`netora_stats_${nodeId}`, JSON.stringify(newStats));
+          localStorage.setItem(`netora_report_${nodeId}`, JSON.stringify(s));
+        } catch {}
       }
     } catch (err) {
       console.error('Failed to fetch node health and stats:', err);
@@ -127,7 +152,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
     fetchHealthAndStats();
     const interval = setInterval(fetchHealthAndStats, 5000);
     return () => clearInterval(interval);
-  }, [nodeId]);
+  }, [nodeId, config]);
 
   const runQuickProbe = async (domainToTest: string) => {
     setTestDomain(domainToTest);
@@ -174,6 +199,31 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
   const isAdultFilterActive = Boolean(config?.parental_control?.enabled);
   const isGamblingActive = Boolean(config?.gambling_block?.enabled || config?.parental_control?.block_gambling);
+
+  // Real 24-hour time-series sparkline renderer
+  const renderSparkline = (
+    data?: number[],
+    colorClass = 'bg-cyan-500/50',
+    hoverClass = 'group-hover:bg-cyan-400'
+  ) => {
+    const points = data && data.length > 0 ? data : new Array(24).fill(0);
+    const max = Math.max(...points, 1);
+    return (
+      <div className="h-8 w-full flex items-end gap-0.5 sm:gap-1 opacity-70">
+        {points.map((val, i) => {
+          const heightPct = val > 0 ? Math.max(8, Math.round((val / max) * 100)) : 4;
+          return (
+            <div
+              key={i}
+              className={`flex-1 ${val > 0 ? colorClass : 'bg-gray-800/40'} rounded-t transition-all ${hoverClass}`}
+              style={{ height: `${heightPct}%` }}
+              title={`Jam -${23 - i}: ${val.toLocaleString()} query`}
+            />
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -243,17 +293,8 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </span>
             <div className="text-xs font-medium text-gray-400 mt-1">DNS Queries</div>
           </div>
-          {/* Subtle sparkline wave */}
           <div className="pt-2">
-            <div className="h-8 w-full flex items-end gap-1 opacity-70">
-              {[40, 55, 60, 48, 65, 80, 70, 85, 90, 75, 80, 95].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-gray-700/60 rounded-t transition-all group-hover:bg-cyan-500/50"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
+            {renderSparkline(statsReport?.queries_history, 'bg-gray-700/60', 'group-hover:bg-cyan-500/50')}
           </div>
         </div>
 
@@ -271,15 +312,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </span>
           </div>
           <div className="pt-2">
-            <div className="h-8 w-full flex items-end gap-1 opacity-70">
-              {[30, 45, 50, 42, 55, 60, 58, 65, 70, 62, 68, 72].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-rose-900/40 rounded-t transition-all group-hover:bg-rose-500/50"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
+            {renderSparkline(statsReport?.blocked_history, 'bg-rose-900/40', 'group-hover:bg-rose-500/50')}
           </div>
         </div>
 
@@ -297,15 +330,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </span>
           </div>
           <div className="pt-2">
-            <div className="h-8 w-full flex items-end gap-1 opacity-70">
-              {[10, 15, 12, 10, 8, 90, 20, 15, 12, 10, 14, 18].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-amber-900/40 rounded-t transition-all group-hover:bg-amber-500/50"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
+            {renderSparkline(statsReport?.malware_history, 'bg-amber-900/40', 'group-hover:bg-amber-500/50')}
           </div>
         </div>
 
@@ -337,18 +362,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </div>
           </div>
           <div className="pt-2">
-            <div className="h-8 w-full flex items-end gap-1 opacity-70">
-              {(isAdultFilterActive && stats.blockedAdult > 0
-                ? [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
-                : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-              ).map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-purple-900/30 rounded-t"
-                  style={{ height: `${Math.max(h, 4)}%` }}
-                />
-              ))}
-            </div>
+            {renderSparkline(isAdultFilterActive ? statsReport?.adult_history : undefined, 'bg-purple-900/30', 'group-hover:bg-purple-500/50')}
           </div>
         </div>
 
@@ -380,18 +394,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </div>
           </div>
           <div className="pt-2">
-            <div className="h-8 w-full flex items-end gap-1 opacity-70">
-              {(isGamblingActive && stats.blockedGambling > 0
-                ? [4, 6, 8, 12, 10, 15, 8, 14, 18, 12, 16, 20]
-                : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-              ).map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-amber-900/30 rounded-t group-hover:bg-amber-500/50 transition-all"
-                  style={{ height: `${Math.max(h, 4)}%` }}
-                />
-              ))}
-            </div>
+            {renderSparkline(isGamblingActive ? statsReport?.gambling_history : undefined, 'bg-amber-900/30', 'group-hover:bg-amber-500/50')}
           </div>
         </div>
       </div>

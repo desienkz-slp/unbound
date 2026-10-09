@@ -333,6 +333,11 @@ export interface DetailedStatsReport {
   top_queried_domains: DomainStat[];
   top_blocked_domains: BlockedDomainStat[];
   top_upstreams: UpstreamStat[];
+  queries_history?: number[];
+  blocked_history?: number[];
+  malware_history?: number[];
+  adult_history?: number[];
+  gambling_history?: number[];
 }
 
 export interface SystemVersion {

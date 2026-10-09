@@ -739,14 +739,20 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			if s.store != nil {
 				if cfg, err := s.store.GetDesiredState(r.Context(), nodeID); err == nil && cfg != nil {
 					isAdultActive := cfg.ParentalControl.Enabled && cfg.ParentalControl.BlockAdult
-					if !isAdultActive && report.BlockedAdult > 0 {
-						report.BlockedAds += report.BlockedAdult
-						report.BlockedAdult = 0
+					if !isAdultActive {
+						if report.BlockedAdult > 0 {
+							report.BlockedAds += report.BlockedAdult
+							report.BlockedAdult = 0
+						}
+						report.AdultHistory = make([]int64, 24)
 					}
 					isGamblingActive := cfg.GamblingBlock.Enabled || (cfg.ParentalControl.Enabled && cfg.ParentalControl.BlockGambling)
-					if !isGamblingActive && report.BlockedGambling > 0 {
-						report.BlockedAds += report.BlockedGambling
-						report.BlockedGambling = 0
+					if !isGamblingActive {
+						if report.BlockedGambling > 0 {
+							report.BlockedAds += report.BlockedGambling
+							report.BlockedGambling = 0
+						}
+						report.GamblingHistory = make([]int64, 24)
 					}
 					if !isAdultActive || !isGamblingActive {
 						for i := range report.TopBlockedDomains {
