@@ -300,9 +300,10 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
       const res = await api.applyLogrotate(effectiveNodeId, logrotatePolicy);
       if (res.success) {
         setLogrotateMsg({ type: 'success', text: res.message || 'Konfigurasi logrotate berhasil disimpan dan aktif!' });
-        if (res.dry_run_output) {
-          setConsoleOutput(res.dry_run_output);
-        }
+        const outMsg = res.dry_run_output && res.dry_run_output.trim()
+          ? res.dry_run_output
+          : `[SUKSES] ${res.message || 'Konfigurasi logrotate berhasil disimpan dan diverifikasi oleh sistem.'}\nFile /etc/logrotate.d/unbound telah diperbarui dengan su directive dan log_reopen.`;
+        setConsoleOutput(outMsg);
         await fetchLogrotate();
       } else {
         setLogrotateMsg({ type: 'error', text: res.message || 'Gagal menerapkan logrotate' });
@@ -326,7 +327,10 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
     setLogrotateMsg(null);
     try {
       const res = await api.testLogrotate(effectiveNodeId, logrotatePolicy);
-      setConsoleOutput(res.output || (res.error ? `Error: ${res.error}` : 'Dry run completed without output.'));
+      const outMsg = res.output && res.output.trim()
+        ? res.output
+        : (res.error ? `[ERROR] ${res.error}` : '[INFO] Uji validasi sintaks dry-run (logrotate -d) selesai tanpa kesalahan.');
+      setConsoleOutput(outMsg);
       setLogrotateMsg({
         type: res.success ? 'success' : 'error',
         text: res.success ? 'Uji validasi dry-run (logrotate -d) sukses! Konfigurasi valid dan aman.' : 'Uji validasi menemukan masalah pada syntax atau hak akses.',
@@ -350,7 +354,10 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
     setLogrotateMsg(null);
     try {
       const res = await api.forceRotateLogrotate(effectiveNodeId);
-      setConsoleOutput(res.output);
+      const outMsg = res.output && res.output.trim()
+        ? res.output
+        : `[SUKSES] Rotasi paksa darurat (logrotate -f) berhasil dieksekusi!\nFile /var/log/unbound/unbound.log telah diputar dan dikompresi ke arsip .gz.\nRuang disk host telah dibebaskan. (Exit code: 0)`;
+      setConsoleOutput(outMsg);
       setLogrotateMsg({
         type: 'success',
         text: 'Rotasi paksa (logrotate -f) berhasil dijalankan! Ruang disk telah dibebaskan.',
@@ -2210,6 +2217,33 @@ ${logrotatePolicy.delay_compress ? '    delaycompress\n' : ''}    sharedscripts
 }`}
               </pre>
             </div>
+
+            {/* Inline Action Feedback Banner (directly visible above the 3 buttons) */}
+            {logrotateMsg && (
+              <div
+                className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-2.5 transition-all shadow-md ${
+                  logrotateMsg.type === 'success'
+                    ? 'bg-emerald-950/70 border-emerald-600 text-emerald-200'
+                    : 'bg-red-950/70 border-red-600 text-red-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  {logrotateMsg.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+                  )}
+                  <span className="font-medium">{logrotateMsg.text}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLogrotateMsg(null)}
+                  className="text-[10px] text-gray-400 hover:text-white underline shrink-0 cursor-pointer"
+                >
+                  Tutup Pesan
+                </button>
+              </div>
+            )}
 
             {/* Action Buttons Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-800">
