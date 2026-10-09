@@ -56,6 +56,9 @@ systemctl daemon-reload
 
 echo -e "${CYAN}3. Mengembalikan Resolver Sistem (systemd-resolved)...${NC}"
 rm -f /etc/systemd/resolved.conf.d/netora-disable-stub.conf
+if [[ -f /etc/systemd/resolved.conf ]]; then
+  sed -i -E 's/^DNSStubListener=no/#DNSStubListener=yes/' /etc/systemd/resolved.conf 2>/dev/null || true
+fi
 systemctl restart systemd-resolved 2>/dev/null || true
 
 if [[ -f /etc/resolv.conf.netora.bak ]]; then
