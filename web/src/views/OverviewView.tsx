@@ -70,6 +70,8 @@ export const OverviewView: React.FC<OverviewProps> = ({
     blockedFilters: 0,
     blockedMalware: 0,
     blockedAdult: 0,
+    blockedGambling: 0,
+    blockedAds: 0,
     enforcedSafeSearch: 0,
     avgProcessingTime: 1, // ms
   });
@@ -97,6 +99,8 @@ export const OverviewView: React.FC<OverviewProps> = ({
           blockedFilters: s.blocked_queries ?? 0,
           blockedMalware: s.blocked_malware ?? 0,
           blockedAdult: s.blocked_adult ?? 0,
+          blockedGambling: s.blocked_gambling ?? 0,
+          blockedAds: s.blocked_ads ?? Math.max(0, (s.blocked_queries ?? 0) - (s.blocked_malware ?? 0) - (s.blocked_adult ?? 0) - (s.blocked_gambling ?? 0)),
           enforcedSafeSearch: s.safe_search_enforced ?? 0,
           avgProcessingTime: Math.max(1, Math.round(s.avg_processing_time_ms || 1)),
         });
@@ -149,6 +153,16 @@ export const OverviewView: React.FC<OverviewProps> = ({
   const blockedPct = stats.totalQueries > 0
     ? Math.min(100, Number((((stats.blockedFilters || 0) / Math.max(1, stats.totalQueries)) * 100).toFixed(1))).toFixed(1)
     : '0';
+
+  const formatPercentage = (count: number, total: number): string => {
+    if (!total || count <= 0) return '0%';
+    const pct = (count / total) * 100;
+    if (pct < 0.01) return '<0.01%';
+    if (pct < 1) return `${pct.toFixed(2)}%`;
+    return `${pct.toFixed(1)}%`;
+  };
+
+  const isAdultFilterActive = Boolean(config?.parental_control?.enabled);
 
   return (
     <div className="space-y-6">
@@ -267,8 +281,8 @@ export const OverviewView: React.FC<OverviewProps> = ({
               </span>
               <div className="text-xs font-medium text-amber-300/80 mt-1">Blocked malware/phishing</div>
             </div>
-            <span className="text-xs font-mono text-gray-500 px-2 py-0.5 rounded bg-gray-950">
-              &lt;0.01%
+            <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/60 border border-amber-900/60 px-2 py-0.5 rounded">
+              {formatPercentage(stats.blockedMalware, stats.totalQueries)}
             </span>
           </div>
           <div className="pt-2">
@@ -293,9 +307,21 @@ export const OverviewView: React.FC<OverviewProps> = ({
               </span>
               <div className="text-xs font-medium text-purple-300/80 mt-1">Blocked adult websites</div>
             </div>
-            <span className="text-xs font-mono text-gray-500 px-2 py-0.5 rounded bg-gray-950">
-              0%
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-mono font-bold text-purple-400 bg-purple-950/60 border border-purple-900/60 px-2 py-0.5 rounded">
+                {formatPercentage(stats.blockedAdult, stats.totalQueries)}
+              </span>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase font-bold border ${
+                  isAdultFilterActive
+                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80'
+                    : 'bg-gray-950 text-gray-500 border-gray-800'
+                }`}
+                title={isAdultFilterActive ? 'Filter 18+ Aktif' : 'Filter 18+ Nonaktif / Terbuka'}
+              >
+                {isAdultFilterActive ? 'ACTIVE' : 'ALLOWED'}
+              </span>
+            </div>
           </div>
           <div className="pt-2">
             <div className="h-8 w-full flex items-end gap-1 opacity-70">
@@ -314,7 +340,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
       {/* Row 1: General statistics (Left) & Top clients (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Panel 1: General statistics */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[310px] flex flex-col justify-between shadow-sm">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 min-h-[340px] flex flex-col justify-between shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
             <div>
               <h2 className="text-sm font-bold text-white">General statistics</h2>
@@ -344,13 +370,23 @@ export const OverviewView: React.FC<OverviewProps> = ({
             </div>
 
             <div className="py-1 flex items-center justify-between">
-              <span className="text-rose-400">Blocked by Filters</span>
+              <span className="text-rose-400">Blocked by Filters (Total)</span>
               <span className="text-rose-400 font-bold">{stats.blockedFilters.toLocaleString()}</span>
             </div>
 
             <div className="py-1 flex items-center justify-between">
+              <span className="text-cyan-400">Blocked Ads & Trackers</span>
+              <span className="text-cyan-400 font-bold">{stats.blockedAds.toLocaleString()}</span>
+            </div>
+
+            <div className="py-1 flex items-center justify-between">
               <span className="text-amber-400">Blocked malware/phishing</span>
-              <span className="text-amber-400 font-bold">{stats.blockedMalware}</span>
+              <span className="text-amber-400 font-bold">{stats.blockedMalware.toLocaleString()}</span>
+            </div>
+
+            <div className="py-1 flex items-center justify-between">
+              <span className="text-purple-400">Blocked adult websites</span>
+              <span className="text-purple-400 font-bold">{stats.blockedAdult.toLocaleString()}</span>
             </div>
 
             <div className="py-1 flex items-center justify-between">
@@ -361,7 +397,7 @@ export const OverviewView: React.FC<OverviewProps> = ({
         </div>
 
         {/* Panel 2: Top clients */}
-        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 h-[310px] flex flex-col shadow-sm">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 min-h-[340px] flex flex-col shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-gray-800 shrink-0">
             <div>
               <h2 className="text-sm font-bold text-white">Top clients</h2>

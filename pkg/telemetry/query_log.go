@@ -57,6 +57,7 @@ type DetailedStatsReport struct {
 	BlockedMalware      int64               `json:"blocked_malware"`
 	BlockedAdult        int64               `json:"blocked_adult"`
 	BlockedGambling     int64               `json:"blocked_gambling"`
+	BlockedAds          int64               `json:"blocked_ads"`
 	SafeSearchEnforced  int64               `json:"safe_search_enforced"`
 	TopClients          []ClientStat        `json:"top_clients"`
 	TopQueriedDomains   []DomainStat        `json:"top_queried_domains"`
@@ -404,6 +405,16 @@ func ClientNameHelper(ip string) string {
 // CategorizeDomain guesses category for a blocked domain based on patterns.
 func CategorizeDomain(domain string) string {
 	d := strings.ToLower(domain)
+
+	// 1. High priority: Malware & Security Threats
+	malwareKeywords := []string{"malware", "phish", "trojan", "botnet", "ransom", "c2", "exploit", "virus"}
+	for _, kw := range malwareKeywords {
+		if strings.Contains(d, kw) {
+			return "Malware Shield"
+		}
+	}
+
+	// 2. Gambling & Casino
 	gamblingKeywords := []string{"judi", "slot", "bet", "sbobet", "poker", "casino", "togel", "maxwin", "zeus", "gacor", "bola88", "taruhan"}
 	for _, kw := range gamblingKeywords {
 		if strings.Contains(d, kw) {
@@ -411,24 +422,22 @@ func CategorizeDomain(domain string) string {
 		}
 	}
 
-	adultKeywords := []string{"porn", "xxx", "xhamster", "sex", "adult", "redtube", "onlyfans", "bokep", "nsfw", "cam"}
+	// 3. 18+ Adult Content (use specific keywords to prevent false positives like 'campaign' matching 'cam')
+	adultKeywords := []string{"porn", "porno", "xxx", "xhamster", "adult", "redtube", "onlyfans", "bokep", "nsfw", "brazzers", "xnxx", "xvideos", "webcam", "livecam", "chaturbate", "cam4"}
 	for _, kw := range adultKeywords {
 		if strings.Contains(d, kw) {
 			return "18+ Adult"
 		}
 	}
+	if strings.Contains(d, "sex") && !strings.Contains(d, "essex") && !strings.Contains(d, "sussex") && !strings.Contains(d, "unisex") {
+		return "18+ Adult"
+	}
 
-	adKeywords := []string{"ad", "track", "pixel", "telemetry", "analytics", "doubleclick", "banner", "metric", "tag", "pop"}
+	// 4. Advertising, Analytics & Trackers (including campaign tracking)
+	adKeywords := []string{"campaign", "ad", "track", "pixel", "telemetry", "analytics", "doubleclick", "banner", "metric", "tag", "pop"}
 	for _, kw := range adKeywords {
 		if strings.Contains(d, kw) {
 			return "Advertising / Tracker"
-		}
-	}
-
-	malwareKeywords := []string{"malware", "phish", "trojan", "botnet", "ransom", "c2", "exploit", "virus"}
-	for _, kw := range malwareKeywords {
-		if strings.Contains(d, kw) {
-			return "Malware Shield"
 		}
 	}
 
@@ -601,7 +610,7 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 	})
 
 	var topBlockedDomains []BlockedDomainStat
-	var adultBlocked, gamblingBlocked, malwareBlocked int64
+	var adultBlocked, gamblingBlocked, malwareBlocked, adsBlocked int64
 	for i, b := range blockedList {
 		cat := CategorizeDomain(b.Key)
 		if cat == "18+ Adult" {
@@ -610,6 +619,8 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 			gamblingBlocked += b.Value
 		} else if cat == "Malware Shield" {
 			malwareBlocked += b.Value
+		} else {
+			adsBlocked += b.Value
 		}
 
 		if i < 10 {
@@ -626,6 +637,11 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 	effectiveBlockedQueries := int64(nxdomainCount)
 	if effectiveBlockedQueries == 0 || t.totalLogBlocked > effectiveBlockedQueries {
 		effectiveBlockedQueries = t.totalLogBlocked
+	}
+
+	// Allocate residual filter blocks to Ads & Trackers (bulk of AdGuard / StevenBlack blocklists)
+	if rem := effectiveBlockedQueries - malwareBlocked - adultBlocked - gamblingBlocked; rem > adsBlocked {
+		adsBlocked = rem
 	}
 
 	effectiveTotalQueries := int64(totalQueries)
@@ -674,6 +690,7 @@ func (t *QueryLogTailer) GetDetailedReport(ctx context.Context) *DetailedStatsRe
 		BlockedMalware:      malwareBlocked,
 		BlockedAdult:        adultBlocked,
 		BlockedGambling:     gamblingBlocked,
+		BlockedAds:          adsBlocked,
 		SafeSearchEnforced:  0,
 		TopClients:          topClients,
 		TopQueriedDomains:   topQueriedDomains,

@@ -327,6 +327,7 @@ export interface DetailedStatsReport {
   blocked_malware: number;
   blocked_adult: number;
   blocked_gambling: number;
+  blocked_ads?: number;
   safe_search_enforced: number;
   top_clients: ClientStat[];
   top_queried_domains: DomainStat[];

@@ -73,4 +73,13 @@ func TestQueryLogTailerParsing(t *testing.T) {
 	if CategorizeDomain("xhamster.com") != "18+ Adult" {
 		t.Errorf("expected 18+ Adult for xhamster.com, got %s", CategorizeDomain("xhamster.com"))
 	}
+	if CategorizeDomain("adcampaign.google.com") != "Advertising / Tracker" {
+		t.Errorf("expected Advertising / Tracker for adcampaign.google.com, got %s", CategorizeDomain("adcampaign.google.com"))
+	}
+	if CategorizeDomain("livecam.adult.com") != "18+ Adult" {
+		t.Errorf("expected 18+ Adult for livecam.adult.com, got %s", CategorizeDomain("livecam.adult.com"))
+	}
+	if report.BlockedAds < 0 {
+		t.Errorf("expected BlockedAds >= 0, got %d", report.BlockedAds)
+	}
 }
