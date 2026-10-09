@@ -497,13 +497,23 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 				upstreams = append(upstreams, u)
 			}
 		}
-		if err := uRows.Err(); err != nil {
-			return nil, fmt.Errorf("error iterating upstreams: %w", err)
-		}
 		if len(upstreams) > 0 {
 			state.Upstreams = upstreams
 		}
 	}
+
+	// Ensure default DNS rewrites for nodeID matching the server's IPs
+	var nodeIPs []string
+	for _, l := range state.Listeners {
+		ip := strings.TrimSpace(l.IP)
+		if ip != "" && ip != "0.0.0.0" && ip != "127.0.0.1" && !l.IsIPv6 && !strings.Contains(ip, ":") {
+			nodeIPs = append(nodeIPs, ip)
+		}
+	}
+	if len(nodeIPs) == 0 && node != nil && node.ManagementIP != "" && node.ManagementIP != "127.0.0.1" {
+		nodeIPs = append(nodeIPs, node.ManagementIP)
+	}
+	_ = state.EnsureNodeDnsRewrites(nodeID, nodeIPs)
 
 	return state, nil
 }

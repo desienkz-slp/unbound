@@ -160,10 +160,17 @@ export const WizardView: React.FC<WizardViewProps> = ({
           google_redirect_ipv4: '216.239.38.120',
           bing_redirect_ipv4: '204.79.197.220',
         },
-        local_records: [
-          { domain: 'netora.local', type: 'A', value: clientIp, ttl: 300 },
-          { domain: 'dns.internal', type: 'A', value: clientIp, ttl: 300 },
-        ],
+        local_records: (() => {
+          const nodeName = nodeId || node?.id || 'dns-node';
+          const recs = (existingConfig?.local_records && existingConfig.local_records.length > 0)
+            ? [...existingConfig.local_records]
+            : [];
+          const hasNodeRewrite = recs.some((r) => r.domain.toLowerCase() === nodeName.toLowerCase() && r.type === 'A');
+          if (!hasNodeRewrite && clientIp && clientIp !== '0.0.0.0' && clientIp !== '127.0.0.1') {
+            recs.push({ domain: nodeName, type: 'A', value: clientIp, ttl: 300 });
+          }
+          return recs;
+        })(),
         remote_control: {
           enabled: true,
           interface: '127.0.0.1',

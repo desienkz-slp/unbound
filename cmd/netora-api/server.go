@@ -37,6 +37,7 @@ type Server struct {
 	healthChecker         *runtime.DNSHealthChecker
 	jwtSecret             string
 	nodeID                string
+	mgmtIP                string
 	metrics               *telemetry.Metrics
 	alertEngine           *telemetry.AlertEngine
 	clusterManager        *cluster.ClusterManager
@@ -102,6 +103,7 @@ func NewServer(store storage.Store, engine *configengine.Engine, policyEngine *p
 		healthChecker:         hc,
 		jwtSecret:             jwtSecret,
 		nodeID:                nodeID,
+		mgmtIP:                mgmtIP,
 		metrics:               metrics,
 		alertEngine:           alertEngine,
 		clusterManager:        cm,
@@ -798,6 +800,14 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 				// Return default if not stored
 				cfg = model.NewDefaultDesiredState(nodeID, 2, 2048)
 			}
+			var nodeIPs []string
+			if nodeID == s.nodeID {
+				nodeIPs = detectActiveIPv4Addresses()
+			}
+			if len(nodeIPs) == 0 && s.mgmtIP != "" && s.mgmtIP != "127.0.0.1" && nodeID == s.nodeID {
+				nodeIPs = []string{s.mgmtIP}
+			}
+			cfg.EnsureNodeDnsRewrites(nodeID, nodeIPs)
 			s.writeJSON(w, http.StatusOK, cfg)
 			return
 		}
@@ -838,6 +848,16 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(string(state.ResolutionMode)) == "" {
 			state.ResolutionMode = model.ModeRecursive
 		}
+
+		// Ensure default node DNS rewrites are preserved during apply
+		var applyIPs []string
+		if nodeID == s.nodeID {
+			applyIPs = detectActiveIPv4Addresses()
+		}
+		if len(applyIPs) == 0 && s.mgmtIP != "" && s.mgmtIP != "127.0.0.1" && nodeID == s.nodeID {
+			applyIPs = []string{s.mgmtIP}
+		}
+		state.EnsureNodeDnsRewrites(nodeID, applyIPs)
 
 		claims := r.Context().Value("user_claims").(*auth.Claims)
 		log.Printf("[apply] Node %s: starting apply for version %s (actor: %s)\n", nodeID, state.VersionID, claims.Username)

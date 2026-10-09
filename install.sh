@@ -585,6 +585,35 @@ remote-control:
 include: "/etc/unbound/conf.d/*.conf"
 EOF
 
+# ------------------------------------------------------------------------------
+# Default DNS Rewrites for Node (1 IP = 1 rewrite, 2 IPs = 2 rewrites)
+# ------------------------------------------------------------------------------
+SERVER_IPS=()
+if command -v ip >/dev/null 2>&1; then
+  while IFS= read -r s_ip; do
+    [[ -n "$s_ip" && "$s_ip" != 127.* ]] && SERVER_IPS+=("$s_ip")
+  done < <(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | sort -u)
+fi
+if [[ ${#SERVER_IPS[@]} -eq 0 ]] && command -v hostname >/dev/null 2>&1; then
+  for h_ip in $(hostname -I 2>/dev/null || true); do
+    [[ -n "$h_ip" && "$h_ip" != 127.* && ! "$h_ip" =~ : ]] && SERVER_IPS+=("$h_ip")
+  done
+fi
+
+if [[ ${#SERVER_IPS[@]} -gt 0 ]]; then
+  log_info "Detected ${#SERVER_IPS[@]} active IP address(es) for node '${NODE_ID}': ${SERVER_IPS[*]}"
+  cat > /etc/unbound/conf.d/local-records.conf <<EOF
+# Netora DNS — Local Authoritative Records for ${NODE_ID}
+# Automatically configured: ${#SERVER_IPS[@]} IP(s) -> ${#SERVER_IPS[@]} rewrite(s)
+server:
+EOF
+  for s_ip in "${SERVER_IPS[@]}"; do
+    echo "  local-data: \"${NODE_ID} 300 A ${s_ip}\"" >> /etc/unbound/conf.d/local-records.conf
+    echo "  local-data-ptr: \"${s_ip} ${NODE_ID}\"" >> /etc/unbound/conf.d/local-records.conf
+  done
+  log_success "Generated ${#SERVER_IPS[@]} default DNS rewrite(s) for node '${NODE_ID}' in /etc/unbound/conf.d/local-records.conf"
+fi
+
 # Pre-flight syntax validation
 if ! unbound-checkconf /etc/unbound/unbound.conf; then
   log_error "unbound-checkconf syntax validation failed! Please inspect /etc/unbound/unbound.conf."

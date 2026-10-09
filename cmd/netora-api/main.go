@@ -106,8 +106,12 @@ func main() {
 			}
 		}
 	}
+	activeIPs := detectActiveIPv4Addresses()
+	if len(activeIPs) == 0 && realIP != "" && realIP != "127.0.0.1" {
+		activeIPs = []string{realIP}
+	}
+
 	if !hasConcreteListeners {
-		activeIPs := detectActiveIPv4Addresses()
 		initListeners := []model.Listener{
 			{
 				ID:      "listen-mgmt",
@@ -155,10 +159,19 @@ func main() {
 
 		baseState := model.NewDefaultDesiredState(*nodeID, realCores, realRAM)
 		baseState.Listeners = initListeners
+		baseState.EnsureNodeDnsRewrites(*nodeID, activeIPs)
 		if err := store.SaveDesiredState(ctx, baseState); err != nil {
 			log.Printf("Warning: failed saving initial desired state: %v\n", err)
 		} else {
-			log.Printf("Initialized default node '%s' configuration with %d active listener(s)\n", *nodeID, len(initListeners))
+			log.Printf("Initialized default node '%s' configuration with %d active listener(s) and %d DNS rewrite(s)\n", *nodeID, len(initListeners), len(baseState.LocalRecords))
+		}
+	} else if existingState != nil {
+		if existingState.EnsureNodeDnsRewrites(*nodeID, activeIPs) {
+			if err := store.SaveDesiredState(ctx, existingState); err != nil {
+				log.Printf("Warning: failed saving synchronized desired state: %v\n", err)
+			} else {
+				log.Printf("Synchronized node '%s' DNS rewrites with %d detected IP(s)\n", *nodeID, len(activeIPs))
+			}
 		}
 	}
 

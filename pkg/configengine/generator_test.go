@@ -244,3 +244,64 @@ func TestGenerator_ResiliencyAndRateLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerator_NodeDnsRewrites(t *testing.T) {
+	gen, err := NewGenerator()
+	if err != nil {
+		t.Fatalf("failed to create generator: %v", err)
+	}
+
+	// Case 1: Node with 2 IPs -> 2 rewrites
+	stateDual := model.NewDefaultDesiredState("node-dual", 2, 2048)
+	stateDual.EnsureNodeDnsRewrites("node-dual", []string{"172.18.20.146", "10.10.10.1"})
+
+	resDual, err := gen.Generate(stateDual, "/etc/unbound")
+	if err != nil {
+		t.Fatalf("failed to generate config: %v", err)
+	}
+
+	var recordsContent string
+	for _, f := range resDual.Files {
+		if f.RelativePath == "conf.d/local-records.conf" {
+			recordsContent = string(f.Content)
+			break
+		}
+	}
+
+	if !strings.Contains(recordsContent, "node-dual 300 A 172.18.20.146") {
+		t.Errorf("expected rewrite for 172.18.20.146 in local-records.conf, got:\n%s", recordsContent)
+	}
+	if !strings.Contains(recordsContent, "node-dual 300 A 10.10.10.1") {
+		t.Errorf("expected rewrite for 10.10.10.1 in local-records.conf, got:\n%s", recordsContent)
+	}
+
+	// Verify no duplicate A records
+	if strings.Count(recordsContent, "node-dual 300 A 172.18.20.146") != 1 {
+		t.Errorf("expected exactly 1 occurrence of 172.18.20.146 rewrite, got %d", strings.Count(recordsContent, "node-dual 300 A 172.18.20.146"))
+	}
+
+	// Case 2: Node with 1 IP -> 1 rewrite
+	stateSingle := model.NewDefaultDesiredState("node-single", 2, 2048)
+	stateSingle.EnsureNodeDnsRewrites("node-single", []string{"172.18.20.145"})
+
+	resSingle, err := gen.Generate(stateSingle, "/etc/unbound")
+	if err != nil {
+		t.Fatalf("failed to generate config: %v", err)
+	}
+
+	var recordsContentSingle string
+	for _, f := range resSingle.Files {
+		if f.RelativePath == "conf.d/local-records.conf" {
+			recordsContentSingle = string(f.Content)
+			break
+		}
+	}
+
+	if !strings.Contains(recordsContentSingle, "node-single 300 A 172.18.20.145") {
+		t.Errorf("expected rewrite for 172.18.20.145 in local-records.conf, got:\n%s", recordsContentSingle)
+	}
+	if strings.Count(recordsContentSingle, "node-single 300 A") != 1 {
+		t.Errorf("expected exactly 1 rewrite A record, got %d", strings.Count(recordsContentSingle, "node-single 300 A"))
+	}
+}
+

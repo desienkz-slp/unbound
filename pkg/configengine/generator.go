@@ -600,26 +600,34 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 	// Auto-inject rDNS PTR records for active node listeners so 'nslookup' displays Node ID
 	if ctx.NodeID != "" {
 		existingPTRs := make(map[string]bool)
+		existingAs := make(map[string]bool)
 		for _, r := range allRecords {
 			if r.Type == "PTR" {
 				existingPTRs[r.Value] = true
 			}
+			if strings.EqualFold(r.Domain, ctx.NodeID) && strings.ToUpper(r.Type) == "A" {
+				existingAs[r.Value] = true
+			}
 		}
 
 		for _, l := range ctx.ActiveListeners {
-			if l.IP != "0.0.0.0" && l.IP != "::" && !existingPTRs[l.IP] {
-				allRecords = append(allRecords, model.LocalRecord{
-					Domain: ctx.NodeID,
-					Type:   "PTR",
-					Value:  l.IP,
-					TTL:    3600,
-				})
-				allRecords = append(allRecords, model.LocalRecord{
-					Domain: ctx.NodeID,
-					Type:   "A",
-					Value:  l.IP,
-					TTL:    3600,
-				})
+			if l.IP != "0.0.0.0" && l.IP != "::" && l.IP != "127.0.0.1" {
+				if !existingPTRs[l.IP] {
+					allRecords = append(allRecords, model.LocalRecord{
+						Domain: ctx.NodeID,
+						Type:   "PTR",
+						Value:  l.IP,
+						TTL:    3600,
+					})
+				}
+				if !existingAs[l.IP] {
+					allRecords = append(allRecords, model.LocalRecord{
+						Domain: ctx.NodeID,
+						Type:   "A",
+						Value:  l.IP,
+						TTL:    3600,
+					})
+				}
 			}
 		}
 	}

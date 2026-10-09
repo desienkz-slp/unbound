@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -396,6 +397,93 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			ControlUseCert: false,
 		},
 	}
+}
+
+// EnsureNodeDnsRewrites verifies and ensures that the DesiredState contains default DNS rewrite (A records)
+// matching the node's IP addresses.
+// If the node has 2 IPs, it will have 2 DNS rewrites; if 1 IP, it will have 1 rewrite.
+// Existing custom rewrites for other domains are strictly preserved.
+func (s *DesiredState) EnsureNodeDnsRewrites(nodeName string, ips []string) bool {
+	if s == nil {
+		return false
+	}
+	if nodeName == "" {
+		nodeName = s.NodeID
+	}
+	if nodeName == "" {
+		return false
+	}
+
+	// If ips slice is not provided, extract concrete IPv4 addresses from s.Listeners
+	if len(ips) == 0 {
+		seenIP := make(map[string]bool)
+		for _, l := range s.Listeners {
+			ip := strings.TrimSpace(l.IP)
+			if ip != "" && ip != "0.0.0.0" && ip != "127.0.0.1" && !l.IsIPv6 && !strings.Contains(ip, ":") && !seenIP[ip] {
+				seenIP[ip] = true
+				ips = append(ips, ip)
+			}
+		}
+	}
+
+	// Clean and deduplicate target IPs
+	var targetIPs []string
+	seen := make(map[string]bool)
+	for _, ip := range ips {
+		ip = strings.TrimSpace(ip)
+		if ip != "" && ip != "0.0.0.0" && ip != "127.0.0.1" && !strings.Contains(ip, ":") && !seen[ip] {
+			seen[ip] = true
+			targetIPs = append(targetIPs, ip)
+		}
+	}
+
+	if len(targetIPs) == 0 {
+		return false
+	}
+
+	// Find existing A records for this nodeName
+	existingForNode := make(map[string]bool)
+	for _, rec := range s.LocalRecords {
+		if strings.EqualFold(rec.Domain, nodeName) && strings.ToUpper(rec.Type) == "A" {
+			existingForNode[rec.Value] = true
+		}
+	}
+
+	// If all target IPs are already present and count matches, no change needed
+	if len(existingForNode) == len(targetIPs) {
+		allMatch := true
+		for _, ip := range targetIPs {
+			if !existingForNode[ip] {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			return false
+		}
+	}
+
+	// Reconstruct LocalRecords: preserve all other domains, and replace nodeName A records with targetIPs
+	var newRecords []LocalRecord
+	for _, rec := range s.LocalRecords {
+		if strings.EqualFold(rec.Domain, nodeName) && strings.ToUpper(rec.Type) == "A" {
+			continue
+		}
+		newRecords = append(newRecords, rec)
+	}
+
+	// Append target IP rewrites for nodeName
+	for _, ip := range targetIPs {
+		newRecords = append(newRecords, LocalRecord{
+			Domain: nodeName,
+			Type:   "A",
+			Value:  ip,
+			TTL:    300,
+		})
+	}
+
+	s.LocalRecords = newRecords
+	return true
 }
 
 // AutoTuneCache computes safe cache allocations based on available RAM in MB.
