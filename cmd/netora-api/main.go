@@ -55,7 +55,11 @@ func main() {
 	defer cancel()
 
 	if _, err := store.GetUserByUsername(ctx, "admin"); err != nil {
-		hash, _ := auth.HashPassword("admin123")
+		initialAdminPass := os.Getenv("NETORA_ADMIN_PASS")
+		if initialAdminPass == "" {
+			initialAdminPass = "admin123"
+		}
+		hash, _ := auth.HashPassword(initialAdminPass)
 		adminUser := &auth.User{
 			ID:           "usr-superadmin",
 			Username:     "admin",

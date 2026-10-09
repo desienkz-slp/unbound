@@ -915,6 +915,11 @@ elif command -v go >/dev/null 2>&1; then
   (cd "$REPO_DIR" && go build -o /usr/local/bin/netora-cli cmd/netora-cli/main.go) 2>/dev/null && chmod +x /usr/local/bin/netora-cli && log_success "Built netora-cli from source." || true
 fi
 
+# Synchronize configured administrator password into database
+if [[ -x /usr/local/bin/netora-cli ]] && [[ -n "$ADMIN_PASS" ]]; then
+  /usr/local/bin/netora-cli -mode reset-password -username "${ADMIN_USER:-admin}" -new-password "${ADMIN_PASS}" >/dev/null 2>&1 || true
+fi
+
 # ------------------------------------------------------------------------------
 # Post-Installation Health Verification
 # ------------------------------------------------------------------------------

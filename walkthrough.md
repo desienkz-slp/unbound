@@ -1,7 +1,7 @@
 # Walkthrough — Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
 
 ## Ringkasan Eksekusi
-Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh`, `uninstall.sh`, dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
+Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh`, `uninstall.sh`, binary `netora-api`, dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
 
 ---
 
@@ -99,3 +99,16 @@ Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan vali
 | **`netora`** | Baris 234–270 | **VALID & SINKRON** | CLI manajemen terpasang di `/usr/local/bin/netora` (membungkus `scripts/netora-cli.sh`). |
 | **`netora-reset-password`** | Baris 308–316 | **VALID & SINKRON** | Helper darurat terpasang di `/usr/local/bin/netora-reset-password` (`scripts/netora-reset-password.sh`). |
 | **`netora update`** | Baris 476 | **VALID & SINKRON** | Menjalankan `/usr/local/sbin/netora-dns-update` (`scripts/netora-dns-update.sh`) untuk pull otomatis. |
+
+---
+
+## 6. Verifikasi & Sinkronisasi Password Admin (`ADMIN_PASS`)
+
+* **Logika Prompt `install.sh`**:
+  * Default: `ADMIN_PASS="admin123"` (jika pengguna langsung menekan Enter saat prompt).
+  * Kustom: Jika pengguna memasukkan teks, `ADMIN_PASS` otomatis menggunakan nilai baru tersebut.
+* **Perbaikan Backend `netora-api`**:
+  * Sebelumnya fungsi seed akun di `cmd/netora-api/main.go` masih menggunakan string literal `"admin123"`.
+  * Kini diperbarui membaca variabel lingkungan `NETORA_ADMIN_PASS` (dengan fallback `"admin123"` jika kosong).
+* **Sinkronisasi Otomatis Database**:
+  * Di `install.sh`, ditambahkan sinkronisasi langsung menggunakan binary `/usr/local/bin/netora-cli -mode reset-password` agar password yang aktif di PostgreSQL selalu 100% cocok dengan apa yang diinput pengguna saat instalasi.
