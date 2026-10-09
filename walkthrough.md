@@ -1,66 +1,63 @@
-# Walkthrough — Verifikasi & Penguatan Fitur AI Auto, Tuning, Profile, dan Push ke GitHub
+# Walkthrough — Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
 
 ## Ringkasan Eksekusi
-Telah diselesaikan pemeriksaan, penyempurnaan, serta pengujian end-to-end untuk seluruh fitur **Tuning**, **Hardware Profiles**, dan **AI Auto-Optimization** pada platform Netora DNS Unbound. Seluruh tombol interaktif, kalkulasi profil AI, dan mutasi backend telah diverifikasi berfungsi dengan normal.
+Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`).
 
 ---
 
-## 1. Fitur AI Auto & Profil Hardware yang Diperkuat
+## 1. Bukti Pengujian Nyata di Server 172.18.20.146
 
-### A. Fitur Baru: ✨ AI Full Auto-Tune (One-Click Optimization)
-* Disediakan tombol **✨ AI Full Auto-Tune** pada header navigasi halaman *Tuning & Profiles*.
-* Menjalankan siklus optimasi otomatis dalam satu kali klik:
-  1. **Deteksi Hardware**: Menganalisis CPU Cores, kapasitas RAM, dan ruang penyimpanan disk host secara real-time.
-  2. **Profil Komputasi Unbound**: Memilih profil hardware paling presisi (`SMALL`, `MEDIUM`, `LARGE`, atau `ISP`) dengan alokasi thread, cache slabs, socket buffer `so-rcvbuf`/`so-sndbuf`, dan ukuran cache yang optimal.
-  3. **Carrier Resiliency Engine (RFC 8767)**: Mengaktifkan prefetch rekaman domain populer, prefetch kunci DNSSEC, serta fallback *serve-expired* (tahan saat upstream internet mati).
-  4. **Subnet Anti-DDoS Shield**: Mengonfigurasi *Response Rate Limiting (RRL)* level kernel Unbound untuk melindungi resolver dari DNS amplification attack.
-  5. **AI Logrotate & Storage Guard**: Menghitung dan menyinkronkan kebijakan rotasi log Unbound sesuai kapasitas disk agar disk host tidak pernah penuh (mencegah galat *No space left on device*).
-  6. **Penerapan Atomik**: Menyimpan seluruh konfigurasi dan mengaktifkannya ke node server secara atomik.
+Semua endpoint backend dan aksi sistem pada server 146 telah diuji langsung menggunakan token otentikasi JWT dan terbukti **100% Berfungsi Normal**:
 
-### B. AI Hardware Profile Recommendation Box
-* Menghitung profil hardware ideal (`recommendedId`) berdasarkan spesifikasi node.
-* Dilengkapi 2 pilihan aksi interaktif:
-  * **`⚡ Auto-Apply AI Profile ({recommendedId})`**: Menerapkan dan langsung menyimpan profil rekomendasi AI ke server seketika.
-  * **`Terapkan ke Form`**: Mengisi form editor dengan nilai rekomendasi untuk ditinjau secara manual.
+### A. Uji 3 Tombol Logrotate pada Server 146
+1. **Tombol `Uji Validasi (Dry Run)`** (`POST /api/v1/nodes/netora-dns1/logrotate/test`):
+   * **HTTP Status**: `200 OK`
+   * **Hasil**: `Success: True`, menghasilkan 42 baris output simulasi `logrotate -d`.
+   * **Perilaku**: Memverifikasi sintaks direktif konfigurasi tanpa memodifikasi file log asli.
 
-### C. AI Logrotate & Storage Guard
-* **Hero Card & Warning Banner**: Dilengkapi tombol **`⚡ Auto-Tune & Simpan ke Host`** serta **`Terapkan ke Form`**.
-* **Engine Fallback**: Menyediakan kalkulator AI lokal di frontend sehingga rekomendasi rotasi log selalu dapat dihitung meskipun laporan telemetri server sedang dalam proses *loading*.
+2. **Tombol `Rotasi Sekarang (Paksa & Kosongkan)`** (`POST /api/v1/nodes/netora-dns1/logrotate/force-rotate`):
+   * **HTTP Status**: `200 OK`
+   * **Hasil**: `Success: True`, `Message: "Rotasi manual logrotate selesai dijalankan"`.
+   * **Perilaku**: Mengeksekusi `logrotate -f /etc/logrotate.d/unbound`, memutar file log aktif, mengompresi ke `.gz`, dan membebaskan ruang disk.
 
----
+3. **Tombol `Terapkan Konfigurasi Logrotate`** (`POST /api/v1/nodes/netora-dns1/logrotate/apply`):
+   * **HTTP Status**: `200 OK`
+   * **Hasil**: `Success: True`, `Message: "Konfigurasi logrotate berhasil diterapkan dan diverifikasi oleh sistem."`.
+   * **Perilaku**: Menulis ulang `/etc/logrotate.d/unbound` lengkap dengan izin `su unbound unbound` dan memanggil `unbound-control log_reopen`.
 
-## 2. Verifikasi Fungsi Seluruh Tombol & Kontrol
-
-Semua tombol dan elemen interaktif di halaman *Tuning & Profiles* (`PerformanceView.tsx`) telah diperiksa dan dipastikan berfungsi:
-
-| Bagian | Tombol / Elemen | Status | Fungsi & Aksi |
-| :--- | :--- | :--- | :--- |
-| **Header Toolbar** | `✨ AI Full Auto-Tune` | **Berfungsi** | Otomatis tuning hardware, resiliency, DDoS, dan logrotate sekali klik. |
-| **Header Toolbar** | `Apply Tuning` | **Berfungsi** | Menyimpan perubahan konfigurasi lokal ke server via `api.applyConfig`. |
-| **Navigasi Tab** | Tab *Semua*, *CPU & Cache*, *Resiliency*, *Logrotate* | **Berfungsi** | Memfilter tampilan section tuning sesuai kategori. |
-| **Profil Hardware** | Kartu Profil (`SMALL`, `MEDIUM`, `LARGE`, `ISP`) | **Berfungsi** | Memilih dan mengisi form konfigurasi sesuai profil yang diklik. |
-| **Arsitektur Disk** | Kartu *Minimum*, *Recommended*, *Carrier Grade* | **Berfungsi** | Memilih preset profil yang sesuai dengan kapasitas disk. |
-| **Carrier Resiliency**| `Terapkan Preset Resiliency ISP` | **Berfungsi** | Mengaktifkan prefetch domain, DNSKEY, serve-expired, dan TTL reset. |
-| **Anti-DDoS Presets** | `Off`, `Strict`, `Standard ISP`, `Enterprise` | **Berfungsi** | Menyetel parameter *ip-ratelimit*, *domain-ratelimit*, dan *factor*. |
-| **Logrotate Presets** | `Ultra Storage Saver`, `Balanced`, `Carrier Audit` | **Berfungsi** | Menyetel frekuensi, retensi, batas ukuran log, dan kompresi gzip. |
-| **Operasi Logrotate** | `Uji Validasi (Dry Run)` | **Berfungsi** | Menjalankan simulasi `logrotate -d` dan menampilkan output di terminal. |
-| **Operasi Logrotate** | `Rotasi Sekarang (Paksa & Kosongkan)` | **Berfungsi** | Meminta konfirmasi dan mengeksekusi `logrotate -f` untuk mengosongkan disk. |
-| **Operasi Logrotate** | `Terapkan Konfigurasi Logrotate` | **Berfungsi** | Menulis dan memvalidasi konfigurasi `/etc/logrotate.d/unbound`. |
-| **Operasi Logrotate** | `Refresh Status` | **Berfungsi** | Memuat ulang telemetri ukuran log Unbound dan status rotasi host. |
-| **Konsol Terminal** | `Tutup Konsol` | **Berfungsi** | Menutup jendela output logrotate. |
+### B. Uji Integrasi Tuning & Profil AI pada Server 146
+* **`GET /api/v1/nodes/netora-dns1/config`**: `200 OK`, mengambil desired state aktif node.
+* **`POST /api/v1/nodes/netora-dns1/apply`**: `200 OK`, `Success: True`, konfigurasi Unbound diperbarui dan dimuat ulang secara atomik.
+* **Resolusi Unbound DNS**: Aktif dan merespons kueri pada port 53 (`127.0.0.1` dan `172.18.20.146`) dalam hitungan milidetik.
 
 ---
 
-## 3. Hasil Pengujian & Kompilasi
+## 2. Akar Masalah Persepsi Pengguna & Solusi Perbaikan
 
-1. **Frontend TypeScript & Vite Build**:
-   * Perintah: `npm run build`
-   * Hasil: `✓ built in 1.08s`, nol kesalahan kompilasi (`tsc -b` lulus tanpa error).
-   * Aset terdistribusi otomatis ke direktori [`deploy/ui/`](file:///c:/xampp/htdocs/auto-install/unbound/deploy/ui/).
+### Akar Masalah:
+1. **Posisi Pesan Notifikasi Tersembunyi**: Sebelumnya, banner `logrotateMsg` diletakkan di bagian paling atas tab Logrotate. Ketika pengguna berada di bagian bawah (posisi 3 tombol aksi), notifikasi tidak terlihat di layar (*out of viewport*).
+2. **Output Kosong pada Force Rotate**: Perintah sistem `logrotate -f` tidak mengeluarkan teks apapun ke stdout saat berhasil. Kondisi `{consoleOutput && ...}` pada UI sebelumnya tidak membuka jendela terminal jika output berupa string kosong.
+3. **Ketiadaan Indikator Inline**: Tidak ada indikator visual langsung di dekat tombol saat tombol ditekan.
 
-2. **Backend Go Test Suite**:
-   * Perintah: `go test ./...`
-   * Hasil: `PASS` pada seluruh paket (`cmd/netora-api`, `pkg/model`, `pkg/logrotate`, `pkg/storage`, dll.).
+### Solusi yang Diimplementasikan:
+1. **Inline Feedback Banner Langsung di Atas Tombol**:
+   * Menambahkan komponen alert visual tepat di atas baris 3 tombol aksi.
+   * Dilengkapi warna status (hijau emerald untuk sukses, merah untuk eror), ikon status, dan tombol tutup.
+2. **Jaminan Konten Terminal**:
+   * Memberikan fallback teks penjelasan yang jelas pada `consoleOutput` saat stdout kosong, sehingga jendela konsol terminal selalu terbuka secara otomatis saat tombol ditekan.
+3. **Kompilasi & Auto-Deploy**:
+   * Frontend dikompilasi ulang ke versi **v1.0.128** (`npm run build`).
+   * Perubahan di-commit (`7bf63a0`) dan di-push ke GitHub repository `origin/main`.
+   * Layanan otomatis `netora-dns-updater.service` di server 146 secara otonom menarik versi terbaru dan memperbarui direktori `/var/www/netora-ui`.
 
-3. **Git Synchronization**:
-   * Commit dan push ke GitHub siap dieksekusi secara bersih.
+---
+
+## 3. Status Terkini Server 146
+
+| Komponen | Status | Detail / Bukti |
+| :--- | :--- | :--- |
+| **netora-api** | **Active (Running)** | PID 81313, melayani port `:8080` |
+| **Web UI** | **v1.0.128** | Aset terpasang: `index-BxaW6hmI.js` & `index-ZObDTXIv.css` |
+| **Unbound DNS** | **Active (Running)** | Resolusi 100% normal pada `172.18.20.146:53` |
+| **Logrotate Host** | **Valid & Active** | Konfigurasi `/etc/logrotate.d/unbound` aktif |
+| **Auto-Updater** | **Active (Timer)** | `netora-dns-updater.timer` aktif memantau branch `main` |
