@@ -16,9 +16,14 @@
 
 ---
 
-## ⚡ Quick Start — Auto-Install Script
+## ⚡ Quick Start — Auto-Install Script (Universal 1-Line Installer)
 
-Deploy a production-ready Netora DNS node on any fresh Ubuntu or Debian server in under 2 minutes:
+Deploy a production-ready Netora DNS node on any fresh Ubuntu or Debian server in under 2 minutes with **1 single command**. 
+
+The installer is **100% autonomous and universal**:
+* **Auto Port 53 Stub Release**: Automatically frees port 53 from `systemd-resolved` across all Ubuntu versions (including Ubuntu 20.04 systemd 245 and Ubuntu 22.04/24.04 systemd 246+) while preserving OS domain resolution.
+* **Auto IPv4/IPv6 Detection**: Automatically senses network interface capabilities to prevent socket binding errors on IPv4-only hosts.
+* **Zero Manual Config**: Automatically provisions PostgreSQL, generates carrier Unbound configuration, tunes memory caches to available RAM, configures AppArmor exceptions, and launches the Control Plane REST API & Web UI NOC.
 
 ### 1. One-Line Standard Installation (Interactive)
 
@@ -29,7 +34,7 @@ curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh
 
 ### 2. Non-Interactive / Automated Fleet Installation (Silent Mode)
 
-For automated provisioning (Cloud-Init, Ansible, or PXE boot), pass `-y` and configuration flags:
+For automated provisioning (Cloud-Init, Ansible, or PXE boot), pass `--silent` and configuration flags in a single command:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- \

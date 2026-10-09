@@ -1,7 +1,7 @@
 # Walkthrough — Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
 
 ## Ringkasan Eksekusi
-Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`).
+Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh` dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
 
 ---
 
@@ -61,3 +61,27 @@ Semua endpoint backend dan aksi sistem pada server 146 telah diuji langsung meng
 | **Unbound DNS** | **Active (Running)** | Resolusi 100% normal pada `172.18.20.146:53` |
 | **Logrotate Host** | **Valid & Active** | Konfigurasi `/etc/logrotate.d/unbound` aktif |
 | **Auto-Updater** | **Active (Timer)** | `netora-dns-updater.timer` aktif memantau branch `main` |
+
+---
+
+## 4. Penyempurnaan Universal One-Line Installer (Zero-Friction Install)
+
+Menjawab kendala saat instalasi pada mesin fresh Ubuntu (Unbound 1.9.4 / Ubuntu 20.04 LTS), dilakukan penguatan otomatis pada `install.sh` dan dokumentasi `README.md` agar tetap menjadi **1 sistem instalasi tunggal tanpa intervensi manual**:
+
+1. **Pelepasan Port 53 Otomatis & Kompatibilitas Versi systemd**:
+   * Pada Ubuntu 20.04 (systemd 245), folder drop-in `/etc/systemd/resolved.conf.d/` belum dibaca oleh systemd-resolved.
+   * `install.sh` kini memodifikasi berkas `/etc/systemd/resolved.conf` secara langsung sekaligus menyematkan drop-in untuk Ubuntu 22.04/24.04 (systemd 246+).
+   * Menambahkan penghentian paksa jika `systemd-resolved` masih menahan socket port 53, sambil tetap menjaga DNS publik fallback (`1.1.1.1`, `8.8.8.8`) di `/etc/resolv.conf` agar proses unduh paket tidak terputus.
+
+2. **Deteksi Otomatis Kemampuan IPv6**:
+   * Memeriksa keberadaan antarmuka IPv6 aktif di `/proc/net/if_inet6`.
+   * Mencegah eror fatal `cannot bind socket: Address family not supported by protocol` pada host/VM yang menonaktifkan IPv6.
+
+3. **Remote-Control Tanpa Hambatan Izin Sertifikat**:
+   * Mengatur `control-use-cert: no` pada loopback `127.0.0.1:8953` (konsisten dengan konfigurasi inti engine).
+   * Memberikan izin penuh user `unbound` pada `/var/lib/unbound`, `/var/log/unbound`, dan berkas konfigurasi.
+   * Menambahkan *local override* AppArmor secara otomatis agar daemon tidak diblokir saat menulis log.
+
+4. **Diagnostik Otomatis & Dokumentasi**:
+   * Jika Unbound gagal start karena anomali sistem luar, `install.sh` otomatis mencetak 25 baris log diagnostik `journalctl` ke layar sebelum keluar.
+   * `README.md` diperbarui untuk menegaskan bahwa platform tetap menggunakan **1 sistem instalasi satu-baris** yang menangani semua dependensi secara otonom.

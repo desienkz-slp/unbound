@@ -201,32 +201,59 @@ log_info "DNS Listen Port:    ${DNS_LISTEN_PORT}"
 # Resolve Port 53 Conflicts (systemd-resolved)
 # ------------------------------------------------------------------------------
 log_step "Checking Port 53 Conflicts"
-if ss -tulnp | grep -q ":${DNS_LISTEN_PORT} "; then
-  occupant="$(ss -tulnp | grep ":${DNS_LISTEN_PORT} " | awk '{print $NF}' | head -n1)"
-  log_warn "Port ${DNS_LISTEN_PORT} is currently in use by: ${occupant}"
 
-  if echo "$occupant" | grep -q "systemd-resolve"; then
-    log_info "Safely disabling systemd-resolved stub listener..."
-    mkdir -p /etc/systemd/resolved.conf.d/
-    cat > /etc/systemd/resolved.conf.d/netora-disable-stub.conf <<EOF
+disable_systemd_resolved_stub() {
+  log_info "Safely disabling systemd-resolved stub listener..."
+  mkdir -p /etc/systemd/resolved.conf.d/
+  cat > /etc/systemd/resolved.conf.d/netora-disable-stub.conf <<EOF
 [Resolve]
 DNSStubListener=no
 EOF
-    systemctl restart systemd-resolved || true
-    
-    # Ensure local resolv.conf points to loopback.
-    # Preserve the ORIGINAL resolv.conf only on first run; re-running the installer
-    # must never overwrite the genuine backup with the already-modified loopback copy.
-    if [[ -f /etc/resolv.conf && ! -f /etc/resolv.conf.netora.bak ]]; then
-      cp /etc/resolv.conf /etc/resolv.conf.netora.bak 2>/dev/null || true
+
+  # In systemd < 246 (e.g. Ubuntu 20.04), resolved.conf.d drop-in is not read by systemd-resolved.
+  # We must directly configure /etc/systemd/resolved.conf to guarantee the stub is disabled.
+  if [[ -f /etc/systemd/resolved.conf ]]; then
+    if grep -qE "^[#]*\s*DNSStubListener=" /etc/systemd/resolved.conf; then
+      sed -i -E 's/^[#]*\s*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
+    else
+      echo -e "\n[Resolve]\nDNSStubListener=no" >> /etc/systemd/resolved.conf
     fi
-    rm -f /etc/resolv.conf
-    echo "nameserver 127.0.0.1" > /etc/resolv.conf
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
-    log_success "systemd-resolved stub listener disabled."
+  fi
+  systemctl restart systemd-resolved 2>/dev/null || true
+
+  # If systemd-resolved is still stubbornly listening on port 53, stop it
+  if ss -tulnp 2>/dev/null | grep -q ":${DNS_LISTEN_PORT} " && ss -tulnp 2>/dev/null | grep ":${DNS_LISTEN_PORT} " | grep -q "systemd-resolve"; then
+    log_warn "systemd-resolved still holding port ${DNS_LISTEN_PORT}; stopping service..."
+    systemctl stop systemd-resolved 2>/dev/null || true
+  fi
+
+  # Ensure local resolv.conf points to loopback and fallback public DNS for package downloads.
+  # Preserve the ORIGINAL resolv.conf only on first run; re-running the installer
+  # must never overwrite the genuine backup with the already-modified loopback copy.
+  if [[ -f /etc/resolv.conf && ! -f /etc/resolv.conf.netora.bak ]]; then
+    cp /etc/resolv.conf /etc/resolv.conf.netora.bak 2>/dev/null || true
+  fi
+  rm -f /etc/resolv.conf
+  cat > /etc/resolv.conf <<EOF
+nameserver 127.0.0.1
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+EOF
+  log_success "systemd-resolved stub listener disabled and port ${DNS_LISTEN_PORT} released."
+}
+
+if ss -tulnp 2>/dev/null | grep -q ":${DNS_LISTEN_PORT} "; then
+  occupant="$(ss -tulnp 2>/dev/null | grep ":${DNS_LISTEN_PORT} " | awk '{print $NF}' | head -n1)"
+  log_warn "Port ${DNS_LISTEN_PORT} is currently in use by: ${occupant}"
+
+  if echo "$occupant" | grep -q "systemd-resolve"; then
+    disable_systemd_resolved_stub
   else
     log_warn "Port ${DNS_LISTEN_PORT} occupied by non-systemd service. Continuing with installation..."
   fi
+elif systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+  # Proactively disable stub listener even if ss filter format differed
+  disable_systemd_resolved_stub
 fi
 
 # ------------------------------------------------------------------------------
@@ -453,11 +480,25 @@ if [[ ! -f /var/lib/unbound/root.key ]] || [[ ! -s /var/lib/unbound/root.key ]];
 EOF
 fi
 
-# Ensure Unbound daemon has full read/write access to /var/lib/unbound
-chown -R unbound:unbound /var/lib/unbound 2>/dev/null || true
-chmod 755 /var/lib/unbound
-chmod 644 /var/lib/unbound/root.hints 2>/dev/null || true
-chmod 644 /var/lib/unbound/root.key 2>/dev/null || true
+# Setup AppArmor Local Exception for Unbound query log and runtime access
+if [[ -d /etc/apparmor.d/local && -f /etc/apparmor.d/usr.sbin.unbound ]]; then
+  if ! grep -q "/var/log/unbound/" /etc/apparmor.d/local/usr.sbin.unbound 2>/dev/null; then
+    cat <<'AAEOF' >> /etc/apparmor.d/local/usr.sbin.unbound
+# Netora DNS — Allow unbound access to log and runtime paths
+/var/log/unbound/** rw,
+/var/lib/unbound/** rw,
+/etc/unbound/** r,
+AAEOF
+    apparmor_parser -r /etc/apparmor.d/usr.sbin.unbound 2>/dev/null || true
+  fi
+fi
+
+# Ensure Unbound daemon has full read/write access to /var/lib/unbound, /var/log/unbound, and /etc/unbound
+mkdir -p /var/lib/unbound /var/log/unbound /etc/unbound/conf.d
+touch /var/log/unbound/unbound.log 2>/dev/null || true
+chown -R unbound:unbound /var/lib/unbound /var/log/unbound /etc/unbound 2>/dev/null || true
+chmod 755 /var/lib/unbound /var/log/unbound /etc/unbound 2>/dev/null || true
+chmod 644 /var/lib/unbound/root.hints /var/lib/unbound/root.key /var/log/unbound/unbound.log 2>/dev/null || true
 
 # Calculate Optimal Cache Sizing based on RAM
 CORES="$(nproc 2>/dev/null || echo 1)"
@@ -530,6 +571,16 @@ else
   log_warn "Unbound < 1.10.0 detected; skipping 'serve-expired-client-timeout' (unsupported keyword)."
 fi
 
+# Detect IPv6 capability (avoid fatal socket error if host has IPv6 disabled)
+IPV6_LISTEN_DIRECTIVE=""
+DO_IPV6="no"
+if [[ -f /proc/net/if_inet6 ]] && [[ -s /proc/net/if_inet6 ]]; then
+  if grep -qvE '^[0-9a-f]{32}\s+[0-9a-f]+\s+[0-9a-f]+\s+[0-9a-f]+\s+[0-9a-f]+\s+lo$' /proc/net/if_inet6 2>/dev/null; then
+    IPV6_LISTEN_DIRECTIVE="  interface: ::0"
+    DO_IPV6="yes"
+  fi
+fi
+
 cat > /etc/unbound/unbound.conf <<EOF
 # Netora DNS — Autonomous Carrier-Grade ISP Unbound Configuration
 # Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -538,8 +589,10 @@ server:
   verbosity: 1
   num-threads: ${THREADS}
   interface: 0.0.0.0
-  interface: ::0
+${IPV6_LISTEN_DIRECTIVE}
   port: ${DNS_LISTEN_PORT}
+  do-ip4: yes
+  do-ip6: ${DO_IPV6}
 
   # Security & Access Control
   hide-identity: yes
@@ -581,10 +634,7 @@ remote-control:
   control-enable: yes
   control-interface: 127.0.0.1
   control-port: 8953
-  server-key-file: "/etc/unbound/unbound_server.key"
-  server-cert-file: "/etc/unbound/unbound_server.pem"
-  control-key-file: "/etc/unbound/unbound_control.key"
-  control-cert-file: "/etc/unbound/unbound_control.pem"
+  control-use-cert: no
 
 include: "/etc/unbound/conf.d/*.conf"
 EOF
@@ -626,7 +676,19 @@ fi
 
 systemctl daemon-reload
 systemctl enable unbound
-systemctl restart unbound
+
+# Ensure port 53 is released if systemd-resolved is still lingering
+if ss -tulnp 2>/dev/null | grep -q ":${DNS_LISTEN_PORT} " && ss -tulnp 2>/dev/null | grep ":${DNS_LISTEN_PORT} " | grep -q "systemd-resolve"; then
+  log_warn "Stopping lingering systemd-resolved on port ${DNS_LISTEN_PORT}..."
+  systemctl stop systemd-resolved 2>/dev/null || true
+fi
+
+# Attempt restart with diagnostic reporting on error
+if ! systemctl restart unbound; then
+  log_error "Gagal memulai service Unbound. Menampilkan log diagnostik sistem:"
+  journalctl -u unbound.service -n 25 --no-pager || true
+  exit 1
+fi
 log_success "Unbound DNS service configured and running."
 
 # ------------------------------------------------------------------------------
