@@ -46,6 +46,13 @@ type HealthResult struct {
 	Latency      time.Duration
 }
 
+func syntaxCheckError(err error, output string) string {
+	if output = strings.TrimSpace(output); output != "" {
+		return fmt.Sprintf("syntax check failed: %s", output)
+	}
+	return fmt.Sprintf("syntax check failed: %v", err)
+}
+
 // Engine implements the atomic apply, validation, and rollback lifecycle.
 type Engine struct {
 	mu            sync.Mutex
@@ -156,8 +163,8 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 			result.CompletedAt = time.Now().UTC()
 			result.DurationMs = time.Since(result.StartedAt).Milliseconds()
 			result.SyntaxValid = false
-			result.ErrorMessage = fmt.Sprintf("syntax check failed: %v", err)
-			return result, fmt.Errorf("syntax check failed: %w", err)
+			result.ErrorMessage = syntaxCheckError(err, checkOut)
+			return result, fmt.Errorf("%s", result.ErrorMessage)
 		}
 	}
 	result.SyntaxValid = true

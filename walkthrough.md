@@ -1,5 +1,20 @@
 # Walkthrough — Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
 
+## Update 2026-10-14 — Diagnostik Gagal AI Full Auto-Tune
+
+### Temuan
+* Tombol **AI Full Auto-Tune** membangun konfigurasi Unbound baru dan mengirimkannya ke endpoint apply.
+* Backend menjalankan `unbound-checkconf` terhadap konfigurasi staging sebelum mengubah konfigurasi aktif. Pesan `syntax check failed: exit status 1` membuktikan perubahan dibatalkan sebelum reload, sehingga konfigurasi aktif tetap aman.
+* Penyebab spesifik belum dapat dipastikan dari screenshot karena backend sebelumnya membuang stdout/stderr `unbound-checkconf` dan hanya mengirim exit code.
+
+### Perbaikan
+* `pkg/configengine/engine.go` sekarang meneruskan output asli `unbound-checkconf` kepada UI/API, misalnya nomor baris dan directive yang ditolak.
+* `pkg/configengine/engine_test.go` menambahkan test untuk memastikan output diagnostik tersebut tidak hilang.
+
+### Verifikasi
+* `go test ./pkg/configengine` lulus.
+* Setelah binary `netora-api` yang baru terpasang di host, ulangi AI Full Auto-Tune. Jika masih gagal, banner akan menampilkan error Unbound yang dapat ditindaklanjuti.
+
 ## Ringkasan Eksekusi
 Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh`, `uninstall.sh`, binary `netora-api`, dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
 

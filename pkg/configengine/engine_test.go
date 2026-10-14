@@ -13,6 +13,13 @@ import (
 )
 
 // MockSupervisor implements SupervisorInterface for testing.
+func TestSyntaxCheckErrorIncludesCheckconfOutput(t *testing.T) {
+	got := syntaxCheckError(fmt.Errorf("exit status 1"), "[123:0] error: unknown keyword 'ip-ratelimit'")
+	if got != "syntax check failed: [123:0] error: unknown keyword 'ip-ratelimit'" {
+		t.Fatalf("syntaxCheckError() = %q", got)
+	}
+}
+
 type MockSupervisor struct {
 	ReloadFail    bool
 	CheckFail     bool
