@@ -1,6 +1,6 @@
-# Walkthrough — Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
+﻿# Walkthrough â€” Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
 
-## Update 2026-10-14 — Diagnostik Gagal AI Full Auto-Tune
+## Update 2026-10-14 â€” Diagnostik Gagal AI Full Auto-Tune
 
 ### Temuan
 * Tombol **AI Full Auto-Tune** membangun konfigurasi Unbound baru dan mengirimkannya ke endpoint apply.
@@ -111,8 +111,8 @@ Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan vali
 | :--- | :--- | :--- | :--- |
 | **`install.sh`** | Baris 31, 33, 40, 60, 70, 79, 89, 112 | **VALID & SINKRON** | Skrip installer tunggal universal untuk seluruh distro (Interactive, Silent, Private PAT). |
 | **`uninstall.sh`** | Baris 513, 515 | **VALID & SINKRON** | Skrip pembersih sistem lengkap yang mengembalikan `systemd-resolved` dan menghapus service. |
-| **`netora`** | Baris 234–270 | **VALID & SINKRON** | CLI manajemen terpasang di `/usr/local/bin/netora` (membungkus `scripts/netora-cli.sh`). |
-| **`netora-reset-password`** | Baris 308–316 | **VALID & SINKRON** | Helper darurat terpasang di `/usr/local/bin/netora-reset-password` (`scripts/netora-reset-password.sh`). |
+| **`netora`** | Baris 234â€“270 | **VALID & SINKRON** | CLI manajemen terpasang di `/usr/local/bin/netora` (membungkus `scripts/netora-cli.sh`). |
+| **`netora-reset-password`** | Baris 308â€“316 | **VALID & SINKRON** | Helper darurat terpasang di `/usr/local/bin/netora-reset-password` (`scripts/netora-reset-password.sh`). |
 | **`netora update`** | Baris 476 | **VALID & SINKRON** | Menjalankan `/usr/local/sbin/netora-dns-update` (`scripts/netora-dns-update.sh`) untuk pull otomatis. |
 
 ---
@@ -143,8 +143,11 @@ Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan vali
 * `scripts/netora-dns-update.sh`: URL autentikasi memakai `x-access-token:<token>`.
 * `scripts/netora-cli.sh`: verifikasi token memakai format yang sama.
 
-**Cara update server (tanpa edit langsung):** updater menarik dari GitHub otomatis tiap ~6 menit setelah push. Manual: `sudo netora-dns-update update --force`.
+**Cara update server (tanpa edit langsung):** updater menarik dari GitHub dan memasang `deploy/bin/*` serta skrip terbaru. Skrip updater LAMA di server masih memakai format URL yang salah, sehingga belum bisa menarik update ini sendiri. Satu kali bootstrap diperlukan (lihat Risiko tersisa). Setelah skrip baru terpasang, update berjalan otomatis.
 
 **Verifikasi:** `bash -n` pada skrip lolos, `go test ./pkg/configengine/... ./pkg/model/...` lolos.
 
 **Risiko tersisa:** akar masalah kegagalan Apply Tuning pada 16 Okt 09:09 belum terbukti. Setelah binary baru terpasang, ulangi Apply dan baca pesan error lengkap. Skrip updater di server (`/usr/local/sbin/netora-dns-update`) masih versi lama sampai updater berhasil berjalan satu kali. Bila mengulang gagal, jalankan update manual sekali lewat `netora-cli`.
+
+* Binary Linux (deploy/bin/netora-api-linux-amd64, 
+etora-cli-linux-amd64) dibuild ulang dari source terbaru (CGO off, trimpath) agar memuat perbaikan diagnostik checkconf.
