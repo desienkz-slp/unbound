@@ -159,3 +159,13 @@ etora-cli-linux-amd64) dibuild ulang dari source terbaru (CGO off, trimpath) aga
 * **Perbaikan:** `PerformanceConfig.NormalizeSlabs()` di `pkg/model/config.go` mengisi slabs yang kosong dari `msg_cache_slabs` dan membulatkan semua slabs ke pangkat 2. Dipanggil di `Generator.Generate`, jalur render untuk semua apply (UI, CLI, API). Ditambah `TestNormalizeSlabs`.
 * **Deploy:** commit `bc888e2`, ditarik server lewat updater resmi tanpa override token. Status `SUCCESS`, `health_status` PASS.
 * **Belum diverifikasi:** Apply lewat UI belum diulang karena butuh login. Ulangi Apply Tuning atau AI Full Auto-Tune di UI untuk memastikan.
+
+## 9. Disk penuh, incoming-num-tcp 0, dan AI logrotate (16 Okt 2026)
+
+* **Bukti di unbound-1:** disk `/` 100% (sisa 0). `unbound.log` 6,1 GB, 99% barisnya `warning: accepted too many tcp, connections full`. Config live punya `incoming-num-tcp: 0`, karena UI tidak mengirim `incoming_num_tcp`.
+* **Perbaikan kode (commit `0b31cf9`):**
+  * `PerformanceConfig.Normalize()` mengisi `incoming_num_tcp` kosong dengan 1024 (bersama slabs), dipanggil di `Generator.Generate`.
+  * Laporan logrotate untuk node lokal memakai `detectDiskSpecs()` live (`Statfs("/")`) di tiap request, bukan nilai DB saat start.
+  * `storageSaverLimits(freeGB)` menskalakan `maxsize` dan `rotate` menurut sisa disk root (10M/2, 15M/3, 25M/3, 50M/4). Fallback UI disamakan.
+* **Belum dilakukan:** deploy ke server dan pembersihan log. Disk 0 byte membuat updater berisiko gagal. Perlu persetujuan tindakan darurat dulu.
+* **Catatan:** PostgreSQL di server sempat `in recovery mode` pada 18:35 WIB, kemungkinan akibat disk penuh.
