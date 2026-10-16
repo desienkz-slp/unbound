@@ -111,6 +111,32 @@ type PerformanceConfig struct {
 	SoReuseport         bool               `json:"so_reuseport"`
 }
 
+// defaultCacheSlabs is used when a client omits a slabs value (zero in JSON).
+const defaultCacheSlabs = 4
+
+// floorPow2 returns the largest power of two <= n, or def when n < 1.
+// Unbound rejects slabs that are not a power of two.
+func floorPow2(n, def int) int {
+	if n < 1 {
+		return def
+	}
+	p := 1
+	for p*2 <= n {
+		p *= 2
+	}
+	return p
+}
+
+// NormalizeSlabs fills missing slabs from the message-cache value and snaps all
+// slabs to a power of two, so clients that omit fields cannot break checkconf.
+func (p *PerformanceConfig) NormalizeSlabs() {
+	msg := floorPow2(p.MsgCacheSlabs, defaultCacheSlabs)
+	p.MsgCacheSlabs = msg
+	p.RRSetCacheSlabs = floorPow2(p.RRSetCacheSlabs, msg)
+	p.KeyCacheSlabs = floorPow2(p.KeyCacheSlabs, msg)
+	p.InfraCacheSlabs = floorPow2(p.InfraCacheSlabs, msg)
+}
+
 // DNSSECConfig defines DNSSEC validation settings and audited exceptions.
 type DNSSECConfig struct {
 	Enabled             bool     `json:"enabled"`

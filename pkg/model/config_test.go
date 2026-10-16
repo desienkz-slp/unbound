@@ -125,3 +125,24 @@ func TestEnsureNodeDnsRewrites_ExtractFromListeners(t *testing.T) {
 		t.Fatalf("expected 2 records extracted from concrete listeners, got %d: %+v", len(state.LocalRecords), state.LocalRecords)
 	}
 }
+
+func TestNormalizeSlabs(t *testing.T) {
+	cases := []struct {
+		name string
+		in   PerformanceConfig
+		want [4]int // msg, rrset, key, infra
+	}{
+		{"UI omits key/infra", PerformanceConfig{MsgCacheSlabs: 4, RRSetCacheSlabs: 4}, [4]int{4, 4, 4, 4}},
+		{"all zero", PerformanceConfig{}, [4]int{4, 4, 4, 4}},
+		{"non power of 2", PerformanceConfig{MsgCacheSlabs: 6, RRSetCacheSlabs: 12, KeyCacheSlabs: 3, InfraCacheSlabs: 5}, [4]int{4, 8, 2, 4}},
+		{"valid kept", PerformanceConfig{MsgCacheSlabs: 8, RRSetCacheSlabs: 8, KeyCacheSlabs: 2, InfraCacheSlabs: 1}, [4]int{8, 8, 2, 1}},
+	}
+	for _, c := range cases {
+		p := c.in
+		p.NormalizeSlabs()
+		got := [4]int{p.MsgCacheSlabs, p.RRSetCacheSlabs, p.KeyCacheSlabs, p.InfraCacheSlabs}
+		if got != c.want {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
+	}
+}
