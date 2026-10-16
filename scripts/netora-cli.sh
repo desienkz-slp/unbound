@@ -184,7 +184,7 @@ cmd_set_token() {
 
     echo -e "${CYAN}Verifying repository access with new token...${NC}"
     local clean_url="github.com/desienkz-slp/unbound.git"
-    if GIT_TERMINAL_PROMPT=0 git ls-remote "https://${tok}@${clean_url}" refs/heads/main &>/dev/null; then
+    if GIT_TERMINAL_PROMPT=0 git ls-remote "https://x-access-token:${tok}@${clean_url}" refs/heads/main &>/dev/null; then
         echo -e "${GREEN}Verification PASS: Token is valid and has read access!${NC}"
     else
         echo -e "${YELLOW}Warning: Could not verify token with GitHub. Please check internet connection or token permissions.${NC}"

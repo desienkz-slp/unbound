@@ -132,9 +132,11 @@ get_authenticated_repo_url() {
     fi
 
     if [[ -n "$token" && "$REPO_URL" =~ ^https:// ]]; then
-        # Insert token into clone URL in memory
+        # Insert token into clone URL in memory.
+        # x-access-token:<token> works for classic and fine-grained (github_pat_) tokens;
+        # a bare "<token>@" is rejected by GitHub for fine-grained tokens.
         local clean_url="${REPO_URL#https://}"
-        echo "https://${token}@${clean_url}"
+        echo "https://x-access-token:${token}@${clean_url}"
     else
         echo "$REPO_URL"
     fi

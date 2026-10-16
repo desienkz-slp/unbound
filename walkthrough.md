@@ -127,3 +127,24 @@ Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan vali
   * Kini diperbarui membaca variabel lingkungan `NETORA_ADMIN_PASS` (dengan fallback `"admin123"` jika kosong).
 * **Sinkronisasi Otomatis Database**:
   * Di `install.sh`, ditambahkan sinkronisasi langsung menggunakan binary `/usr/local/bin/netora-cli -mode reset-password` agar password yang aktif di PostgreSQL selalu 100% cocok dengan apa yang diinput pengguna saat instalasi.
+
+---
+
+## 7. Perbaikan Apply Tuning Gagal & Auto-Updater Mati (16 Okt 2026)
+
+**Investigasi di `unbound-1` (172.18.20.147, node `netora-dns2`) - hanya baca, tidak ada edit langsung:**
+* `audit_logs` mencatat `CONFIG_APPLY` gagal dengan pesan `syntax check failed: exit status 1`. Output `unbound-checkconf` tidak tampil karena binary server (14 Okt) lebih lama dari source.
+* Commit `10e8344` (`syntaxCheckError` di `pkg/configengine/engine.go`) sudah memperbaiki pesan tersebut, tetapi belum sampai ke server.
+* Penyebab binary tidak ter-update: `netora-dns-updater.service` crash tiap ~6 menit dengan `GitHub unreachable` (exit 2).
+* Akar masalah updater: token di `/etc/netora-dns/github.token` bertipe fine-grained (`github_pat_`). `get_authenticated_repo_url` memakai `https://<token>@github.com/...`, ditolak GitHub (`could not read Username`). Format `https://x-access-token:<token>@...` berhasil (HTTP 200, `ls-remote` mengembalikan SHA).
+* Bukan penyebab: timeout checkconf (0,44 detik), nilai slabs profil (semua pangkat 2), jaringan ke GitHub (HTTP 200).
+
+**Perubahan kode:**
+* `scripts/netora-dns-update.sh`: URL autentikasi memakai `x-access-token:<token>`.
+* `scripts/netora-cli.sh`: verifikasi token memakai format yang sama.
+
+**Cara update server (tanpa edit langsung):** updater menarik dari GitHub otomatis tiap ~6 menit setelah push. Manual: `sudo netora-dns-update update --force`.
+
+**Verifikasi:** `bash -n` pada skrip lolos, `go test ./pkg/configengine/... ./pkg/model/...` lolos.
+
+**Risiko tersisa:** akar masalah kegagalan Apply Tuning pada 16 Okt 09:09 belum terbukti. Setelah binary baru terpasang, ulangi Apply dan baca pesan error lengkap. Skrip updater di server (`/usr/local/sbin/netora-dns-update`) masih versi lama sampai updater berhasil berjalan satu kali. Bila mengulang gagal, jalankan update manual sekali lewat `netora-cli`.
