@@ -151,3 +151,11 @@ Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan vali
 
 * Binary Linux (deploy/bin/netora-api-linux-amd64, 
 etora-cli-linux-amd64) dibuild ulang dari source terbaru (CGO off, trimpath) agar memuat perbaikan diagnostik checkconf.
+
+## 8. Perbaikan `number expected` pada Apply (16 Okt 2026)
+
+* **Gejala:** `unbound.conf:83/84: error: number expected` saat Apply Tuning.
+* **Bukti:** baris 83-84 adalah `key-cache-slabs` dan `infra-cache-slabs`. Payload UI (`ensureDefaults` dan `handleAIAutoTuneAll` di `PerformanceView.tsx`) tidak mengirim `key_cache_slabs` dan `infra_cache_slabs`. Field `int` Go menjadi 0 dan template merender nilai itu. Di server, nilai `0` pada kedua baris menghasilkan error yang sama persis dengan pesan di atas.
+* **Perbaikan:** `PerformanceConfig.NormalizeSlabs()` di `pkg/model/config.go` mengisi slabs yang kosong dari `msg_cache_slabs` dan membulatkan semua slabs ke pangkat 2. Dipanggil di `Generator.Generate`, jalur render untuk semua apply (UI, CLI, API). Ditambah `TestNormalizeSlabs`.
+* **Deploy:** commit `bc888e2`, ditarik server lewat updater resmi tanpa override token. Status `SUCCESS`, `health_status` PASS.
+* **Belum diverifikasi:** Apply lewat UI belum diulang karena butuh login. Ulangi Apply Tuning atau AI Full Auto-Tune di UI untuk memastikan.
