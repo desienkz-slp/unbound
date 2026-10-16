@@ -155,6 +155,12 @@ func (e *Engine) Apply(ctx context.Context, state *model.DesiredState, actor, re
 	}
 
 	// 4. Syntax Validation (unbound-checkconf on staged main config)
+	if e.supervisor != nil && state.DNSSEC.Enabled {
+		// Best effort: a failed repair surfaces through checkconf with its real error.
+		if err := ensureTrustAnchor(state.DNSSEC.AutoTrustAnchorFile, distroRootKey); err != nil {
+			result.ValidationOutput = err.Error()
+		}
+	}
 	stagedMainConf := filepath.Join(stageVersionDir, "unbound.conf")
 	if e.supervisor != nil {
 		checkOut, err := e.supervisor.Checkconf(ctx, stagedMainConf)

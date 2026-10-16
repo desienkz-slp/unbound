@@ -169,3 +169,10 @@ etora-cli-linux-amd64) dibuild ulang dari source terbaru (CGO off, trimpath) aga
   * `storageSaverLimits(freeGB)` menskalakan `maxsize` dan `rotate` menurut sisa disk root (10M/2, 15M/3, 25M/3, 50M/4). Fallback UI disamakan.
 * **Belum dilakukan:** deploy ke server dan pembersihan log. Disk 0 byte membuat updater berisiko gagal. Perlu persetujuan tindakan darurat dulu.
 * **Catatan:** PostgreSQL di server sempat `in recovery mode` pada 18:35 WIB, kemungkinan akibat disk penuh.
+
+## 10. Pemulihan disk penuh dan root.key kosong (16 Okt 2026)
+
+* **Gejala:** Apply gagal `error reading auto-trust-anchor-file: /var/lib/unbound/root.key`.
+* **Akar masalah:** disk 100% memotong `root.key` jadi 0 byte (11:39 UTC). Apply tidak memeriksa file itu sebelum `unbound-checkconf`.
+* **Tindakan server (disetujui user):** hapus `unbound.log.1`, salin `/usr/share/dns/root.key` ke `/var/lib/unbound/root.key`, jalankan `netora-dns-update update --force`. Hasil: revisi `92fd90f`, `PASS`, disk 82%, `incoming-num-tcp: 1024`, warning TCP 0, log tumbuh normal (~40 KB/s).
+* **Perbaikan kode:** `ensureTrustAnchor()` di `pkg/configengine/trustanchor.go`, dipanggil di `Engine.Apply` sebelum checkconf. File kosong atau hilang dipulihkan dari `/usr/share/dns/root.key`, lalu `unbound-anchor`. File berisi tidak pernah ditimpa. Ada tes `TestEnsureTrustAnchor`.
