@@ -85,11 +85,16 @@ function getRecommendedProfile(cores: number, ramMB: number, diskGB: number): st
 function getFallbackAILogrotatePolicy(diskTotalGB: number, diskFreeGB: number, cores: number): LogrotatePolicy {
   const usedPct = diskTotalGB > 0 ? Math.round(((diskTotalGB - diskFreeGB) / diskTotalGB) * 100) : 0;
   if (diskTotalGB > 0 && (diskTotalGB <= 10 || diskFreeGB <= 2 || usedPct >= 75)) {
+    // Keep in sync with storageSaverLimits() in pkg/logrotate/engine.go
+    const [maxSize, rotateCount] =
+      diskFreeGB <= 1 ? ['10M', 2] :
+      diskFreeGB <= 2 ? ['15M', 3] :
+      diskFreeGB <= 5 ? ['25M', 3] : ['50M', 4];
     return {
       enabled: true,
       frequency: 'daily',
-      rotate_count: diskFreeGB <= 1 ? 2 : 3,
-      max_size: diskFreeGB <= 1 ? '15M' : '25M',
+      rotate_count: rotateCount as number,
+      max_size: maxSize as string,
       compress: true,
       delay_compress: true,
       rotate_netora: true,

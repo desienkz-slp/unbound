@@ -422,7 +422,7 @@ func parseUnboundVersion(text string) (major, minor int, ok bool) {
 // Generate renders the full set of configuration files from the desired state.
 func (g *Generator) Generate(state *model.DesiredState, configDir string) (*RenderResult, error) {
 	if state != nil {
-		state.Performance.NormalizeSlabs()
+		state.Performance.Normalize()
 	}
 	if errs := model.ValidateDesiredState(state); len(errs) > 0 {
 		return nil, fmt.Errorf("cannot generate configuration: %v", errs[0])

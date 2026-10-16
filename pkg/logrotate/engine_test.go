@@ -17,8 +17,8 @@ func TestCalculateAIRecommendation_LowDisk(t *testing.T) {
 	if rec.RecommendedPolicy.Frequency != "daily" {
 		t.Errorf("expected daily frequency, got %s", rec.RecommendedPolicy.Frequency)
 	}
-	if rec.RecommendedPolicy.MaxSize != "15M" && rec.RecommendedPolicy.MaxSize != "25M" {
-		t.Errorf("expected aggressive maxSize (15M or 25M), got %s", rec.RecommendedPolicy.MaxSize)
+	if rec.RecommendedPolicy.MaxSize != "10M" {
+		t.Errorf("expected 10M for 1GB free, got %s", rec.RecommendedPolicy.MaxSize)
 	}
 	if !rec.RecommendedPolicy.Compress {
 		t.Errorf("expected compress to be true")
@@ -28,6 +28,30 @@ func TestCalculateAIRecommendation_LowDisk(t *testing.T) {
 	}
 	if !strings.Contains(rec.Reasoning, "Ultra Storage Saver") {
 		t.Errorf("expected reasoning to mention Ultra Storage Saver")
+	}
+}
+
+func TestStorageSaverLimitsScaleWithFreeSpace(t *testing.T) {
+	cases := []struct {
+		total, free int
+		maxSize     string
+		rotate      int
+	}{
+		{15, 0, "10M", 2},   // root 100% full
+		{15, 2, "15M", 3},   // 2GB free
+		{15, 3, "25M", 3},   // 80% used, 3GB free
+		{100, 20, "50M", 4}, // big disk at 80% used: do not over-squeeze
+	}
+	for _, c := range cases {
+		rec := CalculateAIRecommendation(2, 2048, c.total, c.free, 0)
+		if rec.ProfileName != "STORAGE_SAVER" {
+			t.Errorf("total=%d free=%d: want STORAGE_SAVER got %s", c.total, c.free, rec.ProfileName)
+			continue
+		}
+		if rec.RecommendedPolicy.MaxSize != c.maxSize || rec.RecommendedPolicy.RotateCount != c.rotate {
+			t.Errorf("total=%d free=%d: got %s x%d want %s x%d", c.total, c.free,
+				rec.RecommendedPolicy.MaxSize, rec.RecommendedPolicy.RotateCount, c.maxSize, c.rotate)
+		}
 	}
 }
 

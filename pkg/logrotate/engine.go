@@ -81,6 +81,21 @@ func GenerateNetoraConfig(policy model.LogrotateConfig) string {
 `, freq, rotate, compressStr, delayCompressStr)
 }
 
+// storageSaverLimits scales per-file size cap and retention to the free space on the root disk,
+// so the worst-case footprint (rotate+1 files) stays well inside what is actually free.
+func storageSaverLimits(freeGB int) (maxSize string, rotateCount int) {
+	switch {
+	case freeGB <= 1:
+		return "10M", 2
+	case freeGB <= 2:
+		return "15M", 3
+	case freeGB <= 5:
+		return "25M", 3
+	default:
+		return "50M", 4
+	}
+}
+
 // CalculateAIRecommendation analyzes hardware metrics and log velocity to determine the optimal rotation strategy.
 func CalculateAIRecommendation(cores int, ramMB int, diskTotalGB int, diskFreeGB int, currentLogBytes int64) AIRecommendation {
 	// Fallbacks
@@ -104,14 +119,7 @@ func CalculateAIRecommendation(cores int, ramMB int, diskTotalGB int, diskFreeGB
 
 	// Strategy 1: Ultra Storage Saver (Low Disk Space, VPS, or Disk Usage >= 75%)
 	if diskTotalGB > 0 && (diskTotalGB <= 10 || diskFreeGB <= 2 || diskUsedPct >= 75) {
-		maxSize := "25M"
-		if diskFreeGB <= 1 {
-			maxSize = "15M"
-		}
-		rotateCount := 3
-		if diskFreeGB <= 1 {
-			rotateCount = 2
-		}
+		maxSize, rotateCount := storageSaverLimits(diskFreeGB)
 
 		factor := fmt.Sprintf("Kapasitas Disk Sangat Kritis (%dGB total, %dGB sisa, %d%% terpakai)", diskTotalGB, diskFreeGB, diskUsedPct)
 		if diskTotalGB == 0 {

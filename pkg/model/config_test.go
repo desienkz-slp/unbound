@@ -146,3 +146,16 @@ func TestNormalizeSlabs(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeIncomingNumTCP(t *testing.T) {
+	p := PerformanceConfig{}
+	p.Normalize()
+	if p.IncomingNumTCP != 1024 {
+		t.Errorf("omitted incoming_num_tcp: got %d want 1024", p.IncomingNumTCP)
+	}
+	p = PerformanceConfig{IncomingNumTCP: 4096}
+	p.Normalize()
+	if p.IncomingNumTCP != 4096 {
+		t.Errorf("explicit incoming_num_tcp overwritten: got %d", p.IncomingNumTCP)
+	}
+}

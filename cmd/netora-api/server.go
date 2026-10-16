@@ -1105,6 +1105,13 @@ func (s *Server) handleLogrotate(w http.ResponseWriter, r *http.Request, nodeID 
 			diskTotalGB = node.DiskTotalGB
 			diskFreeGB = node.DiskFreeGB
 		}
+		// The DB value is captured once at startup; for the local node use the live root fs
+		// so the AI policy reflects the real disk state on every request.
+		if nodeID == s.nodeID {
+			if liveTotal, liveFree := detectDiskSpecs(); liveTotal > 0 {
+				diskTotalGB, diskFreeGB = liveTotal, liveFree
+			}
+		}
 		report, err := s.logrotateManager.GetReport(r.Context(), nodeID, cores, ramMB, diskTotalGB, diskFreeGB)
 		if err != nil {
 			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

@@ -137,6 +137,20 @@ func (p *PerformanceConfig) NormalizeSlabs() {
 	p.InfraCacheSlabs = floorPow2(p.InfraCacheSlabs, msg)
 }
 
+// defaultIncomingNumTCP matches the non-ISP AutoTunePerformance value. Unbound
+// with incoming-num-tcp 0 accepts no TCP queries and floods the log with
+// "accepted too many tcp, connections full".
+const defaultIncomingNumTCP = 1024
+
+// Normalize repairs fields that clients may omit (zero in JSON) so the rendered
+// unbound.conf is always valid and functional.
+func (p *PerformanceConfig) Normalize() {
+	p.NormalizeSlabs()
+	if p.IncomingNumTCP < 1 {
+		p.IncomingNumTCP = defaultIncomingNumTCP
+	}
+}
+
 // DNSSECConfig defines DNSSEC validation settings and audited exceptions.
 type DNSSECConfig struct {
 	Enabled             bool     `json:"enabled"`
