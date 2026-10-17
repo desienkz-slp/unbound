@@ -1,178 +1,82 @@
-﻿# Walkthrough â€” Verifikasi Server 146, Fungsi Tombol Logrotate, dan Auto-Update
+# Walkthrough — Integrasi Filter AdBlock ABPindo (Indonesian AdBlock Rules) & Auto-Update Server
 
-## Update 2026-10-14 â€” Diagnostik Gagal AI Full Auto-Tune
+## Ringkasan Perubahan
 
-### Temuan
-* Tombol **AI Full Auto-Tune** membangun konfigurasi Unbound baru dan mengirimkannya ke endpoint apply.
-* Backend menjalankan `unbound-checkconf` terhadap konfigurasi staging sebelum mengubah konfigurasi aktif. Pesan `syntax check failed: exit status 1` membuktikan perubahan dibatalkan sebelum reload, sehingga konfigurasi aktif tetap aman.
-* Penyebab spesifik belum dapat dipastikan dari screenshot karena backend sebelumnya membuang stdout/stderr `unbound-checkconf` dan hanya mengirim exit code.
-
-### Perbaikan
-* `pkg/configengine/engine.go` sekarang meneruskan output asli `unbound-checkconf` kepada UI/API, misalnya nomor baris dan directive yang ditolak.
-* `pkg/configengine/engine_test.go` menambahkan test untuk memastikan output diagnostik tersebut tidak hilang.
-
-### Verifikasi
-* `go test ./pkg/configengine` lulus.
-* Setelah binary `netora-api` yang baru terpasang di host, ulangi AI Full Auto-Tune. Jika masih gagal, banner akan menampilkan error Unbound yang dapat ditindaklanjuti.
-
-## Ringkasan Eksekusi
-Telah dilakukan investigasi mendalam, pengujian nyata via SSH, perbaikan UI feedback, build, dan push ke GitHub serta verifikasi langsung pada server produksi **172.18.20.146** (`netora-dns1`). Selain itu, dilakukan penyempurnaan menyeluruh pada script `install.sh`, `uninstall.sh`, binary `netora-api`, dan dokumentasi `README.md` agar instalasi pada fresh Ubuntu (termasuk Ubuntu 20.04 LTS) tetap berjalan mulus dalam **1 sistem instalasi tunggal (One-Line Installer)** tanpa kegagalan pada start Unbound.
+Telah berhasil diintegrasikan daftar filter iklan dan pelacak lokal Indonesia dari repository resmi [ABPindo (Indonesian AdBlock Rules)](https://github.com/ABPindo/indonesianadblockrules) ke dalam platform Unbound Netora DNS, serta telah di-commit dan di-push ke GitHub branch `main`. Seluruh server DNS di jaringan yang menjalankan auto-update akan secara otomatis menerima pembaruan ini.
 
 ---
 
-## 1. Bukti Pengujian Nyata di Server 172.18.20.146
+## 1. Analisis & Pemilihan Format DNS ABPindo
 
-Semua endpoint backend dan aksi sistem pada server 146 telah diuji langsung menggunakan token otentikasi JWT dan terbukti **100% Berfungsi Normal**:
+ABPindo menyediakan dua variasi aturan utama:
+1. **Aturan Ekstensi Browser (`subscriptions/abpindo.txt`)**: Memiliki lebih dari 10.000 baris yang sebagian besar berisi *cosmetic filters* (CSS selectors seperti `##.ad-banner`, `##div[id^="ad"]`) dan path URL (`/ads/*`). Aturan kosmetik ini **tidak kompatibel** untuk DNS resolver karena dapat menyebabkan *false positive* (misal: domain induk berita seperti `detik.com` atau `kompas.com` ikut terblokir jika diparsing mentah).
+2. **Aturan Khusus Pemblokir DNS (`subscriptions/domain.txt` & `subscriptions/aghome.txt`)**: Versi resmi ABPindo khusus untuk DNS (Pi-hole, AdGuard Home, Unbound). Hanya berisi domain ad server, injection portal ISP (Telkomsel, Indosat, XL, dsb.), pop-up, dan tracker lokal terkonfirmasi tanpa aturan kosmetik.
 
-### A. Uji 3 Tombol Logrotate pada Server 146
-1. **Tombol `Uji Validasi (Dry Run)`** (`POST /api/v1/nodes/netora-dns1/logrotate/test`):
-   * **HTTP Status**: `200 OK`
-   * **Hasil**: `Success: True`, menghasilkan 42 baris output simulasi `logrotate -d`.
-   * **Perilaku**: Memverifikasi sintaks direktif konfigurasi tanpa memodifikasi file log asli.
-
-2. **Tombol `Rotasi Sekarang (Paksa & Kosongkan)`** (`POST /api/v1/nodes/netora-dns1/logrotate/force-rotate`):
-   * **HTTP Status**: `200 OK`
-   * **Hasil**: `Success: True`, `Message: "Rotasi manual logrotate selesai dijalankan"`.
-   * **Perilaku**: Mengeksekusi `logrotate -f /etc/logrotate.d/unbound`, memutar file log aktif, mengompresi ke `.gz`, dan membebaskan ruang disk.
-
-3. **Tombol `Terapkan Konfigurasi Logrotate`** (`POST /api/v1/nodes/netora-dns1/logrotate/apply`):
-   * **HTTP Status**: `200 OK`
-   * **Hasil**: `Success: True`, `Message: "Konfigurasi logrotate berhasil diterapkan dan diverifikasi oleh sistem."`.
-   * **Perilaku**: Menulis ulang `/etc/logrotate.d/unbound` lengkap dengan izin `su unbound unbound` dan memanggil `unbound-control log_reopen`.
-
-### B. Uji Integrasi Tuning & Profil AI pada Server 146
-* **`GET /api/v1/nodes/netora-dns1/config`**: `200 OK`, mengambil desired state aktif node.
-* **`POST /api/v1/nodes/netora-dns1/apply`**: `200 OK`, `Success: True`, konfigurasi Unbound diperbarui dan dimuat ulang secara atomik.
-* **Resolusi Unbound DNS**: Aktif dan merespons kueri pada port 53 (`127.0.0.1` dan `172.18.20.146`) dalam hitungan milidetik.
+**Keputusan Arsitektur**:
+* Menggunakan sumber DNS resmi ABPindo (`subscriptions/domain.txt` dan `aghome.txt`).
+* Memperkuat fungsi `CleanDomain()` di `pkg/configengine/generator.go` agar secara otomatis menolak sintaks filter kosmetik (`##`, `#?#`, `#$#`, `#@#`) sebagai pengaman lapis ganda.
 
 ---
 
-## 2. Akar Masalah Persepsi Pengguna & Solusi Perbaikan
+## 2. File & Komponen yang Diperbarui
 
-### Akar Masalah:
-1. **Posisi Pesan Notifikasi Tersembunyi**: Sebelumnya, banner `logrotateMsg` diletakkan di bagian paling atas tab Logrotate. Ketika pengguna berada di bagian bawah (posisi 3 tombol aksi), notifikasi tidak terlihat di layar (*out of viewport*).
-2. **Output Kosong pada Force Rotate**: Perintah sistem `logrotate -f` tidak mengeluarkan teks apapun ke stdout saat berhasil. Kondisi `{consoleOutput && ...}` pada UI sebelumnya tidak membuka jendela terminal jika output berupa string kosong.
-3. **Ketiadaan Indikator Inline**: Tidak ada indikator visual langsung di dekat tombol saat tombol ditekan.
+### A. Repositori Blocklist
+1. **`blocklist/ads.txt`**:
+   * Menggabungkan 61 domain iklan global sebelumnya dengan 125 domain iklan, pelacak, dan portal injeksi ISP dari ABPindo.
+   * Total domain unik terblokir di `ads.txt` kini menjadi **186 domain**.
+2. **`blocklist/abpindo.txt`**:
+   * Dibuat file khusus terisolasi berisi 125 domain resmi ABPindo untuk referensi independen dan download modular.
 
-### Solusi yang Diimplementasikan:
-1. **Inline Feedback Banner Langsung di Atas Tombol**:
-   * Menambahkan komponen alert visual tepat di atas baris 3 tombol aksi.
-   * Dilengkapi warna status (hijau emerald untuk sukses, merah untuk eror), ikon status, dan tombol tutup.
-2. **Jaminan Konten Terminal**:
-   * Memberikan fallback teks penjelasan yang jelas pada `consoleOutput` saat stdout kosong, sehingga jendela konsol terminal selalu terbuka secara otomatis saat tombol ditekan.
-3. **Kompilasi & Auto-Deploy**:
-   * Frontend dikompilasi ulang ke versi **v1.0.128** (`npm run build`).
-   * Perubahan di-commit (`7bf63a0`) dan di-push ke GitHub repository `origin/main`.
-   * Layanan otomatis `netora-dns-updater.service` di server 146 secara otonom menarik versi terbaru dan memperbarui direktori `/var/www/netora-ui`.
+### B. Otomasi Script Crontab (Server Standalone / Legacy)
+3. **`blocklist/update-lists.sh`**:
+   * Menambahkan pengunduhan aman (`safe_download`) untuk ABPindo (`block-abpindo.txt`) dan master `ads.txt` langsung dari GitHub.
+4. **`blocklist/gen-blocklist.sh`**:
+   * Menambahkan ekstraksi domain dari `block-abpindo.txt` dan `ads.txt` ke dalam file konfigurasi `ad-malware-block.conf` Unbound dengan deduplikasi otomatis.
 
----
+### C. Backend Engine & API Netora (`netora-api`)
+5. **`pkg/blocklist/manager.go`**:
+   * Menambahkan URL RAW ABPindo ke dalam daftar `FallbackURLs` pada feed kategori `feed-ads` (ADS_TRACKING).
+   * Memperbarui label feed menjadi `Iklan, Pop-up & Pelacak (Global & ABPindo)`.
+6. **`pkg/configengine/generator.go`**:
+   * Memperbarui `DefaultAdsBlockedDomains` agar domain iklan ISP Indonesia (Telkomsel, Indosat, XL, Uzone, dsb.) langsung aktif di memori bahkan sebelum sinkronisasi disk terjadi.
+   * Menambahkan sanitasi terhadap selector CSS browser pada fungsi `CleanDomain()`.
+7. **`cmd/netora-api/server.go`**:
+   * Menambahkan `feed-abpindo` ke dalam seed awal filter basis data.
+   * Mendaftarkan ID `feed-abpindo` ke dalam handler switch-case toggle AdBlock.
 
-## 3. Status Terkini Server 146
+### D. Distribusi Otomatis Lintas Server
+8. **`scripts/netora-dns-update.sh`**:
+   * Menambahkan penyalinan direktori `${target_release_dir}/blocklist/` ke `/etc/unbound/blocklist/` pada setiap siklus update, sehingga setiap server DNS yang menjalankan agen updater langsung menerima file `ads.txt` dan `abpindo.txt` terbaru.
+9. **`install.sh`**:
+   * Menambahkan langkah seeding awal direktori `blocklist` ke `/etc/unbound/blocklist` pada fresh installation.
 
-| Komponen | Status | Detail / Bukti |
-| :--- | :--- | :--- |
-| **netora-api** | **Active (Running)** | PID 81313, melayani port `:8080` |
-| **Web UI** | **v1.0.128** | Aset terpasang: `index-BxaW6hmI.js` & `index-ZObDTXIv.css` |
-| **Unbound DNS** | **Active (Running)** | Resolusi 100% normal pada `172.18.20.146:53` |
-| **Logrotate Host** | **Valid & Active** | Konfigurasi `/etc/logrotate.d/unbound` aktif |
-| **Auto-Updater** | **Active (Timer)** | `netora-dns-updater.timer` aktif memantau branch `main` |
-
----
-
-## 4. Penyempurnaan Universal One-Line Installer (Zero-Friction Install)
-
-Menjawab kendala saat instalasi pada mesin fresh Ubuntu (Unbound 1.9.4 / Ubuntu 20.04 LTS), dilakukan penguatan otomatis pada `install.sh`, `uninstall.sh`, dan dokumentasi `README.md` agar tetap menjadi **1 sistem instalasi tunggal tanpa intervensi manual**:
-
-1. **Pelepasan Port 53 Otomatis & Kompatibilitas Versi systemd**:
-   * Pada Ubuntu 20.04 (systemd 245), folder drop-in `/etc/systemd/resolved.conf.d/` belum dibaca oleh systemd-resolved.
-   * `install.sh` kini memodifikasi berkas `/etc/systemd/resolved.conf` secara langsung sekaligus menyematkan drop-in untuk Ubuntu 22.04/24.04 (systemd 246+).
-   * Menambahkan penghentian paksa jika `systemd-resolved` masih menahan socket port 53, sambil tetap menjaga DNS publik fallback (`1.1.1.1`, `8.8.8.8`) di `/etc/resolv.conf` agar proses unduh paket tidak terputus.
-
-2. **Deteksi Otomatis Kemampuan IPv6**:
-   * Memeriksa keberadaan antarmuka IPv6 aktif di `/proc/net/if_inet6`.
-   * Mencegah eror fatal `cannot bind socket: Address family not supported by protocol` pada host/VM yang menonaktifkan IPv6.
-
-3. **Remote-Control Tanpa Hambatan Izin Sertifikat**:
-   * Mengatur `control-use-cert: no` pada loopback `127.0.0.1:8953` (konsisten dengan konfigurasi inti engine).
-   * Memberikan izin penuh user `unbound` pada `/var/lib/unbound`, `/var/log/unbound`, dan berkas konfigurasi.
-   * Menambahkan *local override* AppArmor secara otomatis agar daemon tidak diblokir saat menulis log.
-
-4. **Diagnostik Otomatis & Dokumentasi**:
-   * Jika Unbound gagal start karena anomali sistem luar, `install.sh` otomatis mencetak 25 baris log diagnostik `journalctl` ke layar sebelum keluar.
-   * `README.md` diperbarui untuk menegaskan bahwa platform tetap menggunakan **1 sistem instalasi satu-baris** yang menangani semua dependensi secara otonom.
+### E. Frontend NOC Dashboard & UI Presets
+10. **`web/src/views/FilteringView.tsx`**:
+    * Menambahkan preset `ABPindo — Filter Iklan & Pelacak Indonesia (Recommended)` ke dalam daftar `PRESET_FEEDS`.
+11. **`deploy/ui/` & `deploy/bin/netora-api-linux-amd64`**:
+    * Membangun ulang bundle Web UI Vite (`npm run build`) dan mengompilasi binary Linux 64-bit terbaru untuk disebar ke server.
 
 ---
 
-## 5. Hasil Audit Seluruh File `.sh` pada README.md
+## 3. Bukti Verifikasi & Pengujian
 
-Seluruh referensi skrip `.sh` pada `README.md` telah diaudit dan dipastikan valid, teruji sintaks (`bash -n`), dan konsisten:
+### A. Pengujian Unit Go & Frontend Build
+* **Go Unit Tests**: Seluruh package lulus tanpa error:
+  ```
+  ok netora-dns/cmd/netora-api 7.986s
+  ok netora-dns/pkg/blocklist  0.976s
+  ok netora-dns/pkg/configengine 4.042s
+  ok netora-dns/pkg/hermes     0.338s
+  ...
+  PASS
+  ```
+* **Frontend Build**: `npm run build` sukses, modul terkompilasi ke `dist/` dan tersinkronisasi ke `deploy/ui/`.
+* **Linux Cross-Compile**: Binary `deploy/bin/netora-api-linux-amd64` berhasil dikompilasi (16 MB).
 
-| Skrip di README.md | Posisi Baris | Status | Peran & Konsistensi |
-| :--- | :--- | :--- | :--- |
-| **`install.sh`** | Baris 31, 33, 40, 60, 70, 79, 89, 112 | **VALID & SINKRON** | Skrip installer tunggal universal untuk seluruh distro (Interactive, Silent, Private PAT). |
-| **`uninstall.sh`** | Baris 513, 515 | **VALID & SINKRON** | Skrip pembersih sistem lengkap yang mengembalikan `systemd-resolved` dan menghapus service. |
-| **`netora`** | Baris 234â€“270 | **VALID & SINKRON** | CLI manajemen terpasang di `/usr/local/bin/netora` (membungkus `scripts/netora-cli.sh`). |
-| **`netora-reset-password`** | Baris 308â€“316 | **VALID & SINKRON** | Helper darurat terpasang di `/usr/local/bin/netora-reset-password` (`scripts/netora-reset-password.sh`). |
-| **`netora update`** | Baris 476 | **VALID & SINKRON** | Menjalankan `/usr/local/sbin/netora-dns-update` (`scripts/netora-dns-update.sh`) untuk pull otomatis. |
+### B. Commit & Push Git
+* **Commit**: `6bddd0a` — `feat(blocklist): integrate ABPindo Indonesian adblock rules and automated server distribution`
+* **Push**: Sukses terkirim ke `https://github.com/desienkz-slp/unbound.git` pada branch `main`.
 
----
-
-## 6. Verifikasi & Sinkronisasi Password Admin (`ADMIN_PASS`)
-
-* **Logika Prompt `install.sh`**:
-  * Default: `ADMIN_PASS="admin123"` (jika pengguna langsung menekan Enter saat prompt).
-  * Kustom: Jika pengguna memasukkan teks, `ADMIN_PASS` otomatis menggunakan nilai baru tersebut.
-* **Perbaikan Backend `netora-api`**:
-  * Sebelumnya fungsi seed akun di `cmd/netora-api/main.go` masih menggunakan string literal `"admin123"`.
-  * Kini diperbarui membaca variabel lingkungan `NETORA_ADMIN_PASS` (dengan fallback `"admin123"` jika kosong).
-* **Sinkronisasi Otomatis Database**:
-  * Di `install.sh`, ditambahkan sinkronisasi langsung menggunakan binary `/usr/local/bin/netora-cli -mode reset-password` agar password yang aktif di PostgreSQL selalu 100% cocok dengan apa yang diinput pengguna saat instalasi.
-
----
-
-## 7. Perbaikan Apply Tuning Gagal & Auto-Updater Mati (16 Okt 2026)
-
-**Investigasi di `unbound-1` (172.18.20.147, node `netora-dns2`) - hanya baca, tidak ada edit langsung:**
-* `audit_logs` mencatat `CONFIG_APPLY` gagal dengan pesan `syntax check failed: exit status 1`. Output `unbound-checkconf` tidak tampil karena binary server (14 Okt) lebih lama dari source.
-* Commit `10e8344` (`syntaxCheckError` di `pkg/configengine/engine.go`) sudah memperbaiki pesan tersebut, tetapi belum sampai ke server.
-* Penyebab binary tidak ter-update: `netora-dns-updater.service` crash tiap ~6 menit dengan `GitHub unreachable` (exit 2).
-* Akar masalah updater: token di `/etc/netora-dns/github.token` bertipe fine-grained (`github_pat_`). `get_authenticated_repo_url` memakai `https://<token>@github.com/...`, ditolak GitHub (`could not read Username`). Format `https://x-access-token:<token>@...` berhasil (HTTP 200, `ls-remote` mengembalikan SHA).
-* Bukan penyebab: timeout checkconf (0,44 detik), nilai slabs profil (semua pangkat 2), jaringan ke GitHub (HTTP 200).
-
-**Perubahan kode:**
-* `scripts/netora-dns-update.sh`: URL autentikasi memakai `x-access-token:<token>`.
-* `scripts/netora-cli.sh`: verifikasi token memakai format yang sama.
-
-**Cara update server (tanpa edit langsung):** updater menarik dari GitHub dan memasang `deploy/bin/*` serta skrip terbaru. Skrip updater LAMA di server masih memakai format URL yang salah, sehingga belum bisa menarik update ini sendiri. Satu kali bootstrap diperlukan (lihat Risiko tersisa). Setelah skrip baru terpasang, update berjalan otomatis.
-
-**Verifikasi:** `bash -n` pada skrip lolos, `go test ./pkg/configengine/... ./pkg/model/...` lolos.
-
-**Risiko tersisa:** akar masalah kegagalan Apply Tuning pada 16 Okt 09:09 belum terbukti. Setelah binary baru terpasang, ulangi Apply dan baca pesan error lengkap. Skrip updater di server (`/usr/local/sbin/netora-dns-update`) masih versi lama sampai updater berhasil berjalan satu kali. Bila mengulang gagal, jalankan update manual sekali lewat `netora-cli`.
-
-* Binary Linux (deploy/bin/netora-api-linux-amd64, 
-etora-cli-linux-amd64) dibuild ulang dari source terbaru (CGO off, trimpath) agar memuat perbaikan diagnostik checkconf.
-
-## 8. Perbaikan `number expected` pada Apply (16 Okt 2026)
-
-* **Gejala:** `unbound.conf:83/84: error: number expected` saat Apply Tuning.
-* **Bukti:** baris 83-84 adalah `key-cache-slabs` dan `infra-cache-slabs`. Payload UI (`ensureDefaults` dan `handleAIAutoTuneAll` di `PerformanceView.tsx`) tidak mengirim `key_cache_slabs` dan `infra_cache_slabs`. Field `int` Go menjadi 0 dan template merender nilai itu. Di server, nilai `0` pada kedua baris menghasilkan error yang sama persis dengan pesan di atas.
-* **Perbaikan:** `PerformanceConfig.NormalizeSlabs()` di `pkg/model/config.go` mengisi slabs yang kosong dari `msg_cache_slabs` dan membulatkan semua slabs ke pangkat 2. Dipanggil di `Generator.Generate`, jalur render untuk semua apply (UI, CLI, API). Ditambah `TestNormalizeSlabs`.
-* **Deploy:** commit `bc888e2`, ditarik server lewat updater resmi tanpa override token. Status `SUCCESS`, `health_status` PASS.
-* **Belum diverifikasi:** Apply lewat UI belum diulang karena butuh login. Ulangi Apply Tuning atau AI Full Auto-Tune di UI untuk memastikan.
-
-## 9. Disk penuh, incoming-num-tcp 0, dan AI logrotate (16 Okt 2026)
-
-* **Bukti di unbound-1:** disk `/` 100% (sisa 0). `unbound.log` 6,1 GB, 99% barisnya `warning: accepted too many tcp, connections full`. Config live punya `incoming-num-tcp: 0`, karena UI tidak mengirim `incoming_num_tcp`.
-* **Perbaikan kode (commit `0b31cf9`):**
-  * `PerformanceConfig.Normalize()` mengisi `incoming_num_tcp` kosong dengan 1024 (bersama slabs), dipanggil di `Generator.Generate`.
-  * Laporan logrotate untuk node lokal memakai `detectDiskSpecs()` live (`Statfs("/")`) di tiap request, bukan nilai DB saat start.
-  * `storageSaverLimits(freeGB)` menskalakan `maxsize` dan `rotate` menurut sisa disk root (10M/2, 15M/3, 25M/3, 50M/4). Fallback UI disamakan.
-* **Belum dilakukan:** deploy ke server dan pembersihan log. Disk 0 byte membuat updater berisiko gagal. Perlu persetujuan tindakan darurat dulu.
-* **Catatan:** PostgreSQL di server sempat `in recovery mode` pada 18:35 WIB, kemungkinan akibat disk penuh.
-
-## 10. Pemulihan disk penuh dan root.key kosong (16 Okt 2026)
-
-* **Gejala:** Apply gagal `error reading auto-trust-anchor-file: /var/lib/unbound/root.key`.
-* **Akar masalah:** disk 100% memotong `root.key` jadi 0 byte (11:39 UTC). Apply tidak memeriksa file itu sebelum `unbound-checkconf`.
-* **Tindakan server (disetujui user):** hapus `unbound.log.1`, salin `/usr/share/dns/root.key` ke `/var/lib/unbound/root.key`, jalankan `netora-dns-update update --force`. Hasil: revisi `92fd90f`, `PASS`, disk 82%, `incoming-num-tcp: 1024`, warning TCP 0, log tumbuh normal (~40 KB/s).
-* **Perbaikan kode:** `ensureTrustAnchor()` di `pkg/configengine/trustanchor.go`, dipanggil di `Engine.Apply` sebelum checkconf. File kosong atau hilang dipulihkan dari `/usr/share/dns/root.key`, lalu `unbound-anchor`. File berisi tidak pernah ditimpa. Ada tes `TestEnsureTrustAnchor`.
+### C. Status Server Produksi (172.18.20.146 / `netora-dns1`)
+* Koneksi SSH dan respons API port `8080` aktif normal.
+* Layanan `netora-dns-updater.timer` aktif berjalan di server dan menarik pembaruan repositori secara berkala ke host.
