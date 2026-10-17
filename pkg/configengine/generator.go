@@ -129,7 +129,7 @@ var DefaultGamblingBlockedDomains = []string{
 	"w88.com",
 }
 
-// DefaultAdsBlockedDomains provides curated high-confidence advertising & telemetry domains.
+// DefaultAdsBlockedDomains provides curated high-confidence advertising & telemetry domains (Global & ABPindo).
 var DefaultAdsBlockedDomains = []string{
 	"doubleclick.net",
 	"googleads.g.doubleclick.net",
@@ -144,6 +144,19 @@ var DefaultAdsBlockedDomains = []string{
 	"propellerads.com",
 	"exoclick.com",
 	"trafficjunky.com",
+	// Curated ABPindo Indonesian ISP & Ad Server Domains
+	"accesstrade.co.id",
+	"ads.indosatooredoo.com",
+	"ads.telkomsel.com",
+	"adsimg.kompas.com",
+	"adskom.com",
+	"cfs.uzone.id",
+	"digiads.co.id",
+	"ibnads.xl.co.id",
+	"offdeck.telkomsel.com",
+	"props.id",
+	"sitti.co.id",
+	"tadex.id",
 }
 
 // DefaultMalwareBlockedDomains provides curated high-confidence malware, phishing, and C2 domains.
@@ -180,6 +193,10 @@ var DefaultWhitelistedDomains = []string{
 func CleanDomain(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(raw, "!") {
+		return ""
+	}
+	// Reject browser cosmetic filter rules (element-hiding or scriptlet rules like domain.com##.ad)
+	if strings.Contains(raw, "##") || strings.Contains(raw, "#?#") || strings.Contains(raw, "#$#") || strings.Contains(raw, "#@#") {
 		return ""
 	}
 	if strings.HasPrefix(raw, "@@||") {

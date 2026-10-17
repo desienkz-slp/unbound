@@ -24,6 +24,18 @@ safe_download \
   "${BLOCKLIST_DIR}/block-ads.txt" \
   "Blocklist Iklan (Hagezi)"
 
+# === 1b. Blocklist Iklan Lokal Indonesia (ABPindo) ===
+safe_download \
+  "https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/aghome.txt" \
+  "${BLOCKLIST_DIR}/block-abpindo.txt" \
+  "Blocklist Iklan Indonesia (ABPindo)"
+
+# === 1c. Blocklist Iklan Netora Master (ads.txt) ===
+safe_download \
+  "https://raw.githubusercontent.com/desienkz-slp/unbound/main/blocklist/ads.txt" \
+  "${BLOCKLIST_DIR}/ads.txt" \
+  "Blocklist Iklan Netora Master (ads.txt)"
+
 # === 2. Blocklist Malware (hosts format) ===
 safe_download \
   "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/light.txt" \

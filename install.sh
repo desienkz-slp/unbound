@@ -804,6 +804,13 @@ elif [[ -f "${REPO_DIR}/version.json" ]]; then
   log_success "Seeded version.json to /var/lib/netora-dns/version.json"
 fi
 
+# 2c. Deploy initial blocklists to /etc/unbound/blocklist
+if [[ -d "${REPO_DIR}/blocklist" ]]; then
+  mkdir -p /etc/unbound/blocklist
+  cp -r "${REPO_DIR}/blocklist/." /etc/unbound/blocklist/
+  log_success "Deployed blocklist data to /etc/unbound/blocklist"
+fi
+
 # 3. Configure API Environment & Systemd Service
 cat > /etc/netora-dns/api.env <<EOF
 NETORA_LISTEN=:${WEB_LISTEN_PORT}

@@ -17,6 +17,8 @@ source "${SCRIPT_DIR}/../lib/helpers.sh" 2>/dev/null || {
 
 # === Konfigurasi ===
 ADS_SRC="${BLOCKLIST_DIR}/block-ads.txt"
+ABPINDO_SRC="${BLOCKLIST_DIR}/block-abpindo.txt"
+ADS_TXT_SRC="${BLOCKLIST_DIR}/ads.txt"
 MAL_SRC="${BLOCKLIST_DIR}/block-malware.txt"
 MINE_SRC="${BLOCKLIST_DIR}/block-mine.txt"
 ADULT_SRC="${BLOCKLIST_DIR}/adult-domains.txt"
@@ -50,6 +52,26 @@ if [[ -f "$ADS_SRC" ]]; then
     | awk '{print "local-zone: \"" $1 "\" static"}' >> "$TMP"
 else
   log_warn "  File $ADS_SRC tidak ditemukan, skip."
+fi
+
+# Proses ABPindo blocklist (ABP format)
+if [[ -f "$ABPINDO_SRC" ]]; then
+  log_info "  Memproses blocklist ABPindo (Indonesia)..."
+  grep '^||' "$ABPINDO_SRC" 2>/dev/null \
+    | sed -E 's/^\|\|([^\/\^\$\*]+).*/\1/' \
+    | grep -Ev '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+    | grep -Ev '[^a-zA-Z0-9.-]' \
+    | sort -u \
+    | awk '{print "local-zone: \"" $1 "\" static"}' >> "$TMP"
+fi
+
+# Proses ads.txt master (plain domain list)
+if [[ -f "$ADS_TXT_SRC" ]]; then
+  log_info "  Memproses blocklist ads.txt master..."
+  grep -Ev '^[#|0-9]' "$ADS_TXT_SRC" 2>/dev/null \
+    | grep -Ev '[^a-zA-Z0-9.-]' \
+    | sort -u \
+    | awk '{print "local-zone: \"" $1 "\" static"}' >> "$TMP"
 fi
 
 # Proses custom blocklist (ABP format)

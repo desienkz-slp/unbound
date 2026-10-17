@@ -1234,6 +1234,16 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 				CreatedAt: time.Now().UTC(),
 			},
 			{
+				ID:        "feed-abpindo",
+				Name:      "ABPindo — Filter Iklan & Pelacak Indonesia",
+				Category:  "ADS_TRACKING",
+				SourceURL: "https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/aghome.txt",
+				LocalPath: "/etc/unbound/blocklist/abpindo.txt",
+				RuleCount: 140,
+				Enabled:   true,
+				CreatedAt: time.Now().UTC(),
+			},
+			{
 				ID:        "feed-stevenblack",
 				Name:      "StevenBlack Unified Hosts File",
 				Category:  "HOSTS_BLOCK",
@@ -1467,7 +1477,7 @@ func (s *Server) reapplyFilterState(ctx context.Context, reason string) {
 				cfg.ParentalControl.BlockAdult = f.Enabled
 			case "feed-gambling":
 				cfg.GamblingBlock.Enabled = f.Enabled
-			case "feed-ads", "feed-adguard":
+			case "feed-ads", "feed-adguard", "feed-abpindo":
 				cfg.AdBlock.Enabled = f.Enabled
 			case "feed-malware", "feed-hagezi":
 				cfg.MalwareBlock.Enabled = f.Enabled

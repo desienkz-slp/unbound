@@ -36,6 +36,11 @@ interface FilteringViewProps {
 
 const PRESET_FEEDS = [
   {
+    name: 'ABPindo — Filter Iklan & Pelacak Indonesia (Recommended)',
+    category: 'ADS_TRACKING',
+    url: 'https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/aghome.txt',
+  },
+  {
     name: 'Hagezi Multi PRO (Recommended)',
     category: 'MALWARE_ADS',
     url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt',

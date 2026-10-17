@@ -98,10 +98,12 @@ func StandardCoreFeeds(blocklistDir string) []FeedDefinition {
 		},
 		{
 			ID:           "feed-ads",
-			Name:         "Iklan, Pop-up & Pelacak",
+			Name:         "Iklan, Pop-up & Pelacak (Global & ABPindo)",
 			Category:     "ADS_TRACKING",
 			RepoFilename: "ads.txt",
 			FallbackURLs: []string{
+				"https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/domain.txt",
+				"https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/aghome.txt",
 				"https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
 				"https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
 			},

@@ -622,6 +622,12 @@ AAEOF
         cp -f "${target_release_dir}/conf/logrotate-unbound.conf" /etc/logrotate.d/unbound 2>/dev/null || true
     fi
 
+    # Update blocklist directory if present in release
+    if [[ -d "${target_release_dir}/blocklist" ]]; then
+        mkdir -p /etc/unbound/blocklist
+        cp -r "${target_release_dir}/blocklist/"* /etc/unbound/blocklist/ 2>/dev/null || true
+    fi
+
     # Update Web UI static assets if present in release
     if [[ -d "${target_release_dir}/deploy/ui" ]]; then
         mkdir -p /var/www/netora-ui
