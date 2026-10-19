@@ -127,3 +127,25 @@ Berikut file dan modul yang telah diperbarui dan diverifikasi:
    - `go test ./...` lulus 100% pada seluruh package (netora-api, configengine, model, storage, security, telemetry).
    - `npm run build` berhasil mengompilasi TypeScript dan sinkronisasi bundle aset ke `deploy/ui/`.
 
+---
+
+## 5. Verifikasi Live Pasca-Penerapan & Pembersihan Storage
+
+Tuning ISP untuk 20.000 client telah diterapkan secara live di kedua server:
+
+1. **Penerapan Konfigurasi Produksi:**
+   - Node 1 (`netora-dns1`): Versi `v-auto-sync-1792420472` (Durasi reload: 721 ms, Health: PASS).
+   - Node 2 (`netora-dns2`): Versi `v-auto-sync-1792420423` (Durasi reload: 490 ms, Health: PASS).
+2. **Uji Resolusi Real-time ke Seluruh Listener IP:**
+   - `172.18.20.2` (Node 1 VIP): **PASS** (~22 ms)
+   - `172.18.20.146` (Node 1 Mgmt): **PASS** (~20 ms)
+   - `172.18.20.3` (Node 2 VIP): **PASS** (~21 ms)
+   - `172.18.20.147` (Node 2 Mgmt): **PASS** (~20 ms)
+3. **Pembersihan & Kompresi Storage (Storage Health):**
+   - **Node 1:** Disk usage turun dari 66% (4,9 GB free) menjadi **33% (9,5 GB free)** setelah rotasi & kompresi log 5,2 GB.
+   - **Node 2:** Disk usage turun dari 69% (4,4 GB free) menjadi **37% (8,9 GB free)** setelah rotasi & kompresi log 1,9 GB.
+4. **Metrik Drop & Timeout:**
+   - `total.num.queries_timed_out = 0` pada kedua server pasca-reload.
+   - Buffer kapasitas antrean: `32.768` query bersamaan per node dengan `jostle-timeout: 200` ms dan upstream fast UDP port 53.
+
+
