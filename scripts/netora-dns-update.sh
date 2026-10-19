@@ -425,11 +425,20 @@ action_update() {
     local target_sha="$requested_rev"
 
     if [[ -z "$target_sha" ]]; then
-        if ! target_sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote "$auth_url" "refs/heads/${GIT_BRANCH}" 2>/dev/null | awk '{print $1}')" || [[ -z "$target_sha" ]]; then
-            log_event "ERROR" "update_failed" "Cannot reach GitHub or invalid credentials. Preserving current DNS configuration."
+        local ls_err=""
+        target_sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote "$auth_url" "refs/heads/${GIT_BRANCH}" 2>/tmp/netora-ls-err | awk '{print $1}')"
+        ls_err="$(cat /tmp/netora-ls-err 2>/dev/null)"
+        rm -f /tmp/netora-ls-err
+        if [[ -z "$target_sha" ]]; then
             local curr
             curr="$(get_current_revision)"
-            update_state_file "OFFLINE_RETRY" "$curr" "$curr" "GitHub unreachable" "PASS" 0
+            if [[ "$ls_err" =~ (403|Authentication failed|denied|terminal prompts disabled) ]]; then
+                log_event "ERROR" "update_failed" "GitHub authentication failed (invalid/expired token). Preserving current DNS configuration. Detail: $ls_err"
+                update_state_file "AUTH_ERROR" "$curr" "$curr" "GitHub token invalid or expired" "PASS" 0
+            else
+                log_event "ERROR" "update_failed" "Cannot reach GitHub. Preserving current DNS configuration. Detail: $ls_err"
+                update_state_file "OFFLINE_RETRY" "$curr" "$curr" "GitHub unreachable" "PASS" 0
+            fi
             return 2
         fi
     fi
