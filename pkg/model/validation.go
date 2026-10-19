@@ -210,5 +210,18 @@ func ValidateDesiredState(state *DesiredState) []ValidationError {
 		}
 	}
 
+	// 8. Validate sinkhole redirect IPs (empty = NXDOMAIN; otherwise an IPv4 A record target)
+	for _, s := range []struct{ field, ip string }{
+		{"parental_control.redirect_ip", state.ParentalControl.RedirectIP},
+		{"gambling_block.redirect_ip", state.GamblingBlock.RedirectIP},
+	} {
+		if s.ip == "" {
+			continue
+		}
+		if parsed := net.ParseIP(s.ip); parsed == nil || parsed.To4() == nil {
+			errs = append(errs, ValidationError{Field: s.field, Message: fmt.Sprintf("redirect IP must be a valid IPv4 address or empty for NXDOMAIN: %s", s.ip)})
+		}
+	}
+
 	return errs
 }

@@ -446,10 +446,8 @@ func (g *Generator) Generate(state *model.DesiredState, configDir string) (*Rend
 	}
 
 	isGamblingActive := state.GamblingBlock.Enabled || state.ParentalControl.BlockGambling
+	// Empty redirect IP means NXDOMAIN; independent from the 18+ redirect IP.
 	gamblingRedirect := state.GamblingBlock.RedirectIP
-	if gamblingRedirect == "" && state.ParentalControl.BlockGambling {
-		gamblingRedirect = state.ParentalControl.RedirectIP
-	}
 
 	loadWithFallback := func(filename string, def []string) []string {
 		p1 := filepath.Join(configDir, "blocklist", filename)

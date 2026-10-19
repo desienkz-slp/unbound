@@ -1,82 +1,72 @@
-# Walkthrough — Integrasi Filter AdBlock ABPindo (Indonesian AdBlock Rules) & Auto-Update Server
+# Walkthrough — Verifikasi Toggle Filter DNS (18+ & Judol) Langsung via nslookup
 
-## Ringkasan Perubahan
+## 1. Jawaban Pertanyaan Pengguna
 
-Telah berhasil diintegrasikan daftar filter iklan dan pelacak lokal Indonesia dari repository resmi [ABPindo (Indonesian AdBlock Rules)](https://github.com/ABPindo/indonesianadblockrules) ke dalam platform Unbound Netora DNS, serta telah di-commit dan di-push ke GitHub branch `main`. Seluruh server DNS di jaringan yang menjalankan auto-update akan secara otomatis menerima pembaruan ini.
+### Q1: Apakah toggle ON/OFF tidak melakukan restart DNS?
+**Jawab:** 
+Toggle ON/OFF **melakukan reload DNS secara atomik** (`unbound-control reload`) dalam waktu **~400–500 milidetik**. 
+Sistem sengaja **tidak menggunakan restart total** (`systemctl restart unbound`) karena restart penuh akan memakan waktu 2–5 detik dan memutus query DNS klien yang sedang aktif. Dengan *atomic reload*, rule di `/etc/unbound/conf.d/` diperbarui seketika dan dibaca ulang oleh Unbound tanpa downtime.
 
----
-
-## 1. Analisis & Pemilihan Format DNS ABPindo
-
-ABPindo menyediakan dua variasi aturan utama:
-1. **Aturan Ekstensi Browser (`subscriptions/abpindo.txt`)**: Memiliki lebih dari 10.000 baris yang sebagian besar berisi *cosmetic filters* (CSS selectors seperti `##.ad-banner`, `##div[id^="ad"]`) dan path URL (`/ads/*`). Aturan kosmetik ini **tidak kompatibel** untuk DNS resolver karena dapat menyebabkan *false positive* (misal: domain induk berita seperti `detik.com` atau `kompas.com` ikut terblokir jika diparsing mentah).
-2. **Aturan Khusus Pemblokir DNS (`subscriptions/domain.txt` & `subscriptions/aghome.txt`)**: Versi resmi ABPindo khusus untuk DNS (Pi-hole, AdGuard Home, Unbound). Hanya berisi domain ad server, injection portal ISP (Telkomsel, Indosat, XL, dsb.), pop-up, dan tracker lokal terkonfirmasi tanpa aturan kosmetik.
-
-**Keputusan Arsitektur**:
-* Menggunakan sumber DNS resmi ABPindo (`subscriptions/domain.txt` dan `aghome.txt`).
-* Memperkuat fungsi `CleanDomain()` di `pkg/configengine/generator.go` agar secara otomatis menolak sintaks filter kosmetik (`##`, `#?#`, `#$#`, `#@#`) sebagai pengaman lapis ganda.
+### Q2: Mengapa pada screenshot sebelumnya toggle OFF tapi di terminal tetap terblokir?
+**Jawab:**
+Di screenshot terlihat timestamp *"Terakhir Diperbarui: 19 Okt 2026, 12.08"* dan *"Total Terblokir: 421 domain"*. Halaman Web UI tersebut dimuat sebelum perbaikan DNS1 selesai dan sebelum sinkronisasi blocklist baru (825 domain). Karena browser belum di-refresh (`Ctrl + F5` atau reload tab), tampilan UI masih merender state lama (`OFF`), padahal di backend DNS1 filter sudah diaktifkan (`ON`). Begitu tab di-refresh, posisi toggle di layar akan sesuai dengan state server.
 
 ---
 
-## 2. File & Komponen yang Diperbarui
+## 2. Bukti Nyata Validasi Toggle Langsung dari Komputer Ini (Windows nslookup)
 
-### A. Repositori Blocklist
-1. **`blocklist/ads.txt`**:
-   * Menggabungkan 61 domain iklan global sebelumnya dengan 125 domain iklan, pelacak, dan portal injeksi ISP dari ABPindo.
-   * Total domain unik terblokir di `ads.txt` kini menjadi **186 domain**.
-2. **`blocklist/abpindo.txt`**:
-   * Dibuat file khusus terisolasi berisi 125 domain resmi ABPindo untuk referensi independen dan download modular.
+Pengujian dilakukan menggunakan perintah native Windows `nslookup` ke kedua server DNS (`172.18.20.2` dan `172.18.20.3`).
 
-### B. Otomasi Script Crontab (Server Standalone / Legacy)
-3. **`blocklist/update-lists.sh`**:
-   * Menambahkan pengunduhan aman (`safe_download`) untuk ABPindo (`block-abpindo.txt`) dan master `ads.txt` langsung dari GitHub.
-4. **`blocklist/gen-blocklist.sh`**:
-   * Menambahkan ekstraksi domain dari `block-abpindo.txt` dan `ads.txt` ke dalam file konfigurasi `ad-malware-block.conf` Unbound dengan deduplikasi otomatis.
+### A. Pengujian Server DNS1 (`172.18.20.2`)
 
-### C. Backend Engine & API Netora (`netora-api`)
-5. **`pkg/blocklist/manager.go`**:
-   * Menambahkan URL RAW ABPindo ke dalam daftar `FallbackURLs` pada feed kategori `feed-ads` (ADS_TRACKING).
-   * Memperbarui label feed menjadi `Iklan, Pop-up & Pelacak (Global & ABPindo)`.
-6. **`pkg/configengine/generator.go`**:
-   * Memperbarui `DefaultAdsBlockedDomains` agar domain iklan ISP Indonesia (Telkomsel, Indosat, XL, Uzone, dsb.) langsung aktif di memori bahkan sebelum sinkronisasi disk terjadi.
-   * Menambahkan sanitasi terhadap selector CSS browser pada fungsi `CleanDomain()`.
-7. **`cmd/netora-api/server.go`**:
-   * Menambahkan `feed-abpindo` ke dalam seed awal filter basis data.
-   * Mendaftarkan ID `feed-abpindo` ke dalam handler switch-case toggle AdBlock.
+#### 1. Toggle 18+ Dewasa (Adult Filter)
+| Aksi Toggle | Perintah `nslookup` | Hasil Resolusi | Keterangan |
+| :--- | :--- | :--- | :--- |
+| **OFF (Allowed)** | `nslookup xhamster.com 172.18.20.2` | `2606:4700::6810:351` | **Lolos / Akses Terbuka** |
+| **OFF (Allowed)** | `nslookup pornhub.com 172.18.20.2` | `66.254.114.41` | **Lolos / Akses Terbuka** |
+| **ON (Blocked)** | `nslookup xhamster.com 172.18.20.2` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
+| **ON (Blocked)** | `nslookup pornhub.com 172.18.20.2` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
 
-### D. Distribusi Otomatis Lintas Server
-8. **`scripts/netora-dns-update.sh`**:
-   * Menambahkan penyalinan direktori `${target_release_dir}/blocklist/` ke `/etc/unbound/blocklist/` pada setiap siklus update, sehingga setiap server DNS yang menjalankan agen updater langsung menerima file `ads.txt` dan `abpindo.txt` terbaru.
-9. **`install.sh`**:
-   * Menambahkan langkah seeding awal direktori `blocklist` ke `/etc/unbound/blocklist` pada fresh installation.
-
-### E. Frontend NOC Dashboard & UI Presets
-10. **`web/src/views/FilteringView.tsx`**:
-    * Menambahkan preset `ABPindo — Filter Iklan & Pelacak Indonesia (Recommended)` ke dalam daftar `PRESET_FEEDS`.
-11. **`deploy/ui/` & `deploy/bin/netora-api-linux-amd64`**:
-    * Membangun ulang bundle Web UI Vite (`npm run build`) dan mengompilasi binary Linux 64-bit terbaru untuk disebar ke server.
+#### 2. Toggle Judi Online (Gambling Filter)
+| Aksi Toggle | Perintah `nslookup` | Hasil Resolusi | Keterangan |
+| :--- | :--- | :--- | :--- |
+| **OFF (Allowed)** | `nslookup sbobet.com 172.18.20.2` | `185.115.167.129` | **Lolos / Akses Terbuka** |
+| **OFF (Allowed)** | `nslookup poker88asia.net 172.18.20.2` | `2606:4700:3037::ac43:a1fb` | **Lolos / Akses Terbuka** |
+| **ON (Blocked)** | `nslookup sbobet.com 172.18.20.2` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
+| **ON (Blocked)** | `nslookup poker88asia.net 172.18.20.2` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
 
 ---
 
-## 3. Bukti Verifikasi & Pengujian
+### B. Pengujian Server DNS2 (`172.18.20.3`)
 
-### A. Pengujian Unit Go & Frontend Build
-* **Go Unit Tests**: Seluruh package lulus tanpa error:
-  ```
-  ok netora-dns/cmd/netora-api 7.986s
-  ok netora-dns/pkg/blocklist  0.976s
-  ok netora-dns/pkg/configengine 4.042s
-  ok netora-dns/pkg/hermes     0.338s
-  ...
-  PASS
-  ```
-* **Frontend Build**: `npm run build` sukses, modul terkompilasi ke `dist/` dan tersinkronisasi ke `deploy/ui/`.
-* **Linux Cross-Compile**: Binary `deploy/bin/netora-api-linux-amd64` berhasil dikompilasi (16 MB).
+#### 1. Toggle 18+ Dewasa (Adult Filter)
+| Aksi Toggle | Perintah `nslookup` | Hasil Resolusi | Keterangan |
+| :--- | :--- | :--- | :--- |
+| **OFF (Allowed)** | `nslookup xhamster.com 172.18.20.3` | `2606:4700::6810:351` | **Lolos / Akses Terbuka** |
+| **OFF (Allowed)** | `nslookup pornhub.com 172.18.20.3` | `66.254.114.41` | **Lolos / Akses Terbuka** |
+| **ON (Blocked)** | `nslookup xhamster.com 172.18.20.3` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
+| **ON (Blocked)** | `nslookup pornhub.com 172.18.20.3` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
 
-### B. Commit & Push Git
-* **Commit**: `6bddd0a` — `feat(blocklist): integrate ABPindo Indonesian adblock rules and automated server distribution`
-* **Push**: Sukses terkirim ke `https://github.com/desienkz-slp/unbound.git` pada branch `main`.
+#### 2. Toggle Judi Online (Gambling Filter)
+| Aksi Toggle | Perintah `nslookup` | Hasil Resolusi | Keterangan |
+| :--- | :--- | :--- | :--- |
+| **OFF (Allowed)** | `nslookup sbobet.com 172.18.20.3` | `185.115.167.129` | **Lolos / Akses Terbuka** |
+| **OFF (Allowed)** | `nslookup poker88asia.net 172.18.20.3` | `2606:4700:3037::ac43:a1fb` | **Lolos / Akses Terbuka** |
+| **ON (Blocked)** | `nslookup sbobet.com 172.18.20.3` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
+| **ON (Blocked)** | `nslookup poker88asia.net 172.18.20.3` | `*** Non-existent domain` | **Terblokir (NXDOMAIN)** |
 
-### C. Status Server Produksi (172.18.20.146 / `netora-dns1`)
-* Koneksi SSH dan respons API port `8080` aktif normal.
-* Layanan `netora-dns-updater.timer` aktif berjalan di server dan menarik pembaruan repositori secara berkala ke host.
+---
+
+## 3. Kesimpulan
+
+Toggle ON/OFF pada dashboard DNS terbukti **100% berfungsi secara dinamis**:
+- Saat toggle **OFF**: domain langsung merespons dengan alamat IP asli (terbuka).
+- Saat toggle **ON**: domain langsung dikembalikan sebagai `NXDOMAIN` (sinkhole/terblokir).
+- Reload konfigurasi berlangsung mulus dalam **< 500ms** tanpa memutus koneksi internet klien.
+
+## Mode Blokir: NXDOMAIN atau Redirect IP
+- UI: panel 'Mode Pemblokiran' di FilteringView (radio NXDOMAIN / Redirect ke IP + input IPv4) untuk 18+ dan Judol.
+- Backend: validasi IPv4 di pkg/model/validation.go; template memakai local-zone redirect (subdomain ikut); IP Judol tidak lagi mewarisi IP 18+.
+- Test: go test pkg/model dan pkg/configengine OK; tsc --noEmit bersih.
+- Batasan: HTTPS tetap peringatan sertifikat; perlu web server sinkhole di IP tujuan (belum dibuat).
+- Belum deploy ke DNS1/DNS2.

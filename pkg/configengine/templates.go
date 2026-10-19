@@ -235,8 +235,8 @@ server:
 {{- if .ParentalControl.Enabled }}
 {{- range .AdultBlockedDomains }}
 {{- if $.ParentalControl.RedirectIP }}
-  local-data: "{{ . }} A {{ $.ParentalControl.RedirectIP }}"
-  local-data: "www.{{ . }} A {{ $.ParentalControl.RedirectIP }}"
+  local-zone: "{{ . }}." redirect
+  local-data: "{{ . }}. A {{ $.ParentalControl.RedirectIP }}"
 {{- else }}
   local-zone: "{{ . }}." static
 {{- end }}
@@ -256,8 +256,8 @@ server:
 {{- if .IsGamblingBlockActive }}
 {{- range .GamblingBlockedDomains }}
 {{- if $.GamblingRedirectIP }}
-  local-data: "{{ . }} A {{ $.GamblingRedirectIP }}"
-  local-data: "www.{{ . }} A {{ $.GamblingRedirectIP }}"
+  local-zone: "{{ . }}." redirect
+  local-data: "{{ . }}. A {{ $.GamblingRedirectIP }}"
 {{- else }}
   local-zone: "{{ . }}." static
 {{- end }}

@@ -34,6 +34,10 @@ interface FilteringViewProps {
   onConfigUpdated?: (newCfg: DesiredState) => void;
 }
 
+type RedirectKind = 'adult' | 'gambling';
+const REDIRECT_LABELS: Record<RedirectKind, string> = { adult: '18+ Dewasa', gambling: 'Judi Online' };
+const IPV4_REGEX = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+
 const PRESET_FEEDS = [
   {
     name: 'ABPindo — Filter Iklan & Pelacak Indonesia (Recommended)',
@@ -126,6 +130,12 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   const [togglingSafeSearch, setTogglingSafeSearch] = useState(false);
   const [togglingParental, setTogglingParental] = useState(false);
   const [togglingGambling, setTogglingGambling] = useState(false);
+  // Block mode per category: NXDOMAIN (empty redirect IP) or sinkhole IP
+  const [blockModes, setBlockModes] = useState<Record<RedirectKind, { mode: 'nxdomain' | 'ip'; ip: string }>>({
+    adult: { mode: 'nxdomain', ip: '' },
+    gambling: { mode: 'nxdomain', ip: '' },
+  });
+  const [savingRedirect, setSavingRedirect] = useState<RedirectKind | null>(null);
   const [syncingGitHub, setSyncingGitHub] = useState(false);
   const [autoUpdateStatus, setAutoUpdateStatus] = useState<AutoUpdateStatus | null>(null);
 
@@ -221,6 +231,16 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
   useEffect(() => {
     loadAll();
   }, []);
+
+  // Sync block-mode inputs with the active config
+  useEffect(() => {
+    const adultIp = config?.parental_control?.redirect_ip || '';
+    const gamblingIp = config?.gambling_block?.redirect_ip || '';
+    setBlockModes({
+      adult: { mode: adultIp ? 'ip' : 'nxdomain', ip: adultIp },
+      gambling: { mode: gamblingIp ? 'ip' : 'nxdomain', ip: gamblingIp },
+    });
+  }, [config?.parental_control?.redirect_ip, config?.gambling_block?.redirect_ip]);
 
   // Handlers for Blocklists Toggle ON/OFF
   const handleToggleFeed = async (id: string, currentEnabled: boolean) => {
@@ -362,6 +382,48 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
       });
     } finally {
       setTogglingGambling(false);
+    }
+  };
+
+  // Save block mode (NXDOMAIN or sinkhole IP) for 18+ or Judi Online
+  const handleSaveRedirect = async (kind: RedirectKind) => {
+    if (!config) return;
+    const { mode, ip } = blockModes[kind];
+    const redirectIp = mode === 'ip' ? ip.trim() : '';
+    if (mode === 'ip' && !IPV4_REGEX.test(redirectIp)) {
+      setActionMsg({ type: 'error', text: 'IP redirect tidak valid. Isi alamat IPv4, contoh: 172.18.20.145' });
+      return;
+    }
+    setSavingRedirect(kind);
+    try {
+      const updatedConfig: DesiredState =
+        kind === 'adult'
+          ? {
+              ...config,
+              parental_control: {
+                enabled: config.parental_control?.enabled ?? false,
+                block_adult: config.parental_control?.block_adult ?? false,
+                block_gambling: config.parental_control?.block_gambling ?? false,
+                redirect_ip: redirectIp,
+              },
+            }
+          : {
+              ...config,
+              gambling_block: {
+                enabled: config.gambling_block?.enabled ?? false,
+                redirect_ip: redirectIp,
+              },
+            };
+      await api.applyConfig(nodeId, updatedConfig, `Mode blokir ${REDIRECT_LABELS[kind]} diubah ke ${redirectIp || 'NXDOMAIN'}`);
+      onConfigUpdated?.(updatedConfig);
+      setActionMsg({
+        type: 'success',
+        text: `Mode blokir ${REDIRECT_LABELS[kind]}: ${redirectIp ? `diarahkan ke ${redirectIp}` : 'NXDOMAIN'}. Unbound di-reload secara atomik.`,
+      });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: `Gagal menyimpan mode blokir: ${err.message}` });
+    } finally {
+      setSavingRedirect(null);
     }
   };
 
@@ -752,6 +814,53 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
             <span className="truncate">&lt;50ns Suffix-Trie</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800/50 text-emerald-300">Fastpath</span>
           </div>
+        </div>
+      </div>
+
+      {/* Block Mode: NXDOMAIN or sinkhole IP */}
+      <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-bold text-white">Mode Pemblokiran</h3>
+        <p className="text-[11px] text-gray-400 mt-1">
+          NXDOMAIN: situs tampil "tidak ditemukan". IP: domain diarahkan ke server halaman blokir (HTTP). Situs HTTPS tetap menampilkan peringatan sertifikat.
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          {(Object.keys(REDIRECT_LABELS) as RedirectKind[]).map((kind) => {
+            const { mode, ip } = blockModes[kind];
+            const setMode = (patch: Partial<{ mode: 'nxdomain' | 'ip'; ip: string }>) =>
+              setBlockModes((prev) => ({ ...prev, [kind]: { ...prev[kind], ...patch } }));
+            return (
+              <div key={kind} className="border border-gray-800 rounded-lg p-4 space-y-3">
+                <div className="text-xs font-semibold uppercase tracking-wider text-gray-300">{REDIRECT_LABELS[kind]}</div>
+                <div className="flex items-center gap-4 text-xs text-gray-300">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name={`mode-${kind}`} checked={mode === 'nxdomain'} onChange={() => setMode({ mode: 'nxdomain' })} />
+                    NXDOMAIN
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name={`mode-${kind}`} checked={mode === 'ip'} onChange={() => setMode({ mode: 'ip' })} />
+                    Redirect ke IP
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={ip}
+                    disabled={mode !== 'ip'}
+                    onChange={(e) => setMode({ ip: e.target.value })}
+                    placeholder="172.18.20.145"
+                    className="flex-1 px-3 py-1.5 bg-gray-950 border border-gray-700 rounded-lg text-xs font-mono text-gray-200 disabled:opacity-40"
+                  />
+                  <button
+                    onClick={() => handleSaveRedirect(kind)}
+                    disabled={savingRedirect !== null || !config}
+                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
+                  >
+                    {savingRedirect === kind ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
