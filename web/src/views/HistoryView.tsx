@@ -154,10 +154,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ nodeId, onRollbackComp
             <History className="w-5 h-5 text-cyan-400" />
             Configuration Versions & Atomic Rollback
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Every configuration change is versioned with SHA256 checksums and can be atomically restored in &lt;150ms.
-          </p>
-        </div>
+                  </div>
 
         <button
           onClick={fetchVersions}
@@ -277,9 +274,6 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ nodeId, onRollbackComp
               <Database className="w-5 h-5 text-cyan-400" />
               Database Disaster Recovery &amp; Automated Snapshots
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Snapshot terkompresi (<code className="text-cyan-300">pg_dump -Fc</code>) dari database PostgreSQL Netora DNS untuk pencegahan kehilangan data dan pemulihan cepat.
-            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -412,8 +406,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ nodeId, onRollbackComp
                 <Database className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Buat Snapshot PostgreSQL Baru</h3>
-                <p className="text-xs text-gray-400">Menjalankan <code className="text-cyan-300">pg_dump -Fc</code> secara real-time.</p>
+                <h3 className="text-base font-bold text-white" title="Menjalankan pg_dump -Fc secara real-time.">Buat Snapshot PostgreSQL Baru</h3>
               </div>
             </div>
 

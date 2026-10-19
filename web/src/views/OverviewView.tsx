@@ -259,9 +259,6 @@ export const OverviewView: React.FC<OverviewProps> = ({
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            Real-time ISP NOC telemetry & query distribution for node <strong className="text-cyan-400 font-mono">{node?.hostname || nodeId || 'Current Node'}</strong>
-          </p>
         </div>
 
         <div className="flex items-center gap-3">

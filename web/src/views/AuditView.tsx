@@ -47,10 +47,7 @@ export const AuditView: React.FC = () => {
             <FileText className="w-5 h-5 text-cyan-400" />
             NOC Administrative Audit Trail
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Immutable log of all configuration alterations, access attempts, and operational overrides.
-          </p>
-        </div>
+                  </div>
 
         <div className="flex items-center gap-3">
           <div className="relative w-64">

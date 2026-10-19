@@ -675,10 +675,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
             <Network className="w-5 h-5 text-cyan-400" />
             DNS Configuration & Runtime Sockets
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Configure Multi-IP listeners, strict client ACL ranges, upstream resolvers, and DNSSEC verification.
-          </p>
-        </div>
+                  </div>
 
         <button
           onClick={handleApply}
@@ -796,10 +793,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-white">Listener Sockets & Roles</h2>
-              <p className="text-xs text-gray-400">
-                Define IP bindings and explicit roles (INTERNET, CLIENT, MANAGEMENT, INTERNAL) to prevent accidental public exposure.
-              </p>
+              <h2 className="text-sm font-bold text-white" title="Define IP bindings and explicit roles (INTERNET, CLIENT, MANAGEMENT, INTERNAL) to prevent accidental public exposure.">Listener Sockets & Roles</h2>
             </div>
             <button
               onClick={addListener}
@@ -914,10 +908,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-white">Client CIDR Networks & Access Control</h2>
-              <p className="text-xs text-gray-400">
-                Only explicitly declared client subnets can query Unbound. <strong className="text-amber-400">0.0.0.0/0 allow is blocked</strong> by security invariant.
-              </p>
+              <h2 className="text-sm font-bold text-white" title="Only explicitly declared client subnets can query Unbound. 0.0.0.0/0 allow is blocked by security invariant.">Client CIDR Networks & Access Control</h2>
             </div>
             <button
               onClick={addNetwork}
@@ -1009,10 +1000,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                 <Globe className="w-4 h-4 text-cyan-400" />
                 Upstream Forwarders & Resolution Architecture
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Configure primary, secondary, and encrypted upstream resolvers. Fully editable with one-click presets.
-              </p>
-            </div>
+                          </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -1082,10 +1070,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                       Enkripsi TLS Port 853
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Aktifkan upstream terenkripsi dengan toggle switch. Melewati (bypass) sensor transparent DNS port 53 ISP (Kominfo/Internet Positif).
-                  </p>
-                </div>
+                                  </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1315,10 +1300,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                   className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono text-cyan-300 focus:border-cyan-500 focus:outline-none"
                 />
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] text-gray-400">
-                    You can copy addresses directly from the AdGuard Known Providers list and paste them here.
-                  </p>
-                  <button
+                                    <button
                     onClick={handleParseRawText}
                     className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-bold rounded-lg shadow-md transition-colors"
                   >
@@ -1646,10 +1628,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
       {subTab === 'cache' && (
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
           <div>
-            <h2 className="text-sm font-bold text-white">Cache & Latency Tuning</h2>
-            <p className="text-xs text-gray-400">
-              Configure Unbound memory cache partitions, prefetch expired records, and serve expired answers during upstream outages.
-            </p>
+            <h2 className="text-sm font-bold text-white" title="Configure Unbound memory cache partitions, prefetch expired records, and serve expired answers during upstream outages.">Cache & Latency Tuning</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
@@ -1729,8 +1708,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
               />
               <div>
                 <span className="text-xs font-semibold text-white">Enable Cache Prefetch</span>
-                <p className="text-[11px] text-gray-400">Automatically renew expiring cache entries before user requests experience miss latency.</p>
-              </div>
+                              </div>
             </label>
 
             <label className="flex items-center gap-3 cursor-pointer">
@@ -1747,8 +1725,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
               />
               <div>
                 <span className="text-xs font-semibold text-white">Enable Serve-Expired Resilience</span>
-                <p className="text-[11px] text-gray-400">Return expired cache records with TTL 0 if upstream resolvers timeout or fail.</p>
-              </div>
+                              </div>
             </label>
           </div>
         </div>
@@ -1758,10 +1735,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
       {subTab === 'dnssec' && (
         <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
           <div>
-            <h2 className="text-sm font-bold text-white">Cryptographic DNSSEC Validation</h2>
-            <p className="text-xs text-gray-400">
-              Validates digital signatures (RRSIG, DNSKEY, DS) using the IANA root trust anchor.
-            </p>
+            <h2 className="text-sm font-bold text-white" title="Validates digital signatures (RRSIG, DNSKEY, DS) using the IANA root trust anchor.">Cryptographic DNSSEC Validation</h2>
           </div>
 
           <div className="space-y-4">
@@ -1779,8 +1753,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
               />
               <div>
                 <span className="text-xs font-bold text-white">Enforce DNSSEC Validation</span>
-                <p className="text-[11px] text-gray-400">Bogus responses failing cryptographic signature checks will return SERVFAIL.</p>
-              </div>
+                              </div>
             </label>
 
             <div className="p-4 bg-gray-950 border border-gray-800 rounded-lg space-y-2 text-xs font-mono">

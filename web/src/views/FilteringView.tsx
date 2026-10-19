@@ -546,10 +546,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
             <Filter className="w-5 h-5 text-cyan-400" />
             DNS Policy Filtering & Protection Engine
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Kelola kebijakan penyaringan DNS: SafeSearch VIP, Konten 18+ Dewasa, Judi Online, Iklan, dan Pengecualian Allowlist.
-          </p>
-        </div>
+                  </div>
 
         <div className="flex items-center gap-3">
           <button
@@ -625,9 +622,6 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
                   Dual-Trigger: In-Process + OS Cron Backup
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-1 max-w-2xl">
-                Seluruh feed filter (Dewasa 18+, Judi Online, Iklan, Malware, dan Custom ISP) disinkronisasi, disanitasi, divalidasi dengan <code className="text-cyan-300 font-mono text-[11px]">unbound-checkconf</code>, dan di-reload secara atomik tanpa downtime.
-              </p>
               <div className="flex items-center gap-4 mt-2.5 text-[11px] text-gray-400 flex-wrap">
                 <span className="flex items-center gap-1">
                   <span className="text-gray-500">Terakhir Diperbarui:</span>{' '}
@@ -807,10 +801,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
               {allowlist.length} <span className="text-sm font-normal text-gray-400">Pengecualian</span>
             </span>
           </div>
-          <p className="text-[11px] text-gray-400 mt-1 font-mono truncate">
-            Prioritas bypass tertinggi (zero disruption)
-          </p>
-          <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-emerald-400 font-mono flex items-center justify-between">
+                    <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-emerald-400 font-mono flex items-center justify-between">
             <span className="truncate">&lt;50ns Suffix-Trie</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800/50 text-emerald-300">Fastpath</span>
           </div>
@@ -819,10 +810,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
 
       {/* Block Mode: NXDOMAIN or sinkhole IP */}
       <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5">
-        <h3 className="text-sm font-bold text-white">Mode Pemblokiran</h3>
-        <p className="text-[11px] text-gray-400 mt-1">
-          NXDOMAIN: situs tampil "tidak ditemukan". IP: domain diarahkan ke server halaman blokir (HTTP). Situs HTTPS tetap menampilkan peringatan sertifikat.
-        </p>
+        <h3 className="text-sm font-bold text-white" title="NXDOMAIN: situs tampil &quot;tidak ditemukan&quot;. IP: domain diarahkan ke server halaman blokir (HTTP). Situs HTTPS tetap menampilkan peringatan sertifikat.">Mode Pemblokiran</h3>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
           {(Object.keys(REDIRECT_LABELS) as RedirectKind[]).map((kind) => {
             const { mode, ip } = blockModes[kind];
@@ -879,9 +867,6 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
                 OTONOM
               </span>
             </div>
-            <p className="text-[11px] text-gray-400 mt-0.5">
-              Kebijakan <strong>18+ Dewasa</strong> & <strong>Judi Online</strong> dikendalikan lewat Master Switch di atas dan diperbarui via GitHub. Seluruh feed teknis seperti <strong>Iklan, Pop-up, Tracker, Malware</strong>, dan list ISP dapat dikelola serta diaktifkan/dinonaktifkan satu per satu pada tabel di bawah.
-            </p>
           </div>
         </div>
       </div>
@@ -947,10 +932,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
                 <ShieldAlert className="w-4 h-4 text-cyan-400" />
                 Daftar Feed Filter (Iklan, Malware, Tracker & Hostlist)
               </h2>
-              <p className="text-xs text-gray-400 mt-1">
-                Kendalikan setiap feed secara mandiri dengan saklar toggle di kolom Status. (18+ & Judi Online dikelola di Master Switch atas).
-              </p>
-            </div>
+                          </div>
 
             <div className="relative w-full sm:w-64">
               <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
@@ -1049,10 +1031,7 @@ export const FilteringView: React.FC<FilteringViewProps> = ({ config, nodeId, on
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 Whitelisted Domain Rules (Pengecualian Pelanggan)
               </h2>
-              <p className="text-xs text-gray-400 mt-1">
-                Domain di dalam daftar ini memiliki prioritas tertinggi dan tidak akan pernah diblokir oleh filter 18+, Judi Online, Iklan, maupun Malware.
-              </p>
-            </div>
+                          </div>
 
             <div className="relative w-full sm:w-64">
               <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />

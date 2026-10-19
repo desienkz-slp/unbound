@@ -73,10 +73,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ initialDomain 
           <Search className="w-5 h-5 text-cyan-400" />
           Domain Diagnostics & "Why Blocked?" Inspector
         </h1>
-        <p className="text-xs text-gray-400 mt-1">
-          Perform explainable DNS policy inspection, simulate client IP context, and inspect exact rule sources and resolution latency.
-        </p>
-      </div>
+              </div>
 
       {/* Query Form */}
       <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 shadow-lg">
@@ -313,10 +310,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ initialDomain 
               Add Domain to Allowlist Exception
             </h2>
 
-            <p className="text-xs text-gray-400 leading-relaxed">
-              Whitelisting will override any blocklist or category policy across all client networks.
-            </p>
-
+            
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-300 mb-1">Target Domain</label>

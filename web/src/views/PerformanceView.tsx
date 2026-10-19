@@ -609,10 +609,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
               <Sliders className="w-5 h-5 text-cyan-400" />
               Tuning Performa &amp; Profil Hardware
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Optimasi parameter Unbound kernel, cache slab, dan manajemen rotasi log berdasarkan kapasitas hardware.
-            </p>
-          </div>
+                      </div>
         </div>
 
         <div className="flex flex-col items-center justify-center min-h-[380px] bg-[#0D1424] border border-slate-800 rounded-xl p-8 text-center space-y-4 shadow-xl">
@@ -621,9 +618,6 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-slate-200">Memuat Konfigurasi Hardware &amp; Profil...</h3>
-            <p className="text-xs text-slate-400 max-w-md">
-              Sedang mengambil status profil hardware, cache DNS, dan konfigurasi logrotate dari node {effectiveNodeId || 'aktif'}.
-            </p>
           </div>
         </div>
       </div>
@@ -644,10 +638,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
             <Cpu className="w-5 h-5 text-cyan-400" />
             Performance Engine &amp; Kernel Socket Tuning
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Optimize Unbound thread concurrency, cache slabs (power of 2), kernel buffer sizes, and reuseport.
-          </p>
-        </div>
+                  </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* AI One-Click Full-Stack Auto-Tune */}
@@ -1331,8 +1322,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 />
                 <div>
                   <span className="text-xs font-semibold text-white">Enable SO_REUSEPORT Multi-Socket Concurrency</span>
-                  <p className="text-[11px] text-gray-400">Allows each worker thread to have an independent UDP receive socket in the Linux kernel.</p>
-                </div>
+                                  </div>
               </label>
             </div>
           </div>
@@ -1358,10 +1348,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 <Zap className="w-5 h-5 text-amber-400" />
                 Cache Resiliency &amp; Anti-DDoS Subnet Rate Limiting
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Zero-latency cache proactive prefetch, offline fallback saat upstream down, dan mitigasi query flooding per-IP pelanggan.
-              </p>
-            </div>
+                          </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -1383,8 +1370,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                   <Zap className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Cache Resiliency Engine (Prefetch &amp; Serve-Expired)</h3>
-                  <p className="text-[11px] text-gray-400">Menjamin kecepatan browsing 0ms dan ketahanan saat internet upstream mengalami kendala.</p>
+                  <h3 className="text-sm font-bold text-white" title="Menjamin kecepatan browsing 0ms dan ketahanan saat internet upstream mengalami kendala.">Cache Resiliency Engine (Prefetch &amp; Serve-Expired)</h3>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1557,8 +1543,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                   <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Anti-DDoS Subnet Rate Limiting &amp; RRL Shield</h3>
-                  <p className="text-[11px] text-gray-400">Proteksi Response Rate Limiting (RRL) terhadap DNS Amplification Attack dan infeksi botnet.</p>
+                  <h3 className="text-sm font-bold text-white" title="Proteksi Response Rate Limiting (RRL) terhadap DNS Amplification Attack dan infeksi botnet.">Anti-DDoS Subnet Rate Limiting &amp; RRL Shield</h3>
                 </div>
               </div>
 
@@ -1747,10 +1732,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 <RotateCcw className="w-5 h-5 text-emerald-400" />
                 Host Log Rotation &amp; Storage Tuning (Logrotate)
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Pengelolaan dan auto-tuning rotasi file log query DNS Unbound agar tidak membebani kapasitas disk host server.
-              </p>
-            </div>
+                          </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -1996,10 +1978,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                   )}
                 </div>
                 <div className="text-[11px] text-emerald-400 font-mono mt-1">Daily • 3x • Max 25MB • Gzip</div>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Ideal untuk VPS / Edge node dengan disk &le;10GB atau pemakaian tinggi (&ge;75%).
-                </p>
-              </button>
+                              </button>
 
               {/* Preset 2 */}
               <button
@@ -2026,10 +2005,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                   )}
                 </div>
                 <div className="text-[11px] text-cyan-400 font-mono mt-1">Daily • 7x • Max 50MB • Gzip</div>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Ideal untuk server edge regional dengan disk 10GB–40GB. 1 minggu histori query.
-                </p>
-              </button>
+                              </button>
 
               {/* Preset 3 */}
               <button
@@ -2056,10 +2032,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                   )}
                 </div>
                 <div className="text-[11px] text-purple-400 font-mono mt-1">Weekly • 30x • Max 100MB • Gzip</div>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Ideal untuk ISP Core dengan disk &gt;40GB. Menyimpan hingga 30 hari audit query log.
-                </p>
-              </button>
+                              </button>
             </div>
           </div>
 
@@ -2154,8 +2127,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 />
                 <div>
                   <span className="text-xs font-semibold text-white">Kompresi Gzip (compress)</span>
-                  <p className="text-[10px] text-gray-400">Kompres file arsip dengan gzip (menghemat hingga ~90% ruang log).</p>
-                </div>
+                                  </div>
               </label>
 
               <label className="flex items-start gap-3 cursor-pointer">
@@ -2172,10 +2144,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 />
                 <div>
                   <span className="text-xs font-semibold text-white">Tunda Kompresi (delaycompress)</span>
-                  <p className="text-[10px] text-gray-400">
-                    Menunda kompresi 1 siklus untuk mencegah lonjakan CPU saat Unbound melayani DNS.
-                  </p>
-                </div>
+                                  </div>
               </label>
 
               <label className="flex items-start gap-3 cursor-pointer">
@@ -2192,8 +2161,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 />
                 <div>
                   <span className="text-xs font-semibold text-white">Rotasi Log Updater Netora</span>
-                  <p className="text-[10px] text-gray-400">Ikut merotasi /var/log/netora-dns/*.log via copytruncate.</p>
-                </div>
+                                  </div>
               </label>
             </div>
 

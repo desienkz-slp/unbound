@@ -455,8 +455,7 @@ export const WizardView: React.FC<WizardViewProps> = ({
               />
               <div>
                 <span className="text-xs font-bold text-white">Enable Strict DNSSEC Validation</span>
-                <p className="text-[11px] text-gray-400">Uses IANA RFC 5011 auto-trust-anchor file (/var/lib/unbound/root.key).</p>
-              </div>
+                              </div>
             </label>
           </div>
         )}
@@ -482,8 +481,7 @@ export const WizardView: React.FC<WizardViewProps> = ({
                 />
                 <div>
                   <span className="text-xs font-bold text-white">Enable High-Performance Threat Filtering</span>
-                  <p className="text-[11px] text-gray-400">Sinkhole known phishing, malware, and botnet command-and-control domains.</p>
-                </div>
+                                  </div>
               </label>
 
               <label className="flex items-center gap-3 cursor-pointer p-4 bg-gray-950 border border-gray-800 rounded-lg">
@@ -495,8 +493,7 @@ export const WizardView: React.FC<WizardViewProps> = ({
                 />
                 <div>
                   <span className="text-xs font-bold text-white">Enforce SafeSearch for Google & Bing</span>
-                  <p className="text-[11px] text-gray-400">Directs search engine queries to forcesafesearch VIPs.</p>
-                </div>
+                                  </div>
               </label>
             </div>
           </div>
