@@ -159,3 +159,34 @@ func TestNormalizeIncomingNumTCP(t *testing.T) {
 		t.Errorf("explicit incoming_num_tcp overwritten: got %d", p.IncomingNumTCP)
 	}
 }
+
+func TestNormalizeAntiDropBuffers(t *testing.T) {
+	p := PerformanceConfig{}
+	p.Normalize()
+	if p.JostleTimeout != 200 {
+		t.Errorf("omitted jostle_timeout: got %d want 200", p.JostleTimeout)
+	}
+	if p.NumQueriesPerThread < 4096 {
+		t.Errorf("expected NumQueriesPerThread >= 4096, got %d", p.NumQueriesPerThread)
+	}
+	if p.OutgoingRange < 16384 {
+		t.Errorf("expected OutgoingRange >= 16384, got %d", p.OutgoingRange)
+	}
+
+	// Custom higher values should be preserved
+	p2 := PerformanceConfig{
+		NumQueriesPerThread: 8192,
+		OutgoingRange:       32768,
+		JostleTimeout:       300,
+	}
+	p2.Normalize()
+	if p2.JostleTimeout != 300 {
+		t.Errorf("explicit jostle_timeout overwritten: got %d want 300", p2.JostleTimeout)
+	}
+	if p2.NumQueriesPerThread != 8192 {
+		t.Errorf("explicit NumQueriesPerThread overwritten: got %d want 8192", p2.NumQueriesPerThread)
+	}
+	if p2.OutgoingRange != 32768 {
+		t.Errorf("explicit OutgoingRange overwritten: got %d want 32768", p2.OutgoingRange)
+	}
+}

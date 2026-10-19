@@ -106,13 +106,17 @@ type PerformanceConfig struct {
 	NumQueriesPerThread int                `json:"num_queries_per_thread"`
 	OutgoingRange       int                `json:"outgoing_range"`
 	IncomingNumTCP      int                `json:"incoming_num_tcp"`
-	SoRcvBuf            string             `json:"so_rcvbuf"` // e.g. "8m"
-	SoSndBuf            string             `json:"so_sndbuf"` // e.g. "8m"
+	JostleTimeout       int                `json:"jostle_timeout"` // timeout in msec when overloaded to prevent drops (default 200)
+	SoRcvBuf            string             `json:"so_rcvbuf"`       // e.g. "8m"
+	SoSndBuf            string             `json:"so_sndbuf"`       // e.g. "8m"
 	SoReuseport         bool               `json:"so_reuseport"`
 }
 
 // defaultCacheSlabs is used when a client omits a slabs value (zero in JSON).
 const defaultCacheSlabs = 4
+
+// defaultJostleTimeout prevents slow/stalled upstream queries from starving the requestlist buffer.
+const defaultJostleTimeout = 200
 
 // floorPow2 returns the largest power of two <= n, or def when n < 1.
 // Unbound rejects slabs that are not a power of two.
@@ -148,6 +152,15 @@ func (p *PerformanceConfig) Normalize() {
 	p.NormalizeSlabs()
 	if p.IncomingNumTCP < 1 {
 		p.IncomingNumTCP = defaultIncomingNumTCP
+	}
+	if p.JostleTimeout < 1 {
+		p.JostleTimeout = defaultJostleTimeout
+	}
+	if p.NumQueriesPerThread < 1024 {
+		p.NumQueriesPerThread = 4096
+	}
+	if p.OutgoingRange < 4096 {
+		p.OutgoingRange = 16384
 	}
 }
 
@@ -613,11 +626,18 @@ func AutoTunePerformance(cores int, ramMB int) PerformanceConfig {
 
 	numQueries := 4096
 	outgoing := 16384
-	incomingTCP := 1024
-	rcvBuf := "4m"
-	sndBuf := "4m"
+	incomingTCP := 2048
+	rcvBuf := "8m"
+	sndBuf := "8m"
+	jostleTimeout := defaultJostleTimeout
 
-	if profile == ProfileISP {
+	if profile == ProfileSmall {
+		numQueries = 2048
+		outgoing = 8192
+		incomingTCP = 1024
+		rcvBuf = "4m"
+		sndBuf = "4m"
+	} else if profile == ProfileISP || profile == ProfileLarge {
 		numQueries = 8192
 		outgoing = 32768
 		incomingTCP = 4096
@@ -635,6 +655,7 @@ func AutoTunePerformance(cores int, ramMB int) PerformanceConfig {
 		NumQueriesPerThread: numQueries,
 		OutgoingRange:       outgoing,
 		IncomingNumTCP:      incomingTCP,
+		JostleTimeout:       jostleTimeout,
 		SoRcvBuf:            rcvBuf,
 		SoSndBuf:            sndBuf,
 		SoReuseport:         true,

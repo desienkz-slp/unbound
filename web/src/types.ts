@@ -61,6 +61,8 @@ export interface DesiredState {
     so_sndbuf: string;
     num_queries_per_thread: number;
     outgoing_range: number;
+    incoming_num_tcp?: number;
+    jostle_timeout?: number;
   };
   dnssec: {
     enabled: boolean;

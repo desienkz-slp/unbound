@@ -113,6 +113,7 @@ server:
   num-queries-per-thread: {{ .Performance.NumQueriesPerThread }}
   outgoing-range: {{ .Performance.OutgoingRange }}
   incoming-num-tcp: {{ .Performance.IncomingNumTCP }}
+  jostle-timeout: {{ if gt .Performance.JostleTimeout 0 }}{{ .Performance.JostleTimeout }}{{ else }}200{{ end }}
   so-rcvbuf: {{ .Performance.SoRcvBuf }}
   so-sndbuf: {{ .Performance.SoSndBuf }}
   so-reuseport: {{ if .Performance.SoReuseport }}yes{{ else }}no{{ end }}
