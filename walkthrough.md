@@ -148,4 +148,23 @@ Tuning ISP untuk 20.000 client telah diterapkan secara live di kedua server:
    - `total.num.queries_timed_out = 0` pada kedua server pasca-reload.
    - Buffer kapasitas antrean: `32.768` query bersamaan per node dengan `jostle-timeout: 200` ms dan upstream fast UDP port 53.
 
+---
+
+## 6. Penetapan Aturan Mutlak: Larangan Merubah Settingan Lokal Saat Update
+
+Sesuai instruksi mutlak pengguna, telah ditetapkan aturan SSOT proyek pada [`.agents/AGENTS.md`](.agents/AGENTS.md) dan [`.agents/rules/09-preserve-local-config.md`](.agents/rules/09-preserve-local-config.md):
+
+1. **Anti-Overwrite State Lokal:**
+   - Setiap pembaruan kode, build biner, perbaikan logika, sinkronisasi UI, atau deploy **DILARANG MERUBAH / MERESET** settingan lokal yang sedang aktif dan berjalan di server produksi.
+2. **Entitas yang Wajib Dipertahankan:**
+   - Kredensial & password user admin.
+   - Forwarder upstream yang telah disetel.
+   - Listener IP address aktif.
+   - Subnet klien / access-control (`client_networks`).
+   - Filter, whitelist, blacklist, and policy profiles.
+   - Konfigurasi Unbound aktif di PostgreSQL dan file sistem.
+3. **Pola Evolusi Non-Destruktif:**
+   - Update biner aplikasi tidak boleh menyentuh database konfigurasi yang sudah hidup kecuali penambahan field baru yang bersifat *additive* (hanya mengisi default bila field belum ada / *fill missing*).
+
+
 
