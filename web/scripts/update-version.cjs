@@ -5,6 +5,7 @@ const path = require('path');
 let commitCount = 44;
 let shortSha = 'de28649';
 let branch = 'main';
+let baseTag = '';
 
 try {
   commitCount = parseInt(execSync('git rev-list --count HEAD').toString().trim(), 10);
@@ -14,15 +15,35 @@ try {
   console.warn('Git query warning:', e.message);
 }
 
-// When building, account for the current pending commit to GitHub
+// Tag-based semver: vX.Y from latest tag, patch = commits since that tag.
+// Falls back to v1.0.<commitCount> when no tag exists yet.
 try {
-  const status = execSync('git status --porcelain').toString().trim();
-  if (status.length > 0) {
-    commitCount += 1;
-  }
-} catch (e) {}
+  baseTag = execSync('git describe --tags --abbrev=0').toString().trim();
+} catch (e) {
+  baseTag = '';
+}
 
-const version = `v1.0.${commitCount}`;
+let version;
+if (baseTag && /^v\d+\.\d+$/.test(baseTag)) {
+  let commitsSinceTag = parseInt(execSync(`git rev-list --count ${baseTag}..HEAD`).toString().trim(), 10);
+  // Account for the pending commit about to be made (uncommitted changes at build time)
+  try {
+    const status = execSync('git status --porcelain').toString().trim();
+    if (status.length > 0) {
+      commitsSinceTag += 1;
+    }
+  } catch (e) {}
+  version = `${baseTag}.${commitsSinceTag}`;
+} else {
+  // Legacy fallback: no tag yet
+  try {
+    const status = execSync('git status --porcelain').toString().trim();
+    if (status.length > 0) {
+      commitCount += 1;
+    }
+  } catch (e) {}
+  version = `v1.0.${commitCount}`;
+}
 const versionData = {
   version,
   commit_count: commitCount,
