@@ -171,6 +171,8 @@ function ensureDefaults(cfg: DesiredState | null): DesiredState | null {
       qname_minimisation: f?.qname_minimisation ?? true,
       hide_identity: f?.hide_identity ?? true,
       hide_version: f?.hide_version ?? true,
+      log_queries: f?.log_queries ?? false,
+      log_replies: f?.log_replies ?? false,
     },
     rate_limit: {
       enabled: r?.enabled ?? false,
@@ -1708,6 +1710,101 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
               <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
               <span>
                 <strong>Catatan Keamanan NOC:</strong> Pengaturan <code className="text-rose-300">ip-ratelimit</code> dan <code className="text-orange-300">ratelimit</code> beroperasi langsung di level kernel Unbound C-threads. Menghentikan botnet dari mengeksploitasi resolver ISP sebagai amplifier serangan DDoS global (amplification vector) sekaligus menjaga latensi pengguna legal tetap normal.
+              </span>
+            </div>
+          </div>
+
+          {/* ── Card 3: Query & Reply Logging Engine (Disk I/O Safeguard) ─────────────── */}
+          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-800 gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white" title="Kontrol logging query & reply Unbound untuk menghemat disk I/O di jaringan throughput tinggi.">Query &amp; Reply Logging (Disk I/O Safeguard)</h3>
+                  <p className="text-[11px] text-gray-400">
+                    Menonaktifkan logging query/reply sangat direkomendasikan untuk ISP (&ge; 10.000 QPS) agar terhindar dari disk stall dan bloat <code>/var/log/unbound/unbound.log</code>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLocalConfig({
+                      ...localConfig,
+                      features: {
+                        ...localConfig.features,
+                        log_queries: false,
+                        log_replies: false,
+                      },
+                    })
+                  }
+                  className="px-2.5 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 rounded text-[11px] font-semibold transition-all active:scale-95"
+                >
+                  ISP Safe (Matikan Semua)
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Toggle 1: log-queries */}
+              <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-3.5 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="feature_log_queries"
+                  checked={localConfig.features.log_queries ?? false}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      features: {
+                        ...localConfig.features,
+                        log_queries: e.target.checked,
+                      },
+                    })
+                  }
+                  className="mt-1 rounded bg-gray-900 border-gray-700 text-cyan-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="feature_log_queries" className="cursor-pointer">
+                  <span className="text-xs font-semibold text-white block">Log Queries (<code className="text-cyan-400">log-queries</code>)</span>
+                  <span className="text-[11px] text-gray-400 leading-relaxed block mt-0.5">
+                    Mencatat setiap request query DNS domain ke file log. <em>Matikan (OFF) di server produksi throughput tinggi untuk menghemat CPU &amp; I/O disk.</em>
+                  </span>
+                </label>
+              </div>
+
+              {/* Toggle 2: log-replies */}
+              <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-3.5 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="feature_log_replies"
+                  checked={localConfig.features.log_replies ?? false}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      features: {
+                        ...localConfig.features,
+                        log_replies: e.target.checked,
+                      },
+                    })
+                  }
+                  className="mt-1 rounded bg-gray-900 border-gray-700 text-cyan-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="feature_log_replies" className="cursor-pointer">
+                  <span className="text-xs font-semibold text-white block">Log Replies (<code className="text-cyan-400">log-replies</code>)</span>
+                  <span className="text-[11px] text-gray-400 leading-relaxed block mt-0.5">
+                    Mencatat durasi resolusi waktu reply (seconds) dan status cache hit/miss per query ke file log. <em>Matikan (OFF) untuk performa maksimal.</em>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-gray-950/60 border border-gray-800/80 rounded-lg p-3 text-[11px] text-gray-400 flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+              <span>
+                <strong>Catatan Netora Telemetri:</strong> Mematikan <code>log-queries</code> &amp; <code>log-replies</code> tidak merusak statistik dashboard. Metrik global (Total Queries, Cache Hits/Misses, Upstream Latency, Memory) tetap diambil secara real-time langsung dari memory engine Unbound via <code>unbound-control stats_noreset</code>.
               </span>
             </div>
           </div>

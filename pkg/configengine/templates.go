@@ -45,8 +45,8 @@ server:
   use-caps-for-id: yes
   use-syslog: no
   logfile: "/var/log/unbound/unbound.log"
-  log-queries: yes
-  log-replies: yes
+  log-queries: {{ if .Features.LogQueries }}yes{{ else }}no{{ end }}
+  log-replies: {{ if .Features.LogReplies }}yes{{ else }}no{{ end }}
   verbosity: 1
 
   # --- Anti-DNS Rebinding Protection (RFC 1918 / RFC 4193 / RFC 3927) ---

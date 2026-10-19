@@ -187,6 +187,8 @@ type FeatureConfig struct {
 	QnameMinimisation        bool `json:"qname_minimisation"`
 	HideIdentity             bool `json:"hide_identity"`
 	HideVersion              bool `json:"hide_version"`
+	LogQueries               bool `json:"log_queries"` // Enable detailed per-query file logging (default false for high-throughput ISP)
+	LogReplies               bool `json:"log_replies"` // Enable per-reply resolution time logging (default false for high-throughput ISP)
 }
 
 // RateLimitConfig defines Anti-DDoS and Response Rate Limiting (RRL) protection.
@@ -405,6 +407,8 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			QnameMinimisation:         false, // Disabled by default for ISP resolvers to avoid NXDOMAIN on non-compliant CDN GSLBs (e.g. Baishan, Shopee)
 			HideIdentity:              true,
 			HideVersion:               true,
+			LogQueries:                false, // Disabled by default for ISP performance (prevents disk bloat)
+			LogReplies:                false, // Disabled by default for ISP performance (prevents disk bloat)
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,

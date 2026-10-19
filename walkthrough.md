@@ -166,5 +166,33 @@ Sesuai instruksi mutlak pengguna, telah ditetapkan aturan SSOT proyek pada [`.ag
 3. **Pola Evolusi Non-Destruktif:**
    - Update biner aplikasi tidak boleh menyentuh database konfigurasi yang sudah hidup kecuali penambahan field baru yang bersifat *additive* (hanya mengisi default bila field belum ada / *fill missing*).
 
+---
 
+## 7. Implementasi Fitur Kontrol Query & Reply Logging (`log-queries` & `log-replies`)
 
+Sesuai permintaan, fitur kontrol `log-queries` dan `log-replies` telah diimplementasikan secara end-to-end dari backend, template engine, hingga Web UI dashboard:
+
+1. **Backend Model (`pkg/model/config.go`):**
+   - Menambahkan field `LogQueries bool` dan `LogReplies bool` pada struct `FeatureConfig`.
+   - Menetapkan nilai default `false` pada `NewDefaultDesiredState()` sehingga aman untuk beban tinggi ISP (mencegah disk I/O stall dan log bloat).
+   - Bersifat non-destruktif dan 100% backward-compatible dengan record database JSON eksisting.
+2. **Template Engine Unbound (`pkg/configengine/templates.go`):**
+   - Mengubah baris statis menjadi render dinamis:
+     ```gotemplate
+     log-queries: {{ if .Features.LogQueries }}yes{{ else }}no{{ end }}
+     log-replies: {{ if .Features.LogReplies }}yes{{ else }}no{{ end }}
+     ```
+3. **Unit Test (`pkg/configengine/generator_test.go`):**
+   - Menambahkan test case `TestGenerator_LogQueriesAndReplies` yang memverifikasi kedua kondisi (`false` -> `no`, `true` -> `yes`).
+   - Lulus uji regresi `go test ./...` (100% PASS).
+4. **Web UI & Dashboard Control:**
+   - **`web/src/types.ts`**: Menambahkan deklarasi tipe TypeScript `log_queries?: boolean` dan `log_replies?: boolean`.
+   - **`web/src/views/PerformanceView.tsx`**:
+     - Menambahkan Card 3: **Query & Reply Logging (Disk I/O Safeguard)** lengkap dengan toggle visual individual, tombol pintas *ISP Safe (Matikan Semua)*, dan panduan NOC.
+     - Memperbarui fungsi normalisasi konfigurasi agar state tersimpan dengan benar.
+   - **`web/src/views/DNSConfigView.tsx`**:
+     - Menambahkan bagian **Disk I/O & Logging Control** di bawah subtab *Cache & Prefetch* agar operator dapat mengatur logging langsung dari menu konfigurasi DNS.
+   - **`web/src/views/WizardView.tsx`**: Menetapkan default aman `false`.
+5. **Verifikasi Build:**
+   - Kompilasi frontend `npm run build` sukses 100% dan bundle disinkronkan ke `deploy/ui/`.
+   - Kompilasi backend Go (`go build ./cmd/netora-api`) berjalan bersih tanpa error.

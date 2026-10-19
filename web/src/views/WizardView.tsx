@@ -154,6 +154,8 @@ export const WizardView: React.FC<WizardViewProps> = ({
           qname_minimisation: true,
           hide_identity: true,
           hide_version: true,
+          log_queries: false,
+          log_replies: false,
         },
         safe_search: {
           enabled: enableSafeSearch,

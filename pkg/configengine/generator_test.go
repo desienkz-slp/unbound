@@ -305,3 +305,41 @@ func TestGenerator_NodeDnsRewrites(t *testing.T) {
 	}
 }
 
+func TestGenerator_LogQueriesAndReplies(t *testing.T) {
+	gen, err := NewGenerator()
+	if err != nil {
+		t.Fatalf("failed to create generator: %v", err)
+	}
+
+	// Case 1: Default (false) -> log-queries: no, log-replies: no
+	stateDefault := model.NewDefaultDesiredState("node-01", 2, 2048)
+	resDefault, err := gen.Generate(stateDefault, "/etc/unbound")
+	if err != nil {
+		t.Fatalf("failed to generate default config: %v", err)
+	}
+	mainConfDefault := string(resDefault.Files[0].Content)
+	if !strings.Contains(mainConfDefault, "log-queries: no") {
+		t.Errorf("expected log-queries: no by default")
+	}
+	if !strings.Contains(mainConfDefault, "log-replies: no") {
+		t.Errorf("expected log-replies: no by default")
+	}
+
+	// Case 2: Explicit true -> log-queries: yes, log-replies: yes
+	stateActive := model.NewDefaultDesiredState("node-02", 2, 2048)
+	stateActive.Features.LogQueries = true
+	stateActive.Features.LogReplies = true
+	resActive, err := gen.Generate(stateActive, "/etc/unbound")
+	if err != nil {
+		t.Fatalf("failed to generate active logging config: %v", err)
+	}
+	mainConfActive := string(resActive.Files[0].Content)
+	if !strings.Contains(mainConfActive, "log-queries: yes") {
+		t.Errorf("expected log-queries: yes when enabled")
+	}
+	if !strings.Contains(mainConfActive, "log-replies: yes") {
+		t.Errorf("expected log-replies: yes when enabled")
+	}
+}
+
+

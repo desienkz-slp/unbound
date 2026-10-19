@@ -81,6 +81,8 @@ export interface DesiredState {
     qname_minimisation: boolean;
     hide_identity: boolean;
     hide_version: boolean;
+    log_queries?: boolean;
+    log_replies?: boolean;
   };
   rate_limit?: RateLimitConfig;
   safe_search: {

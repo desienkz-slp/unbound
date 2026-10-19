@@ -1727,6 +1727,52 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                 <span className="text-xs font-semibold text-white">Enable Serve-Expired Resilience</span>
                               </div>
             </label>
+
+            <div className="pt-3 border-t border-gray-800/60 space-y-3">
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                Disk I/O &amp; Logging Control
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={localState.features.log_queries ?? false}
+                  onChange={(e) =>
+                    setLocalState({
+                      ...localState,
+                      features: { ...localState.features, log_queries: e.target.checked },
+                    })
+                  }
+                  className="rounded bg-gray-950 border-gray-700 text-cyan-500 w-4 h-4"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-white">Log DNS Queries (log-queries)</span>
+                  <span className="text-[11px] text-gray-400 block">
+                    Mencatat seluruh nama domain query yang masuk ke file log. (Rekomendasi ISP: Nonaktifkan untuk mencegah disk I/O bottleneck).
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={localState.features.log_replies ?? false}
+                  onChange={(e) =>
+                    setLocalState({
+                      ...localState,
+                      features: { ...localState.features, log_replies: e.target.checked },
+                    })
+                  }
+                  className="rounded bg-gray-950 border-gray-700 text-cyan-500 w-4 h-4"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-white">Log DNS Replies (log-replies)</span>
+                  <span className="text-[11px] text-gray-400 block">
+                    Mencatat waktu resolusi dan cache hit/miss setiap reply. (Rekomendasi ISP: Nonaktifkan untuk performa tinggi).
+                  </span>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       )}
