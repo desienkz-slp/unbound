@@ -233,9 +233,17 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
       const rep = await api.getLogrotateReport(effectiveNodeId);
       setLogrotateReport(rep);
       if (rep.active_policy && rep.active_policy.frequency) {
-        setLogrotatePolicy(rep.active_policy);
+        setLogrotatePolicy({
+          ...logrotatePolicy,
+          ...rep.active_policy,
+          auto_purge: rep.active_policy.auto_purge ?? logrotatePolicy.auto_purge ?? true,
+          auto_purge_threshold: rep.active_policy.auto_purge_threshold ?? logrotatePolicy.auto_purge_threshold ?? 75,
+        });
       } else if (rep.ai_recommendation?.recommended_policy) {
-        setLogrotatePolicy(rep.ai_recommendation.recommended_policy);
+        setLogrotatePolicy({
+          ...logrotatePolicy,
+          ...rep.ai_recommendation.recommended_policy,
+        });
       }
     } catch (err: any) {
       console.warn('Failed to fetch logrotate report:', err);
