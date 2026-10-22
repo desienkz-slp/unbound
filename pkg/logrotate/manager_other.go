@@ -10,7 +10,7 @@ import (
 	"netora-dns/pkg/model"
 )
 
-func inspectHostLogrotate(ctx context.Context, nodeID string, cores int, ramMB int, diskTotalGB int, diskFreeGB int) (*LogrotateReport, error) {
+func inspectHostLogrotate(_ context.Context, nodeID string, cores int, ramMB int, diskTotalGB int, diskFreeGB int) (*LogrotateReport, error) {
 	telemetry := LogTelemetry{
 		UnboundLogSizeBytes:   24 * 1024 * 1024,
 		UnboundLogSizeHuman:   "24.0 MB",
@@ -50,7 +50,7 @@ func inspectHostLogrotate(ctx context.Context, nodeID string, cores int, ramMB i
 	}, nil
 }
 
-func applyHostLogrotate(ctx context.Context, policy model.LogrotateConfig) (*ApplyResult, error) {
+func applyHostLogrotate(_ context.Context, policy model.LogrotateConfig) (*ApplyResult, error) {
 	unboundConf := GenerateUnboundConfig(policy)
 	netoraConf := ""
 	if policy.RotateNetora {
@@ -66,7 +66,7 @@ func applyHostLogrotate(ctx context.Context, policy model.LogrotateConfig) (*App
 	}, nil
 }
 
-func testHostLogrotate(ctx context.Context, policy *model.LogrotateConfig) (string, error) {
+func testHostLogrotate(_ context.Context, policy *model.LogrotateConfig) (string, error) {
 	p := model.LogrotateConfig{
 		Enabled:       true,
 		Frequency:     "daily",
@@ -82,6 +82,6 @@ func testHostLogrotate(ctx context.Context, policy *model.LogrotateConfig) (stri
 	return "Simulated dry-run test (logrotate -d):\n" + conf, nil
 }
 
-func forceRotateHost(ctx context.Context) (string, error) {
+func forceRotateHost(_ context.Context) (string, error) {
 	return "Simulated force rotation completed: /var/log/unbound/unbound.log rotated.", nil
 }

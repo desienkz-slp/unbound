@@ -451,7 +451,7 @@ func (e *Engine) writeFiles(targetDir string, files []RenderedFile) error {
 }
 
 // atomicCopyFiles copies staged files into the destination directory using atomic write-and-rename.
-func (e *Engine) atomicCopyFiles(sourceDir, destDir string, files []RenderedFile) error {
+func (e *Engine) atomicCopyFiles(_ /* sourceDir */, destDir string, files []RenderedFile) error {
 	for _, f := range files {
 		targetPath := filepath.Join(destDir, f.RelativePath)
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0750); err != nil {

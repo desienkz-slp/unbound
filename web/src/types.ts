@@ -45,11 +45,11 @@ export interface DesiredState {
   cache: {
     msg_cache_size: string;
     rrset_cache_size: string;
-    key_cache_size: string;
-    neg_cache_size: string;
-    min_ttl: number;
-    max_ttl: number;
-    infra_host_ttl: number;
+    key_cache_size?: string;
+    neg_cache_size?: string;
+    min_ttl?: number;
+    max_ttl?: number;
+    infra_host_ttl?: number;
   };
   performance: {
     profile: string;
@@ -78,9 +78,9 @@ export interface DesiredState {
     serve_expired_ttl: number;
     serve_expired_client_timeout: number;
     serve_expired_ttl_reset?: boolean;
-    qname_minimisation: boolean;
-    hide_identity: boolean;
-    hide_version: boolean;
+    qname_minimisation?: boolean;
+    hide_identity?: boolean;
+    hide_version?: boolean;
     log_queries?: boolean;
     log_replies?: boolean;
   };
@@ -151,6 +151,18 @@ export interface LogrotatePolicy {
   compress: boolean;
   delay_compress: boolean;
   rotate_netora: boolean;
+  auto_purge?: boolean;
+  auto_purge_threshold?: number; // 50, 75, or 90
+}
+
+export interface PurgeStatus {
+  active: boolean;
+  threshold_pct: number;
+  last_check_at?: string;
+  last_purge_at?: string;
+  files_purged: number;
+  bytes_reclaimed: number;
+  current_disk_pct: number;
 }
 
 export interface LogTelemetry {
@@ -187,6 +199,7 @@ export interface LogrotateReport {
   active_config_raw: string;
   telemetry: LogTelemetry;
   ai_recommendation: LogrotateAIRecommendation;
+  auto_purge_status?: PurgeStatus;
 }
 
 export interface LogrotateApplyResult {

@@ -195,7 +195,7 @@ const LocalRecordsTemplate = `# ================================================
 server:
 {{- range .LocalRecords }}
 {{- if eq .Type "PTR" }}
-  local-data-ptr: "{{ .Value }} {{ .Domain }}"
+  local-data-ptr: "{{ .Value }} {{ ensureFQDN .Domain }}"
 {{- else if hasWildcardPrefix .Domain }}
   local-zone: "{{ trimWildcardPrefix .Domain }}" redirect
   local-data: "{{ trimWildcardPrefix .Domain }} {{ if .TTL }}{{ .TTL }} {{ end }}{{ .Type }} {{ .Value }}"

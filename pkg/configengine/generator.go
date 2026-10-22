@@ -231,6 +231,15 @@ func CleanDomain(raw string) string {
 	return raw
 }
 
+// ensureFQDN appends a trailing dot to make a hostname a fully-qualified domain
+// name, which Unbound requires for PTR local-data-ptr directives.
+func ensureFQDN(domain string) string {
+	if domain == "" || strings.HasSuffix(domain, ".") {
+		return domain
+	}
+	return domain + "."
+}
+
 // hasWildcardPrefix reports whether a DNS Rewrite domain starts with "*."
 // (i.e., the user wants a catch-all wildcard redirect zone in Unbound).
 func hasWildcardPrefix(domain string) bool {
@@ -333,6 +342,7 @@ func NewGenerator() (*Generator, error) {
 	wildcardFuncs := template.FuncMap{
 		"hasWildcardPrefix":  hasWildcardPrefix,
 		"trimWildcardPrefix": trimWildcardPrefix,
+		"ensureFQDN":         ensureFQDN,
 	}
 	records, err := template.New("records").Funcs(wildcardFuncs).Parse(LocalRecordsTemplate)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -221,6 +222,9 @@ func (t *QueryLogTailer) streamJournalFallback(ctx context.Context) {
 				break
 			}
 			t.parseLine(scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("journal scanner error: %v", err)
 		}
 		_ = cmd.Wait()
 

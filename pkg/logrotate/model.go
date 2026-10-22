@@ -43,6 +43,7 @@ type LogrotateReport struct {
 	ActiveConfigRaw  string                `json:"active_config_raw"`
 	Telemetry        LogTelemetry          `json:"telemetry"`
 	AIRecommendation AIRecommendation      `json:"ai_recommendation"`
+	AutoPurgeStatus  PurgeStatus           `json:"auto_purge_status"`
 }
 
 // ApplyResult contains the outcome of applying and validating a logrotate policy.

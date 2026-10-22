@@ -98,6 +98,8 @@ function getFallbackAILogrotatePolicy(diskTotalGB: number, diskFreeGB: number, c
       compress: true,
       delay_compress: true,
       rotate_netora: true,
+      auto_purge: true,
+      auto_purge_threshold: 50,
     };
   }
   if (diskTotalGB >= 40 && diskFreeGB >= 10 && usedPct < 70) {
@@ -109,6 +111,8 @@ function getFallbackAILogrotatePolicy(diskTotalGB: number, diskFreeGB: number, c
       compress: true,
       delay_compress: cores <= 4,
       rotate_netora: true,
+      auto_purge: true,
+      auto_purge_threshold: 90,
     };
   }
   return {
@@ -119,6 +123,8 @@ function getFallbackAILogrotatePolicy(diskTotalGB: number, diskFreeGB: number, c
     compress: true,
     delay_compress: true,
     rotate_netora: true,
+    auto_purge: true,
+    auto_purge_threshold: 75,
   };
 }
 
@@ -209,6 +215,8 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
     compress: true,
     delay_compress: true,
     rotate_netora: true,
+    auto_purge: true,
+    auto_purge_threshold: 75,
   });
   const [savingLogrotate, setSavingLogrotate] = useState(false);
   const [testingLogrotate, setTestingLogrotate] = useState(false);
@@ -2261,6 +2269,72 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                   <span className="text-xs font-semibold text-white">Rotasi Log Updater Netora</span>
                                   </div>
               </label>
+            </div>
+
+            {/* NVR-Style Auto-Purge Controls */}
+            <div className="mt-4 p-3 rounded-xl border border-cyan-900/40 bg-cyan-950/20">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-cyan-300">🗑️ Auto-Purge Arsip (NVR Mode)</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={logrotatePolicy.auto_purge ?? false}
+                    onChange={(e) =>
+                      setLogrotatePolicy({
+                        ...logrotatePolicy,
+                        auto_purge: e.target.checked,
+                      })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:bg-cyan-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                </label>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-2">
+                Otomatis hapus arsip <code className="text-cyan-400">.gz</code> tertua saat pemakaian disk mencapai threshold — seperti NVR CCTV yang menghapus rekaman lama.
+              </p>
+              {logrotatePolicy.auto_purge && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-gray-300">Threshold:</span>
+                  {[50, 75, 90].map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setLogrotatePolicy({ ...logrotatePolicy, auto_purge_threshold: t })}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        (logrotatePolicy.auto_purge_threshold ?? 75) === t
+                          ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/30'
+                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                      }`}
+                    >
+                      {t}%
+                    </button>
+                  ))}
+                  <span className="text-[10px] text-gray-500 ml-auto">
+                    {(logrotatePolicy.auto_purge_threshold ?? 75) <= 50
+                      ? 'Agresif — cocok untuk disk kecil'
+                      : (logrotatePolicy.auto_purge_threshold ?? 75) <= 75
+                        ? 'Seimbang — default untuk sebagian besar server'
+                        : 'Konservatif — simpan arsip selama mungkin'}
+                  </span>
+                </div>
+              )}
+              {logrotateReport?.auto_purge_status?.active && (
+                <div className="mt-2 pt-2 border-t border-gray-800 flex items-center gap-4 text-[10px] text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Aktif
+                  </span>
+                  <span>Disk: {logrotateReport.auto_purge_status.current_disk_pct}%</span>
+                  {logrotateReport.auto_purge_status.files_purged > 0 && (
+                    <span>Total dihapus: {logrotateReport.auto_purge_status.files_purged} file</span>
+                  )}
+                  {logrotateReport.auto_purge_status.last_purge_at && (
+                    <span>Terakhir: {new Date(logrotateReport.auto_purge_status.last_purge_at).toLocaleString('id-ID')}</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Live Config Preview */}

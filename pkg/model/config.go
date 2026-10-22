@@ -261,13 +261,15 @@ type NodeMetadata struct {
 
 // LogrotateConfig defines the automated and custom log rotation policy for the node host.
 type LogrotateConfig struct {
-	Enabled       bool   `json:"enabled"`
-	Frequency     string `json:"frequency"`      // "daily", "weekly", "monthly"
-	RotateCount   int    `json:"rotate_count"`   // 1 - 90
-	MaxSize       string `json:"max_size"`       // e.g. "25M", "50M", "100M"
-	Compress      bool   `json:"compress"`       // gzip
-	DelayCompress bool   `json:"delay_compress"` // delaycompress
-	RotateNetora  bool   `json:"rotate_netora"`  // rotate /var/log/netora-dns/*.log
+	Enabled            bool   `json:"enabled"`
+	Frequency          string `json:"frequency"`             // "daily", "weekly", "monthly"
+	RotateCount        int    `json:"rotate_count"`          // 1 - 90
+	MaxSize            string `json:"max_size"`              // e.g. "25M", "50M", "100M"
+	Compress           bool   `json:"compress"`              // gzip
+	DelayCompress      bool   `json:"delay_compress"`        // delaycompress
+	RotateNetora       bool   `json:"rotate_netora"`         // rotate /var/log/netora-dns/*.log
+	AutoPurge          bool   `json:"auto_purge"`            // NVR-style: auto-delete oldest .gz when disk threshold reached
+	AutoPurgeThreshold int    `json:"auto_purge_threshold"`  // Disk usage % trigger: 50, 75, or 90 (default 75)
 }
 
 // FeedConfig defines a blocklist feed source configurable per-node.

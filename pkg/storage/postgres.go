@@ -498,6 +498,9 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 				upstreams = append(upstreams, u)
 			}
 		}
+		if err := uRows.Err(); err != nil {
+			return nil, fmt.Errorf("reading upstreams rows: %w", err)
+		}
 		if len(upstreams) > 0 {
 			state.Upstreams = upstreams
 		}
