@@ -13,10 +13,11 @@ func TestEnsureNodeDnsRewrites_SingleIP(t *testing.T) {
 		t.Fatalf("expected EnsureNodeDnsRewrites to return true on initial injection")
 	}
 
-	if len(state.LocalRecords) != 1 {
-		t.Fatalf("expected exactly 1 DNS rewrite, got %d", len(state.LocalRecords))
+	if len(state.LocalRecords) != 2 {
+		t.Fatalf("expected exactly 2 DNS rewrites (A+PTR), got %d", len(state.LocalRecords))
 	}
 
+	// Verify A record
 	rec := state.LocalRecords[0]
 	if rec.Domain != "dns-node-01" {
 		t.Errorf("expected domain 'dns-node-01', got '%s'", rec.Domain)
@@ -28,13 +29,19 @@ func TestEnsureNodeDnsRewrites_SingleIP(t *testing.T) {
 		t.Errorf("expected IP '172.18.20.145', got '%s'", rec.Value)
 	}
 
+	// Verify PTR record
+	ptr := state.LocalRecords[1]
+	if ptr.Type != "PTR" || ptr.Value != "172.18.20.145" {
+		t.Errorf("expected PTR for 172.18.20.145, got %+v", ptr)
+	}
+
 	// Calling again should be idempotent and return false
 	changedAgain := state.EnsureNodeDnsRewrites("dns-node-01", ips)
 	if changedAgain {
 		t.Errorf("expected EnsureNodeDnsRewrites to return false when nothing changed")
 	}
-	if len(state.LocalRecords) != 1 {
-		t.Errorf("expected still exactly 1 DNS rewrite, got %d", len(state.LocalRecords))
+	if len(state.LocalRecords) != 2 {
+		t.Errorf("expected still exactly 2 DNS rewrites, got %d", len(state.LocalRecords))
 	}
 }
 
@@ -47,14 +54,14 @@ func TestEnsureNodeDnsRewrites_DualIP(t *testing.T) {
 		t.Fatalf("expected EnsureNodeDnsRewrites to return true on initial injection")
 	}
 
-	if len(state.LocalRecords) != 2 {
-		t.Fatalf("expected exactly 2 DNS rewrites for 2 IPs, got %d", len(state.LocalRecords))
+	if len(state.LocalRecords) != 4 {
+		t.Fatalf("expected exactly 4 DNS rewrites (2 A + 2 PTR) for 2 IPs, got %d", len(state.LocalRecords))
 	}
 
 	foundIP1 := false
 	foundIP2 := false
 	for _, r := range state.LocalRecords {
-		if r.Domain != "netora-dns1" || r.Type != "A" {
+		if r.Domain != "netora-dns1" {
 			t.Errorf("unexpected record: %+v", r)
 		}
 		if r.Value == "172.18.20.146" {
@@ -83,8 +90,8 @@ func TestEnsureNodeDnsRewrites_PreservesOtherDomains(t *testing.T) {
 		t.Fatalf("expected changed=true")
 	}
 
-	if len(state.LocalRecords) != 3 {
-		t.Fatalf("expected 3 records (2 custom + 1 node rewrite), got %d: %+v", len(state.LocalRecords), state.LocalRecords)
+	if len(state.LocalRecords) != 4 {
+		t.Fatalf("expected 4 records (2 custom + 1 A + 1 PTR), got %d: %+v", len(state.LocalRecords), state.LocalRecords)
 	}
 
 	foundRouter := false
@@ -121,8 +128,8 @@ func TestEnsureNodeDnsRewrites_ExtractFromListeners(t *testing.T) {
 		t.Fatalf("expected changed=true")
 	}
 
-	if len(state.LocalRecords) != 2 {
-		t.Fatalf("expected 2 records extracted from concrete listeners, got %d: %+v", len(state.LocalRecords), state.LocalRecords)
+	if len(state.LocalRecords) != 4 {
+		t.Fatalf("expected 4 records (2 A + 2 PTR) extracted from concrete listeners, got %d: %+v", len(state.LocalRecords), state.LocalRecords)
 	}
 }
 

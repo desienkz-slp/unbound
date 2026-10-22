@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -517,7 +518,13 @@ func (p *PostgresStore) GetDesiredState(ctx context.Context, nodeID string) (*mo
 	if len(nodeIPs) == 0 && node != nil && node.ManagementIP != "" && node.ManagementIP != "127.0.0.1" {
 		nodeIPs = append(nodeIPs, node.ManagementIP)
 	}
-	_ = state.EnsureNodeDnsRewrites(nodeID, nodeIPs)
+	changed := state.EnsureNodeDnsRewrites(nodeID, nodeIPs)
+	if changed {
+		// Persist auto-injected A+PTR records to DB
+		if saveErr := p.SaveDesiredState(ctx, state); saveErr != nil {
+			log.Printf("[dns-rewrite] failed to persist auto-injected records for %s: %v", nodeID, saveErr)
+		}
+	}
 
 	return state, nil
 }

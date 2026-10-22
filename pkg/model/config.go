@@ -511,19 +511,25 @@ func (s *DesiredState) EnsureNodeDnsRewrites(nodeName string, ips []string) bool
 		return false
 	}
 
-	// Find existing A records for this nodeName
-	existingForNode := make(map[string]bool)
+	// Find existing A and PTR records for this nodeName
+	existingA := make(map[string]bool)
+	existingPTR := make(map[string]bool)
 	for _, rec := range s.LocalRecords {
-		if strings.EqualFold(rec.Domain, nodeName) && strings.ToUpper(rec.Type) == "A" {
-			existingForNode[rec.Value] = true
+		if strings.EqualFold(rec.Domain, nodeName) {
+			switch strings.ToUpper(rec.Type) {
+			case "A":
+				existingA[rec.Value] = true
+			case "PTR":
+				existingPTR[rec.Value] = true
+			}
 		}
 	}
 
-	// If all target IPs are already present and count matches, no change needed
-	if len(existingForNode) == len(targetIPs) {
+	// If all target IPs already have both A and PTR records, no change needed
+	if len(existingA) == len(targetIPs) && len(existingPTR) == len(targetIPs) {
 		allMatch := true
 		for _, ip := range targetIPs {
-			if !existingForNode[ip] {
+			if !existingA[ip] || !existingPTR[ip] {
 				allMatch = false
 				break
 			}
@@ -533,22 +539,28 @@ func (s *DesiredState) EnsureNodeDnsRewrites(nodeName string, ips []string) bool
 		}
 	}
 
-	// Reconstruct LocalRecords: preserve all other domains, and replace nodeName A records with targetIPs
+	// Reconstruct LocalRecords: preserve all other domains, and replace nodeName A+PTR records with targetIPs
 	var newRecords []LocalRecord
 	for _, rec := range s.LocalRecords {
-		if strings.EqualFold(rec.Domain, nodeName) && strings.ToUpper(rec.Type) == "A" {
+		if strings.EqualFold(rec.Domain, nodeName) && (strings.ToUpper(rec.Type) == "A" || strings.ToUpper(rec.Type) == "PTR") {
 			continue
 		}
 		newRecords = append(newRecords, rec)
 	}
 
-	// Append target IP rewrites for nodeName
+	// Append target IP rewrites for nodeName (A + PTR for nslookup reverse DNS)
 	for _, ip := range targetIPs {
 		newRecords = append(newRecords, LocalRecord{
 			Domain: nodeName,
 			Type:   "A",
 			Value:  ip,
 			TTL:    300,
+		})
+		newRecords = append(newRecords, LocalRecord{
+			Domain: nodeName,
+			Type:   "PTR",
+			Value:  ip,
+			TTL:    3600,
 		})
 	}
 
