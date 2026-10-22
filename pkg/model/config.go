@@ -270,6 +270,16 @@ type LogrotateConfig struct {
 	RotateNetora  bool   `json:"rotate_netora"`  // rotate /var/log/netora-dns/*.log
 }
 
+// FeedConfig defines a blocklist feed source configurable per-node.
+type FeedConfig struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Category     string   `json:"category"`
+	RepoFilename string   `json:"repo_filename"`
+	FallbackURLs []string `json:"fallback_urls"`
+	Enabled      bool     `json:"enabled"`
+}
+
 // DesiredState is the comprehensive desired configuration for a DNS node.
 type DesiredState struct {
 	VersionID        string                `json:"version_id"`
@@ -293,6 +303,7 @@ type DesiredState struct {
 	RemoteControl    RemoteControlConfig   `json:"remote_control"`
 	Logrotate        LogrotateConfig       `json:"logrotate"`
 	IncludeFiles     []string              `json:"include_files,omitempty"`
+	BlocklistFeeds   []FeedConfig          `json:"blocklist_feeds,omitempty"`
 }
 
 // NewDefaultDesiredState returns a safe, production-grade baseline desired state.
@@ -635,13 +646,14 @@ func AutoTunePerformance(cores int, ramMB int) PerformanceConfig {
 	sndBuf := "8m"
 	jostleTimeout := defaultJostleTimeout
 
-	if profile == ProfileSmall {
+	switch profile {
+	case ProfileSmall:
 		numQueries = 2048
 		outgoing = 8192
 		incomingTCP = 1024
 		rcvBuf = "4m"
 		sndBuf = "4m"
-	} else if profile == ProfileISP || profile == ProfileLarge {
+	case ProfileISP, ProfileLarge:
 		numQueries = 8192
 		outgoing = 32768
 		incomingTCP = 4096

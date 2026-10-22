@@ -64,6 +64,8 @@ func TestAuth_RBACPermissions(t *testing.T) {
 		{RoleOperator, "users:write", false},
 		{RoleNOC, "diagnostics:execute", true},
 		{RoleNOC, "config:apply", false},
+		{RoleNOC, "policy:read", true},
+		{RoleNOC, "policy:write", false},
 		{RoleAuditor, "audit:read", true},
 		{RoleAuditor, "config:write", false},
 		{RoleReadOnly, "nodes:read", true},

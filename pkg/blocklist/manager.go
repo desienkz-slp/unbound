@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"netora-dns/pkg/configengine"
+	"netora-dns/pkg/model"
 	"netora-dns/pkg/policy"
 	"netora-dns/pkg/storage"
 )
@@ -189,6 +190,31 @@ func NewManager(opts ManagerOptions) *Manager {
 	}
 
 	return m
+}
+
+// ResolveFeeds returns operator-configured feeds from DesiredState, falling back to StandardCoreFeeds.
+func (m *Manager) ResolveFeeds(configured []model.FeedConfig) []FeedDefinition {
+	if len(configured) == 0 {
+		return StandardCoreFeeds(m.blocklistDir)
+	}
+	feeds := make([]FeedDefinition, 0, len(configured))
+	for _, c := range configured {
+		if !c.Enabled {
+			continue
+		}
+		feeds = append(feeds, FeedDefinition{
+			ID:           c.ID,
+			Name:         c.Name,
+			Category:     c.Category,
+			RepoFilename: c.RepoFilename,
+			FallbackURLs: c.FallbackURLs,
+			LocalPath:    filepath.Join(m.blocklistDir, c.RepoFilename),
+		})
+	}
+	if len(feeds) == 0 {
+		return StandardCoreFeeds(m.blocklistDir)
+	}
+	return feeds
 }
 
 // StartScheduler begins background auto-updating on the configured interval.

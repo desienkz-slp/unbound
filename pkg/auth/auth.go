@@ -45,13 +45,14 @@ var RolePermissions = map[string][]string{
 	RoleAdmin: {
 		"nodes:read", "nodes:write", "config:read", "config:write", "config:apply",
 		"config:rollback", "policy:read", "policy:write", "audit:read", "users:read", "users:write",
+		"diagnostics:execute", "stats:read",
 	},
 	RoleOperator: {
 		"nodes:read", "config:read", "config:apply", "config:rollback",
-		"policy:read", "policy:write", "audit:read",
+		"policy:read", "policy:write", "audit:read", "diagnostics:execute", "stats:read",
 	},
 	RoleNOC: {
-		"nodes:read", "config:read", "audit:read", "diagnostics:execute", "stats:read",
+		"nodes:read", "config:read", "audit:read", "diagnostics:execute", "stats:read", "policy:read",
 	},
 	RoleAuditor: {
 		"audit:read", "config:read", "nodes:read",

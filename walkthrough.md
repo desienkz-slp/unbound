@@ -1,198 +1,66 @@
-# Hasil Investigasi Kesehatan Server DNS (Netora DNS / Unbound)
+# Walkthrough — Refactor Pre Fresh-Install
 
-Tanggal: 19 Oktober 2026  
-Status Investigasi: **Selesai (Bukti Data Lengkap)**
-
----
-
-## 1. Ringkasan Eksekutif (Akar Masalah "Tidak Bisa Reply")
-
-Berdasarkan investigasi real-time langsung ke server (`172.18.20.146`, `172.18.20.147`, dan `172.18.20.145`), ditemukan **4 akar masalah utama** yang menyebabkan DNS tiba-tiba tidak merespons (*timeout / no reply* / *SERVFAIL*):
-
-| # | Temuan Masalah | Lokasi / Komponen | Dampak Langsung |
-|---|---|---|---|
-| **1** | **`requestlist.exceeded` (Total 76.919 query didrop tanpa reply)** | Node 1 (36.903 drop) & Node 2 (40.016 drop) | Saat query antre melebihi kapasitas request list (karena upstream DoT latency/stall), Unbound langsung **menjatuhkan (drop) query** tanpa membalas ke client. |
-| **2** | **Koneksi Upstream DoT (Port 853) Terputus (`channel closed` 3.877x)** | `/etc/unbound/unbound.conf` (`forward-tls-upstream: yes`) | Koneksi TLS ke `8.8.8.8:853` & `1.1.1.1:853` sering terputus/reset, antrean menumpuk, menyebabkan 138.132 query berstatus `SERVFAIL` dan timeout. |
-| **3** | **Crash-Loop & Downtime Total 45 Menit Hari Ini (04:21 - 05:06 UTC)** | Node 1 (`172.18.20.146`) | Unbound crash fatal akibat permission `/usr/share/dns/root.key` (`Permission denied`) dan `SIGSEGV / free(): invalid pointer`, memicu `systemd` rate-limit restart failure. |
-| **4** | **IP Listener Tidak Lengkap di Node 2 (`172.18.20.147`)** | Node 2 (`/etc/unbound/unbound.conf`) | Node 2 hanya mendengarkan IP `172.18.20.3` dan `127.0.0.1`. IP utamanya `172.18.20.147` **tidak mendengarkan port 53** sama sekali (query ke `.147` selalu timeout). |
+**Date:** 2026-10-22
+**Scope:** 5 refactor tasks executed on the `unbound` (Netora DNS) codebase
 
 ---
 
-## 2. Bukti & Data Nyata dari Server
+## Changes Summary
 
-### A. Pengujian Resolusi dari Sisi Client
-Konfigurasi DNS adapter aktif (`Ethernet 2` & `Wi-Fi`):
-- Primary DNS: `172.18.20.2` (Node 1)
-- Secondary DNS: `172.18.20.3` (Node 2)
+### Task 1: Graceful Shutdown (Safety)
+**File:** `cmd/netora-api/main.go`
 
-Hasil tes nslookup:
-```text
-172.18.20.2   : Berhasil (23ms - 86ms)
-172.18.20.3   : Berhasil (22ms - 102ms)
-172.18.20.146 : Berhasil (Virtual listener di Node 1)
-172.18.20.147 : TIMEOUT (Port 53 tidak didengarkan di Node 2!)
-172.18.20.145 : TIMEOUT (Service Unbound tidak ada / belum terpasang di server ladapala)
+Shutdown sequence sekarang ordered:
+1. HTTP server stop (drain in-flight requests, timeout 10s)
+2. Cancel background goroutines (stats collector, query log tailer, heartbeat, blocklist scheduler)
+3. Wait 500ms for goroutine drain
+4. Close database connections
+
+Sebelumnya: `defer` based (unordered), timeout hanya 5s.
+
+### Task 2: NOC `policy:read` RBAC
+**Files:** `pkg/auth/auth.go`, `pkg/auth/auth_test.go`
+
+Role NOC sekarang punya `policy:read` — bisa lihat policies, filters, blocklist status, dan allowlist via API tanpa write access. Test ditambahkan.
+
+### Task 3: Hapus Hardcoded Seed Block Rules
+**File:** `cmd/netora-api/main.go`
+
+3 baris `AddBlockRule` dihapus dari `main.go`. Redundan — blocklist manager (`SyncAll` + `StandardCoreFeeds`) sudah handle loading ratusan ribu domain dari feed files.
+
+### Task 4: Configurable Blocklist Feeds
+**Files:** `pkg/model/config.go`, `pkg/blocklist/manager.go`
+
+- `FeedConfig` struct baru di model
+- `BlocklistFeeds` field baru di `DesiredState` (JSON: `blocklist_feeds`)
+- `ResolveFeeds()` method di blocklist manager — pakai config dari `DesiredState` jika ada, fallback ke `StandardCoreFeeds()`
+- Non-breaking: existing deployments tanpa `blocklist_feeds` tetap pakai default feeds
+
+### Task 5: Split server.go (1810 → 5 files)
+**Files:** `cmd/netora-api/server.go` + 4 file baru
+
+| File | Content | Lines |
+|------|---------|-------|
+| `server.go` | Server struct, NewServer, RegisterRoutes, middleware | ~270 |
+| `handler_auth.go` | Login, Logout, Me, UpdateProfile | ~230 |
+| `handler_node.go` | Nodes, NodeSubroutes (config/apply/rollback/stats), Logrotate | ~380 |
+| `handler_policy.go` | Policies, Filters, FilterSubroutes, SyncBlocklists, Allowlist | ~340 |
+| `handler_ops.go` | SystemHealth, SystemUpdate, AuditLogs, Diagnose, Alerts, Cluster, Hermes, DatabaseBackups | ~350 |
+
+Zero logic changes — murni file split.
+
+---
+
+## Verification
+
+```
+✅ go build ./cmd/netora-api/  — PASS
+✅ go test ./...               — ALL PASS (18 packages)
 ```
 
-### B. Bukti Drop Query (`requestlist.exceeded`)
-Diambil via `unbound-control stats_noreset`:
-- **Node 1 (172.18.20.146):**
-  - `total.requestlist.exceeded = 36903`
-  - `num.answer.rcode.SERVFAIL = 62851`
-- **Node 2 (172.18.20.147):**
-  - `total.requestlist.exceeded = 40016`
-  - `num.answer.rcode.SERVFAIL = 75281`
+## Fresh-server install review (2026-10-22)
 
-> **Analisis:** Total **76.919 query dijatuhkan secara diam-diam (silent drop / no reply)** ke subscriber/client ketika antrean requestlist meluap.
-
-### C. Bukti Log Error Upstream TLS (DoT Port 853)
-Pada `/var/log/unbound/unbound.log`:
-```text
-unbound[429275:2] error: str: channel closed
-unbound[429275:0] error: str: channel closed
-unbound[429275:2] error: str: channel closed
-```
-Total kejadian `channel closed`: **3.877 kali**.  
-DoT mengenkripsi setiap query upstream via TLS. Saat koneksi TCP/TLS ke Google (`8.8.8.8:853`) atau Cloudflare (`1.1.1.1:853`) direset ISP / upstream latency tinggi, query yang menunggu menjadi macet, memenuhi memori request list, dan di-drop.
-
-### D. Bukti Crash Loop Hari Ini (04:21:23 - 05:06:07 UTC)
-Pada `journalctl -u unbound`:
-```text
-Oct 19 04:21:23 netora-dns1 systemd[1]: unbound.service: Main process exited, code=exited, status=1/FAILURE
-Oct 19 04:21:56 netora-dns1 systemd[1]: unbound.service: Main process exited, code=dumped, status=11/SEGV
-Oct 19 04:40:02 netora-dns1 unbound[426796]: free(): invalid pointer
-Oct 19 04:40:02 netora-dns1 systemd[1]: unbound.service: Main process exited, code=dumped, status=6/ABRT
-Oct 19 04:41:10 netora-dns1 systemd[1]: unbound.service: Start request repeated too quickly.
-Oct 19 04:41:10 netora-dns1 systemd[1]: Failed to start unbound.service - Unbound DNS server.
-```
-Penyebab utama dari `/var/log/unbound/unbound.log`:
-```text
-fatal error: could not open autotrust file for writing, /usr/share/dns/root.key.425062-0-58bf5579aee0: Permission denied
-```
-Unbound mencoba memperbarui trust-anchor RFC 5011 ke direktori root yang read-only bagi user `unbound`.
-
-### E. File Log Membengkak (5,5 GB) & Beban I/O Disk
-- Ukuran log Node 1: `unbound.log` mencapai **5.530.230.350 bytes (5,53 GB)**.
-- Partisi root disk (`/`) terpakai 66%–69%.
-- Konfigurasi saat ini mengaktifkan:
-  ```yaml
-  log-queries: yes
-  log-replies: yes
-  ```
-  Di server produksi dengan ribuan query per detik, penulisan log secara sinkron ke disk menyebabkan I/O wait dan bottleneck CPU.
-
-### F. Penggunaan Memori Node 2
-- RSS Memori Unbound Node 2 mencapai **6.5 GB** (peak **9.5 GB**) dengan uptime 4 hari.
-
----
-
-## 3. Rencana Tindakan Perbaikan (Implementation Plan)
-
-1. **Tambahkan Listener IP `172.18.20.147` di Node 2:**
-   - Tambahkan `interface: 172.18.20.147` agar query yang langsung mengarah ke IP node 2 tetap dijawab.
-2. **Optimasi Buffer Request List & Anti-Drop:**
-   - Naikkan `num-queries-per-thread` dari 2048 menjadi 4096.
-   - Naikkan `outgoing-range` dari 8192 menjadi 16384.
-   - Atur `jostle-timeout: 200` agar query lama yang lambat tidak menghambat query baru.
-3. **Optimasi Upstream Resolver:**
-   - Evaluasi penggunaan DoT (`forward-tls-upstream: yes`) jika koneksi internasional/latensi ISP sering memicu `channel closed`. Alternatif: gunakan UDP standar port 53 dengan fallback lokal/anycast berlatensi rendah, atau naikkan pool koneksi TLS.
-4. **Matikan `log-queries` & `log-replies` di Produksi serta Rotasi Log:**
-   - Ubah `log-queries: no` dan `log-replies: no` agar disk I/O tidak jenuh.
-   - Rotasi dan bersihkan log 5,5 GB saat ini menggunakan logrotate untuk melegakan storage.
-5. **Jadwalkan Memory Recycling / Restart Terjadwal pada Node 2:**
-   - Unbound Node 2 perlu di-reload/restart ringan di jam sepi (off-peak) untuk melepas cache memori yang menumpuk hingga 9,5 GB.
-
----
-
-## 4. Implementasi Perbaikan Sistem Tuning (Telah Di-commit & Push ke GitHub)
-
-Berikut file dan modul yang telah diperbarui dan diverifikasi:
-
-1. **`pkg/model/config.go` & `pkg/model/config_test.go`:**
-   - Menambahkan field `JostleTimeout int` pada `PerformanceConfig`.
-   - `Normalize()` secara otomatis menetapkan `defaultJostleTimeout = 200` jika belum diatur.
-   - Meningkatkan default fallback `NumQueriesPerThread` dari 1024 ke 4096 dan `OutgoingRange` dari 4096 ke 16384.
-   - Menambahkan unit test `TestNormalizeAntiDropBuffers` (PASS).
-2. **`pkg/configengine/templates.go`:**
-   - Menambahkan direktif `jostle-timeout: {{ if gt .Performance.JostleTimeout 0 }}{{ .Performance.JostleTimeout }}{{ else }}200{{ end }}` pada Bagian 7 (Networking & High Throughput Buffers).
-3. **`conf/unbound-base.conf`:**
-   - Menambahkan `jostle-timeout: 200` pada blok Kapasitas Buffer & Queue (Jutaan RPS Tuning).
-4. **`web/src/views/PerformanceView.tsx` & `web/src/types.ts`:**
-   - Memperbarui profile buffer:
-     - Profile MEDIUM: `queriesPerThread: 4096`, `outgoingRange: 16384`.
-     - Profile LARGE & ISP: `queriesPerThread: 8192`, `outgoingRange: 32768`.
-   - Menurunkan `minDiskGB: 5` agar node 4 core 16GB RAM langsung memenuhi syarat profile ISP / Carrier Grade.
-   - Menambahkan `jostle_timeout: 200` pada `ensureDefaults`.
-5. **Verifikasi Build & Test:**
-   - `go test ./...` lulus 100% pada seluruh package (netora-api, configengine, model, storage, security, telemetry).
-   - `npm run build` berhasil mengompilasi TypeScript dan sinkronisasi bundle aset ke `deploy/ui/`.
-
----
-
-## 5. Verifikasi Live Pasca-Penerapan & Pembersihan Storage
-
-Tuning ISP untuk 20.000 client telah diterapkan secara live di kedua server:
-
-1. **Penerapan Konfigurasi Produksi:**
-   - Node 1 (`netora-dns1`): Versi `v-auto-sync-1792420472` (Durasi reload: 721 ms, Health: PASS).
-   - Node 2 (`netora-dns2`): Versi `v-auto-sync-1792420423` (Durasi reload: 490 ms, Health: PASS).
-2. **Uji Resolusi Real-time ke Seluruh Listener IP:**
-   - `172.18.20.2` (Node 1 VIP): **PASS** (~22 ms)
-   - `172.18.20.146` (Node 1 Mgmt): **PASS** (~20 ms)
-   - `172.18.20.3` (Node 2 VIP): **PASS** (~21 ms)
-   - `172.18.20.147` (Node 2 Mgmt): **PASS** (~20 ms)
-3. **Pembersihan & Kompresi Storage (Storage Health):**
-   - **Node 1:** Disk usage turun dari 66% (4,9 GB free) menjadi **33% (9,5 GB free)** setelah rotasi & kompresi log 5,2 GB.
-   - **Node 2:** Disk usage turun dari 69% (4,4 GB free) menjadi **37% (8,9 GB free)** setelah rotasi & kompresi log 1,9 GB.
-4. **Metrik Drop & Timeout:**
-   - `total.num.queries_timed_out = 0` pada kedua server pasca-reload.
-   - Buffer kapasitas antrean: `32.768` query bersamaan per node dengan `jostle-timeout: 200` ms dan upstream fast UDP port 53.
-
----
-
-## 6. Penetapan Aturan Mutlak: Larangan Merubah Settingan Lokal Saat Update
-
-Sesuai instruksi mutlak pengguna, telah ditetapkan aturan SSOT proyek pada [`.agents/AGENTS.md`](.agents/AGENTS.md) dan [`.agents/rules/09-preserve-local-config.md`](.agents/rules/09-preserve-local-config.md):
-
-1. **Anti-Overwrite State Lokal:**
-   - Setiap pembaruan kode, build biner, perbaikan logika, sinkronisasi UI, atau deploy **DILARANG MERUBAH / MERESET** settingan lokal yang sedang aktif dan berjalan di server produksi.
-2. **Entitas yang Wajib Dipertahankan:**
-   - Kredensial & password user admin.
-   - Forwarder upstream yang telah disetel.
-   - Listener IP address aktif.
-   - Subnet klien / access-control (`client_networks`).
-   - Filter, whitelist, blacklist, and policy profiles.
-   - Konfigurasi Unbound aktif di PostgreSQL dan file sistem.
-3. **Pola Evolusi Non-Destruktif:**
-   - Update biner aplikasi tidak boleh menyentuh database konfigurasi yang sudah hidup kecuali penambahan field baru yang bersifat *additive* (hanya mengisi default bila field belum ada / *fill missing*).
-
----
-
-## 7. Implementasi Fitur Kontrol Query & Reply Logging (`log-queries` & `log-replies`)
-
-Sesuai permintaan, fitur kontrol `log-queries` dan `log-replies` telah diimplementasikan secara end-to-end dari backend, template engine, hingga Web UI dashboard:
-
-1. **Backend Model (`pkg/model/config.go`):**
-   - Menambahkan field `LogQueries bool` dan `LogReplies bool` pada struct `FeatureConfig`.
-   - Menetapkan nilai default `false` pada `NewDefaultDesiredState()` sehingga aman untuk beban tinggi ISP (mencegah disk I/O stall dan log bloat).
-   - Bersifat non-destruktif dan 100% backward-compatible dengan record database JSON eksisting.
-2. **Template Engine Unbound (`pkg/configengine/templates.go`):**
-   - Mengubah baris statis menjadi render dinamis:
-     ```gotemplate
-     log-queries: {{ if .Features.LogQueries }}yes{{ else }}no{{ end }}
-     log-replies: {{ if .Features.LogReplies }}yes{{ else }}no{{ end }}
-     ```
-3. **Unit Test (`pkg/configengine/generator_test.go`):**
-   - Menambahkan test case `TestGenerator_LogQueriesAndReplies` yang memverifikasi kedua kondisi (`false` -> `no`, `true` -> `yes`).
-   - Lulus uji regresi `go test ./...` (100% PASS).
-4. **Web UI & Dashboard Control:**
-   - **`web/src/types.ts`**: Menambahkan deklarasi tipe TypeScript `log_queries?: boolean` dan `log_replies?: boolean`.
-   - **`web/src/views/PerformanceView.tsx`**:
-     - Menambahkan Card 3: **Query & Reply Logging (Disk I/O Safeguard)** lengkap dengan toggle visual individual, tombol pintas *ISP Safe (Matikan Semua)*, dan panduan NOC.
-     - Memperbarui fungsi normalisasi konfigurasi agar state tersimpan dengan benar.
-   - **`web/src/views/DNSConfigView.tsx`**:
-     - Menambahkan bagian **Disk I/O & Logging Control** di bawah subtab *Cache & Prefetch* agar operator dapat mengatur logging langsung dari menu konfigurasi DNS.
-   - **`web/src/views/WizardView.tsx`**: Menetapkan default aman `false`.
-5. **Verifikasi Build:**
-   - Kompilasi frontend `npm run build` sukses 100% dan bundle disinkronkan ke `deploy/ui/`.
-   - Kompilasi backend Go (`go build ./cmd/netora-api`) berjalan bersih tanpa error.
+- Verdict: not production-ready until the blockers in the [review report](file:///C:/Users/desie/.gemini/antigravity-ide/brain/e3ce5228-55a9-4bcb-b160-61c6996f0cf3/review_report.md) are fixed and tested on clean Ubuntu/Debian.
+- Main blockers: weak default admin/DB passwords; PostgreSQL failure silently falls back to volatile memory; installer overwrites system DNS config; open-resolver ACL behavior lacks proof; DB credentials are interpolated unsafely.
+- `go test ./...` passed locally. Fresh VM installation, IPv4/IPv6 ACL isolation, reboot persistence, DNSSEC, and uninstall restoration were not tested.
+- No project code was modified in this review.

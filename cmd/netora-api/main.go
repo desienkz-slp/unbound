@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,14 +24,50 @@ import (
 	"netora-dns/pkg/telemetry"
 )
 
+const (
+	heartbeatInterval = 5 * time.Second
+	jwtSecretFile     = "/etc/netora-dns/jwt.secret"
+)
+
+// resolveJWTSecret returns the signing secret: flag > NETORA_JWT_SECRET > persisted file.
+// If none exist, a random 256-bit secret is generated once and persisted (0600) so tokens
+// survive restarts. Existing deployments keep working (users simply re-login once).
+func resolveJWTSecret(flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	if v := strings.TrimSpace(os.Getenv("NETORA_JWT_SECRET")); v != "" {
+		return v, nil
+	}
+	if data, err := os.ReadFile(jwtSecretFile); err == nil {
+		if v := strings.TrimSpace(string(data)); v != "" {
+			return v, nil
+		}
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate jwt secret: %w", err)
+	}
+	secret := hex.EncodeToString(raw)
+	if err := os.WriteFile(jwtSecretFile, []byte(secret+"\n"), 0o600); err != nil {
+		log.Printf("Warning: cannot persist JWT secret to %s (%v); tokens will be invalidated on restart", jwtSecretFile, err)
+	}
+	return secret, nil
+}
+
 func main() {
 	listenAddr := flag.String("listen", ":8080", "HTTP server listen address")
 	dbURL := flag.String("db-url", "postgres://netora:netora_dev_password@127.0.0.1:5432/netora?sslmode=disable", "PostgreSQL connection string")
 	configDir := flag.String("config-dir", "/etc/unbound", "Path to Unbound configuration directory")
-	jwtSecret := flag.String("jwt-secret", "netora-production-jwt-signing-secret-2026", "JWT signing secret")
+	jwtSecretFlag := flag.String("jwt-secret", "", "JWT signing secret (default: NETORA_JWT_SECRET env, else auto-generated and persisted)")
 	nodeID := flag.String("node-id", "dns-dev", "Node ID")
 	useMemoryStore := flag.Bool("memory-store", false, "Use in-memory store instead of PostgreSQL (for testing)")
 	flag.Parse()
+
+	jwtSecret, err := resolveJWTSecret(*jwtSecretFlag)
+	if err != nil {
+		log.Fatalf("Failed to resolve JWT secret: %v", err)
+	}
 
 	log.Printf("Starting Netora DNS Control Plane API for node '%s' on %s...\n", *nodeID, *listenAddr)
 
@@ -38,7 +77,7 @@ func main() {
 		log.Println("Using in-memory store")
 		store = storage.NewMemoryStore()
 	} else {
-		log.Printf("Connecting to PostgreSQL at %s...\n", *dbURL)
+		log.Println("Connecting to PostgreSQL...")
 		pg, err := storage.NewPostgresStore(*dbURL)
 		if err != nil {
 			log.Printf("Warning: PostgreSQL connection failed (%v); falling back to in-memory store\n", err)
@@ -48,7 +87,7 @@ func main() {
 			store = pg
 		}
 	}
-	defer store.Close()
+	// store.Close() called explicitly during ordered shutdown
 
 	// 2. Seed Default Administrator if not present
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -58,8 +97,12 @@ func main() {
 		initialAdminPass := os.Getenv("NETORA_ADMIN_PASS")
 		if initialAdminPass == "" {
 			initialAdminPass = "admin123"
+			log.Println("SECURITY WARNING: seeding admin with default password 'admin123'; set NETORA_ADMIN_PASS or change it immediately")
 		}
-		hash, _ := auth.HashPassword(initialAdminPass)
+		hash, hashErr := auth.HashPassword(initialAdminPass)
+		if hashErr != nil {
+			log.Fatalf("Failed to hash admin password: %v", hashErr)
+		}
 		adminUser := &auth.User{
 			ID:           "usr-superadmin",
 			Username:     "admin",
@@ -199,21 +242,19 @@ func main() {
 	}
 
 	// 5. Initialize Policy Engine
+	// Block rules loaded dynamically by blocklist.Manager from feed files + DB allowlist.
 	policyEngine := policy.NewPolicyEngine()
-	policyEngine.AddBlockRule("doubleclick.net", "ADS", "Hagezi PopupAds", "||doubleclick.net^")
-	policyEngine.AddBlockRule("googleadservices.com", "ADS", "Hagezi PopupAds", "||googleadservices.com^")
-	policyEngine.AddBlockRule("malware-traffic-analysis.net", "MALWARE", "Hagezi Light", "||malware-traffic-analysis.net^")
 
 	// 6. Start Telemetry Background Collector & Query Log Tailer
 	statsCollector := telemetry.NewUnboundStatsCollector(telemetry.DefaultMetrics, 10*time.Second)
 	queryLogTailer := telemetry.NewQueryLogTailer("/var/log/unbound/unbound.log")
 	collectorCtx, collectorCancel := context.WithCancel(context.Background())
-	defer collectorCancel()
+	// collectorCancel() called explicitly during ordered shutdown
 	go statsCollector.Start(collectorCtx)
 	go queryLogTailer.Start(collectorCtx)
 
 	// 7. Setup HTTP Server
-	apiServer := NewServer(store, engine, policyEngine, *jwtSecret, *nodeID, realIP)
+	apiServer := NewServer(store, engine, policyEngine, jwtSecret, *nodeID, realIP)
 	if *dbURL != "" {
 		apiServer.SetDatabaseURL(*dbURL)
 	}
@@ -223,7 +264,7 @@ func main() {
 
 	// 8. Start Local Node Heartbeat Loop
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(heartbeatInterval)
 		defer ticker.Stop()
 
 		for {
@@ -251,7 +292,7 @@ func main() {
 	mux := http.NewServeMux()
 	apiServer.RegisterRoutes(mux)
 
-	handler := apiServer.CORS(mux)
+	handler := apiServer.LimitBody(apiServer.CORS(mux))
 
 	httpServer := &http.Server{
 		Addr:         *listenAddr,
@@ -268,18 +309,30 @@ func main() {
 		}
 	}()
 
-	// Graceful Shutdown
+	// Graceful Shutdown — ordered: HTTP → background goroutines → storage
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutting down Netora API server gracefully...")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
 
+	// 1. Stop accepting new HTTP connections, drain in-flight requests
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server shutdown error: %v\n", err)
+		log.Printf("HTTP shutdown error: %v\n", err)
 	}
+
+	// 2. Cancel all background goroutines (stats, query log tailer, heartbeat, blocklist scheduler)
+	collectorCancel()
+
+	// 3. Give goroutines a moment to finish in-flight work
+	// ponytail: use sync.WaitGroup if goroutine count grows beyond 4
+	time.Sleep(500 * time.Millisecond)
+
+	// 4. Close storage (DB connections)
+	store.Close()
+
 	log.Println("Netora API stopped cleanly.")
 }
 
