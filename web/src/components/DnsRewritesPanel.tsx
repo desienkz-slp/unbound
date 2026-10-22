@@ -471,19 +471,7 @@ export const DnsRewritesPanel: React.FC<DnsRewritesPanelProps> = ({ records, onC
           </div>
         )}
 
-        {/* Footer note */}
-        {records.length > 0 && (
-          <p className="text-[11px] text-gray-600 flex items-start gap-1.5">
-            <span className="mt-1 w-1.5 h-1.5 rounded-full bg-cyan-500 inline-block shrink-0" />
-            Rules dipublikasikan ke Unbound sebagai{' '}
-            <code className="text-gray-500">local-data</code> di{' '}
-            <code className="text-gray-500">conf.d/local-records.conf</code>.
-            Wildcard (<code className="text-gray-500">*.domain</code>) menggunakan{' '}
-            <code className="text-gray-500">local-zone … redirect</code>.
-            Perubahan aktif setelah{' '}
-            <strong className="text-gray-400">Save &amp; Atomic Apply</strong>.
-          </p>
-        )}
+
       </div>
     </>
   );
