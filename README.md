@@ -1,40 +1,138 @@
 <div align="center">
   <img src="assets/logo.png" alt="Netora DNS Logo" width="150" />
-  <h1>Netora DNS — Enterprise Carrier-Grade ISP Platform</h1>
-  <p><strong>Autonomous High-Speed Unbound DNS Resolver with Real-Time NOC Telemetry, Suffix-Trie Filtering, and Zero-Downtime CI/CD Fleet Auto-Updates.</strong></p>
-
+  <h1>Netora DNS</h1>
+  <p><strong>Carrier-Grade Autonomous DNS Resolver Platform for ISPs</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/Release-v1.0.104-cyan?style=flat-square" alt="Release" />
-    <img src="https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange?style=flat-square&logo=ubuntu" alt="Ubuntu" />
-    <img src="https://img.shields.io/badge/Debian-11%20|%2012-red?style=flat-square&logo=debian" alt="Debian" />
-    <img src="https://img.shields.io/badge/Unbound-1.6+%20(auto--detect)-blue?style=flat-square&logo=dns" alt="Unbound" />
+    <img src="https://img.shields.io/badge/Release-v1.1.7-cyan?style=flat-square" alt="Release" />
+    <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go" alt="Go" />
+    <img src="https://img.shields.io/badge/React-18+-61DAFB?style=flat-square&logo=react" alt="React" />
+    <img src="https://img.shields.io/badge/PostgreSQL-15+-336791?style=flat-square&logo=postgresql" alt="PostgreSQL" />
+    <img src="https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-E95420?style=flat-square&logo=ubuntu" alt="Ubuntu" />
+    <img src="https://img.shields.io/badge/Debian-11%20|%2012-A81D33?style=flat-square&logo=debian" alt="Debian" />
     <img src="https://img.shields.io/badge/Throughput-30K+%20QPS-brightgreen?style=flat-square" alt="QPS" />
-    <img src="https://img.shields.io/badge/Rollback-Atomic%20%3C150ms-emerald?style=flat-square" alt="Atomic Rollback" />
     <img src="https://img.shields.io/badge/License-Proprietary-purple?style=flat-square" alt="License" />
   </p>
 </div>
 
 ---
 
-## ⚡ Quick Start — Auto-Install Script (Universal 1-Line Installer)
+Netora DNS is a production-grade DNS management platform built on top of [NLnet Labs Unbound](https://nlnetlabs.nl/projects/unbound/about/). It provides a REST API control plane, real-time NOC web dashboard, policy-based filtering with suffix-trie lookups, multi-node cluster management, and autonomous zero-downtime fleet updates — all designed for ISP and carrier network operations.
 
-Deploy a production-ready Netora DNS node on any fresh Ubuntu or Debian server in under 2 minutes with **1 single command**. 
+## Table of Contents
 
-The installer is **100% autonomous and universal**:
-* **Auto Port 53 Stub Release**: Automatically frees port 53 from `systemd-resolved` across all Ubuntu versions (including Ubuntu 20.04 systemd 245 and Ubuntu 22.04/24.04 systemd 246+) while preserving OS domain resolution.
-* **Auto IPv4/IPv6 Detection**: Automatically senses network interface capabilities to prevent socket binding errors on IPv4-only hosts.
-* **Zero Manual Config**: Automatically provisions PostgreSQL, generates carrier Unbound configuration, tunes memory caches to available RAM, configures AppArmor exceptions, and launches the Control Plane REST API & Web UI NOC.
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [System Requirements](#system-requirements)
+- [Installer Flags](#installer-flags)
+- [NOC Web Dashboard](#noc-web-dashboard)
+- [CLI Reference](#cli-reference)
+- [Development](#development)
+- [Operational Guides](#operational-guides)
+- [License](#license)
 
-### 1. One-Line Standard Installation (Interactive)
+---
+
+## Key Features
+
+| Feature | Description |
+|:---|:---|
+| **High-Throughput DNS** | 30,000+ QPS on 2 vCPU, 1.22 ms P50 latency, auto-tuned caches to available RAM |
+| **Suffix-Trie Policy Filter** | 358 ns/query domain blocking — adult, gambling, ads, malware, custom blocklists |
+| **Atomic Config & Rollback** | Every change versioned with SHA256. 1-click rollback in < 150 ms, zero dropped packets |
+| **Multi-Node HA Cluster** | Heartbeat, health evaluation, and config sync across DNS fleet |
+| **Carrier CDN Compatibility** | `qname-minimisation: no` enforced to prevent NXDOMAIN from non-RFC CDN nameservers (Shopee/TikTok/Akamai) |
+| **DNS Rewrites** | A, AAAA, CNAME, PTR, TXT with wildcard subdomain support via Unbound native `local-zone redirect` |
+| **Autonomous Fleet Updates** | Pull-based CI/CD: sandbox staging → `unbound-checkconf` validation → atomic swap → auto-rollback on failure |
+| **Zero Open Resolver Guard** | Semantic validation rejects `0.0.0.0/0 allow` at the config engine level |
+| **Database Disaster Recovery** | Point-in-time PostgreSQL snapshots with download, restore, and deletion via API |
+| **Hermes AI-NOC Diagnostics** | Deep per-domain investigation: policy trace, live resolution probe, blocklist match explanation |
+| **Prometheus Metrics** | `/metrics` endpoint for Grafana integration — queries, cache, latency, blocked counts |
+
+---
+
+## Architecture
+
+```
+                          NETORA DNS PLATFORM
+
+           ┌──────────────────────────────────────────────┐
+           │                CONTROL PLANE                  │
+           │  Web UI (React + TypeScript + Tailwind)       │
+           │  REST API (Go, net/http)          :8080       │
+           │  PostgreSQL                       :5432       │
+           │  Cluster Manager (Multi-Node HA)              │
+           │  Telemetry & Prometheus Exporter  /metrics    │
+           │  MCP Server (cmd/netora-mcp)                  │
+           │  Hermes AI-NOC Investigator                   │
+           └────────────────────┬─────────────────────────┘
+                                │
+              Atomic Config     │  Staging → Validation
+              & Health Check    │  → Reload (<150ms)
+                                ▼
+           ┌──────────────────────────────────────────────┐
+           │                 DATA PLANE                    │
+           │            NLnet Labs UNBOUND                 │
+           │  DNS Cache (auto-tuned to RAM)                │
+           │  DNSSEC Validation                            │
+           │  Suffix-Trie Policy Filter                    │
+           │  Recursive / Forwarding / Hybrid              │
+           └──────────────────────────────────────────────┘
+```
+
+**Data plane independence**: If PostgreSQL, the API, or the Web UI crashes, Unbound continues resolving DNS queries from its flat, atomically validated config files. Zero customer impact.
+
+---
+
+## Project Structure
+
+```
+.
+├── cmd/
+│   ├── netora-api/          # REST API server (control plane)
+│   │   ├── main.go          # Entrypoint, graceful shutdown
+│   │   ├── server.go        # Server struct, routes, middleware
+│   │   ├── handler_auth.go  # Login, logout, profile
+│   │   ├── handler_node.go  # Node config, apply, rollback, stats
+│   │   ├── handler_policy.go# Policies, filters, blocklists, allowlist
+│   │   ├── handler_ops.go   # Health, update, diagnostics, cluster, backups
+│   │   └── version.go       # Version & update status endpoints
+│   ├── netora-cli/          # CLI for password reset, user management
+│   ├── netora-mcp/          # Model Context Protocol server
+│   └── netora-bench/        # DNS benchmark tooling
+├── pkg/
+│   ├── auth/                # JWT + bcrypt + RBAC (SUPER_ADMIN, ADMIN, NOC, OPERATOR)
+│   ├── backup/              # PostgreSQL snapshot disaster recovery
+│   ├── blocklist/           # Feed sync, scheduler, domain aggregation
+│   ├── cluster/             # Multi-node heartbeat, sync, HA state machine
+│   ├── configengine/        # Atomic config generation, apply, rollback
+│   ├── hermes/              # AI-NOC deep diagnostic investigation
+│   ├── logrotate/           # Host log rotation management
+│   ├── model/               # Domain models, DesiredState, validation
+│   ├── policy/              # Suffix-trie domain filter engine
+│   ├── runtime/             # DNS health checker, system detection
+│   ├── security/            # Input sanitization, security utilities
+│   ├── storage/             # PostgreSQL store interface & implementation
+│   └── telemetry/           # Prometheus metrics, query log tailer, alerts
+├── web/                     # React + TypeScript + Tailwind NOC dashboard
+├── scripts/                 # Operational scripts (CLI wrapper, updater)
+├── install.sh               # Universal 1-line installer
+├── uninstall.sh             # Clean removal script
+└── deploy/                  # Build artifacts & deployment assets
+```
+
+---
+
+## Quick Start
+
+### One-Line Install (Interactive)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash
 ```
-*(Or using `wget`: `wget -qO- https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash`)*
 
-### 2. Non-Interactive / Automated Fleet Installation (Silent Mode)
-
-For automated provisioning (Cloud-Init, Ansible, or PXE boot), pass `--silent` and configuration flags in a single command:
+### Silent Fleet Provisioning
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- \
@@ -42,490 +140,187 @@ curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh
   --node-id "dns-jakarta-01" \
   --mode recursive \
   --web-port 8080 \
-  --admin-pass "SuperSecretNocPass123"
+  --admin-pass "YourSecurePassword"
 ```
 
-### 3. Private GitHub Repository Installation
-
-If your repository is private, provide your GitHub Personal Access Token (PAT).
-
-> [!IMPORTANT]
-> Use a **Fine-Grained PAT** (not classic token) scoped to **only this repository** with **Contents: Read-only** and **Metadata: Read-only** permissions. This is the minimum required scope for installation and auto-updates.
-
-#### Option A: One-Line Silent Fleet Installer (Recommended for Private Repo)
+### Private Repository
 
 ```bash
 TOKEN="github_pat_yourFineGrainedTokenHere"
 
-curl -H "Authorization: token $TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- \
+curl -H "Authorization: token $TOKEN" \
+  -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh \
+  | sudo bash -s -- \
   --silent \
   --node-id "dns-jakarta-01" \
-  --mode recursive \
-  --web-port 8080 \
-  --admin-pass "SuperSecretNocPass123" \
+  --admin-pass "YourSecurePassword" \
   --github-token "$TOKEN"
 ```
 
-> [!NOTE]
-> * **Header `curl`**: Wajib menggunakan format `-H "Authorization: token $TOKEN"` agar GitHub mengizinkan pengunduhan script `install.sh` dari repository private.
-> * **Parameter `--github-token`**: Wajib dioper ke script agar proses `git clone` di server baru berjalan 100% otomatis tanpa meminta Username & Password interaktif.
+> [!IMPORTANT]
+> Use a **Fine-Grained PAT** scoped to this repository with **Contents: Read-only** and **Metadata: Read-only** permissions.
 
-#### Option B: Export Environment Variable
-```bash
-# Export your fine-grained PAT first
-export GITHUB_TOKEN="github_pat_yourFineGrainedTokenHere"
+### Unbound Version Compatibility
 
-# Run the installer (-E retains GITHUB_TOKEN for sudo)
-curl -H "Authorization: token $GITHUB_TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo -E bash -s -- \
-  --silent \
-  --node-id "dns-jakarta-01" \
-  --mode recursive \
-  --web-port 8080 \
-  --admin-pass "SuperSecretNocPass123"
-```
-
-#### Option C: Local Script Execution
-```bash
-sudo bash install.sh --github-token "github_pat_yourFineGrainedTokenHere" --silent
-```
-
-The token is stored securely in `/etc/netora-dns/github.token` (mode `600`, root-only) and used by the autonomous auto-update engine for all subsequent pulls.
-
-> [!TIP]
-> Jika token GitHub Anda kadaluarsa (*expired*) atau ingin dirotasi di kemudian hari, lihat [Panduan Update / Rotasi GitHub Token](#-panduan-update--rotasi-github-token-di-server).
-
-### 4. Unbound Version & Serve-Stale Compatibility
-
-The installer **auto-detects** the installed Unbound version and adapts the generated
-configuration accordingly, so it runs safely on **Unbound 1.6 and newer** — including
-the default packages on Ubuntu 18.04 (1.6.7) and 20.04 (1.9.4).
-
-> [!NOTE]
-> The `serve-expired-client-timeout` directive requires **Unbound >= 1.10.0**. On older
-> versions it is automatically skipped (the base `serve-expired` / `serve-expired-ttl`
-> serve-stale behavior still applies), so `unbound-checkconf` never fails.
-
-To enable the **full** serve-stale feature set on Ubuntu, add the `--unbound-ppa` flag to
-install the latest Unbound from the official NLnet Labs PPA (`ppa:nlnetlabs/unbound`):
-
-```bash
-curl -H "Authorization: token $TOKEN" -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/install.sh | sudo bash -s -- \
-  --silent \
-  --node-id "dns-jakarta-01" \
-  --mode recursive \
-  --web-port 8080 \
-  --admin-pass "SuperSecretNocPass123" \
-  --github-token "$TOKEN" \
-  --unbound-ppa
-```
-
-The flag is **opt-in** and **Ubuntu-only**; if the PPA cannot be added it falls back to the
-distro package automatically.
-
+The installer auto-detects Unbound version (1.6+). For full serve-stale support, add `--unbound-ppa` to install the latest from NLnet Labs PPA (Ubuntu only, opt-in).
 
 ---
 
-## 🖥️ NOC Web Dashboard & Default Credentials
+## System Requirements
 
-Once the installation finishes, open your browser and navigate to:
-
-* **URL:** `http://<YOUR_SERVER_IP>:8080/`
-* **Default Username:** `admin`
-* **Default Password:** `admin123` *(or the custom password provided during installation)*
-* **Prometheus Telemetry:** `http://<YOUR_SERVER_IP>:8080/metrics`
-* **API Health Check:** `http://<YOUR_SERVER_IP>:8080/api/v1/health`
-
-### Key Web UI Capabilities:
-* **Dashboard Overview:** Real-time query counts, cache hit ratio, top clients, top queried domains, top blocked domains, and live upstream latency.
-* **DNS Configuration:** Listeners, upstream DNS over TLS (DoT) reordering/presets, cache tuning, and **DNS Rewrites** (with wildcard redirect support).
-* **Policy & Filtering:** Suffix-trie domain blocking, blocklist auto-updates, adult/gambling scheduled filters, and custom allowlists.
-* **Fleet Management & Updates:** Clickable version badge in the footer to inspect Git SHA, build numbers, and trigger immediate fleet updates.
-* **Audit & Diagnostics:** Real-time domain resolution inspector, audit logs, and Hermes AI-NOC deep diagnostics.
-
----
-
-## 📋 System Requirements & Port Matrix
-
-| Requirement | Minimum | Recommended for High-Traffic ISP |
+| Requirement | Minimum | Recommended (ISP) |
 |:---|:---|:---|
-| **Operating System** | Ubuntu 20.04 / 22.04 / 24.04 LTS, Debian 11 / 12 | Ubuntu 22.04 LTS (Kernel 5.15+) |
-| **CPU Architecture** | 1 vCPU (x86_64 / amd64 or arm64) | 4+ vCPUs |
-| **Memory (RAM)** | 1 GB RAM | 4 GB - 16 GB RAM (Auto-tuned cache) |
-| **Disk Storage** | 5 GB SSD / NVMe | 20 GB+ NVMe SSD |
-| **Network Interfaces** | 1 Gbps Ethernet | 2.5 Gbps - 10 Gbps Ethernet |
+| **OS** | Ubuntu 20.04+ / Debian 11+ | Ubuntu 22.04 LTS |
+| **CPU** | 1 vCPU (x86_64 / arm64) | 4+ vCPUs |
+| **RAM** | 1 GB | 4–16 GB (cache auto-tuned) |
+| **Disk** | 5 GB SSD | 20 GB+ NVMe |
+| **Network** | 1 Gbps | 2.5–10 Gbps |
 
-### Network Port Allocation
-* **`53/UDP` & `53/TCP`:** Unbound DNS Data Plane (Client & Upstream Queries)
-* **`8080/TCP`:** Netora Control Plane REST API & React NOC Web UI
-* **`5432/TCP`:** PostgreSQL Database (`127.0.0.1` loopback only)
-* **`8953/TCP`:** Unbound Remote Control (`127.0.0.1` loopback with TLS certificates)
+### Port Allocation
 
----
-
-## ⚙️ Installer Command-Line Flags
-
-| Option | Default | Description |
+| Port | Protocol | Service |
 |:---|:---|:---|
-| `-y`, `--silent` | `false` | Run without interactive prompts, accepting all default values. |
-| `--mode <mode>` | `recursive` | DNS resolution engine: `recursive` (IANA Root Hints) or `forwarder` (Cloudflare/Google). |
-| `--node-id <id>` | *hostname* | Unique cluster node identifier displayed in NOC telemetry. |
-| `--web-port <port>` | `8080` | TCP port for NOC Web UI Dashboard and REST API. |
-| `--dns-port <port>` | `53` | UDP/TCP port for DNS query answering. |
-| `--admin-pass <pass>`| `admin123` | Master password for operator authentication in the Web UI. |
-| `--db-pass <pass>` | `netora_dev_password` | Dedicated PostgreSQL password for the `netora` role. |
-| `--subnets "<subnets>"`| `10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8` | Space-separated list of allowed client CIDR ranges. |
-| `--channel <chan>` | `development` | Release channel for updates: `development` or `production`. |
-| `--github-token <tok>`| *empty* | GitHub Token for pulling private repositories securely. |
-| `--no-auto-update` | `false` | Disable the autonomous systemd auto-update timer. |
-| `-h`, `--help` | — | Display help information and exit. |
+| `53` | UDP/TCP | Unbound DNS (data plane) |
+| `8080` | TCP | REST API + Web UI (control plane) |
+| `5432` | TCP | PostgreSQL (loopback only) |
+| `8953` | TCP | Unbound remote control (loopback, TLS) |
 
 ---
 
-## 🚀 Architectural Invariants & Key Capabilities
+## Installer Flags
 
-```
-                              NETORA DNS PLATFORM
-                              
-               ┌────────────────────────────────────────────────┐
-               │                 CONTROL PLANE                  │
-               │  • Web UI (React/TS/Tailwind - Dark NOC Theme) │
-               │  • REST API (cmd/netora-api :8080)             │
-               │  • PostgreSQL (Database on 127.0.0.1:5432)     │
-               │  • Cluster Manager (Multi-node HA)             │
-               │  • Telemetry & Prometheus Exporter (/metrics)  │
-               │  • Model Context Protocol (cmd/netora-mcp)     │
-               │  • Hermes AI-NOC Investigator                  │
-               └───────────────────────┬────────────────────────┘
-                                       │ 
-                 Atomic Configuration  │ Staging, Validation,
-                 & Health Verification │ & Reload (<150ms)
-                                       ▼
-               ┌────────────────────────────────────────────────┐
-               │                  DATA PLANE                    │
-               │             NLnet Labs UNBOUND                 │
-               │  • High-Speed DNS Cache (Auto-tuned to RAM)    │
-               │  • Cryptographic DNSSEC Validation             │
-               │  • Suffix-Trie Policy Filter (358ns / query)   │
-               │  • Carrier CDN Optimization (Anti-Bengong)     │
-               │  • Zero Open Resolver Semantic Guardrails       │
-               │  • Recursive / Forwarding / Hybrid Modes       │
-               └────────────────────────────────────────────────┘
-```
-
-1. **Total Data Plane Independence (Anti-Bengong):**  
-   Unbound resolves DNS queries directly from flat, atomically validated configurations. If PostgreSQL, the REST API, or the Web UI crashes, **Unbound continues answering 100% of customer DNS queries without missing a single packet**.
-2. **Verified High-Throughput Performance:**  
-   Benchmarked at **30,445+ QPS** on a modest 2 vCPU server with **1.22 ms** median latency (P50).
-3. **Carrier CDN Compatibility (Critical Invariant #16):**  
-   Strict `qname-minimisation: no` is enforced to prevent non-RFC-compliant CDN authoritative nameservers (such as Baishan Cloud / Shopee CDN / TikTok / Akamai) from returning incorrect `NXDOMAIN` on intermediate empty non-terminals.
-4. **Versions & Atomic 1-Click Rollback:**  
-   Every configuration change generates a versioned snapshot with SHA256 verification. If an operator misconfigures a rule, 1-click rollback restores the previous state in **< 150 ms** with zero dropped packets.
-5. **Zero Open Resolver Guarantee:**  
-   The configuration engine rejects arbitrary internet client access (`0.0.0.0/0 allow`) at the semantic validation level.
-6. **DNS Rewrites & Wildcard Redirects:**  
-   Configure custom DNS responses for A, AAAA, CNAME, PTR, and TXT records with wildcard subdomain support (`*.domain.com`) generated via Unbound's native `local-zone redirect` directives with zero downtime.
-7. **Resilient Dual-Source NOC Telemetry:**  
-   Telemetry combines Unbound control sockets with background query log and `journalctl` streaming. Provides zero-loss live metrics for Top Clients, Top Queried Domains, Top Blocked Domains, and Upstream Latencies even across log rotations and process restarts.
-8. **1-Click Fleet Updates & Priority Presets:**  
-   Administrators can trigger node updates fleet-wide directly from the Web UI footer modal with guaranteed zero IP listener/topology loss, plus apply 1-click optimized CDN presets (Cloudflare + Google DoT).
+| Flag | Default | Description |
+|:---|:---|:---|
+| `-y`, `--silent` | `false` | Non-interactive mode |
+| `--mode <mode>` | `recursive` | `recursive` (IANA root hints) or `forwarder` (Cloudflare/Google) |
+| `--node-id <id>` | hostname | Cluster node identifier |
+| `--web-port <port>` | `8080` | Control plane port |
+| `--dns-port <port>` | `53` | DNS port |
+| `--admin-pass <pw>` | `admin123` | Web UI admin password |
+| `--db-pass <pw>` | auto-generated | PostgreSQL password |
+| `--subnets "<cidrs>"` | RFC1918 ranges | Allowed client CIDRs (space-separated) |
+| `--github-token <tok>` | — | PAT for private repo access |
+| `--no-auto-update` | `false` | Disable systemd auto-update timer |
+| `--unbound-ppa` | `false` | Install latest Unbound from NLnet Labs PPA (Ubuntu) |
 
 ---
 
-## 🛠️ NOC Operator CLI Management (`netora`)
+## NOC Web Dashboard
 
-The installer places the convenient `netora` CLI tool into `/usr/local/bin/netora`:
+After installation, access the dashboard at `http://<SERVER_IP>:8080/`.
 
-```bash
-# 1. Check overall system health, Unbound status, and updater state
-netora status
+**Default credentials:** `admin` / `admin123` (or custom `--admin-pass`).
 
-# 2. Run instant DNS resolution and API health checks
-netora health
+### Dashboard Capabilities
 
-# 3. Pull and atomically apply the latest revision from GitHub
-netora update
+- **Overview** — Real-time query counts, cache hit ratio, top clients, top queried/blocked domains, upstream latency
+- **DNS Configuration** — Listeners, upstream DoT presets, cache tuning, DNS rewrites (wildcard support)
+- **Policy & Filtering** — Blocklist feeds (auto-update every 12h), adult/gambling/ads/malware toggles, custom allowlist
+- **Fleet Management** — Version badge with Git SHA, 1-click update trigger, update status monitor
+- **Audit & Diagnostics** — Domain resolution inspector, full audit log trail, Hermes deep diagnostics
 
-# 4. Rollback to the previous stable configuration snapshot
-netora rollback
+### API Endpoints
 
-# 5. Gracefully restart Unbound and Netora API
-netora restart
-
-# 6. Stream live service logs
-netora logs unbound
-netora logs api
-netora logs updater
-
-# 7. Print access endpoints, IP topology, and operator credentials
-netora info
-
-# 8. Reset operator password interactively or via parameters
-netora reset-password
-netora reset-password admin "MyNewPassword123"
-
-# 9. List registered NOC operator accounts and database status
-netora users
-
-# 10. Update GitHub PAT token for auto-updates & verify repository access
-netora set-token "github_pat_yourNewTokenHere"
-```
+| Endpoint | Description |
+|:---|:---|
+| `GET /api/v1/health` | Health check |
+| `GET /metrics` | Prometheus telemetry |
+| `POST /api/v1/auth/login` | JWT authentication |
+| `GET /api/v1/nodes/{id}/config` | Node desired state |
+| `POST /api/v1/nodes/{id}/apply` | Apply configuration |
+| `POST /api/v1/nodes/{id}/rollback` | Rollback to version |
+| `GET /api/v1/filters` | List blocklist feeds |
+| `POST /api/v1/blocklists/sync` | Force blocklist sync |
+| `POST /api/v1/diagnose` | Domain diagnostics |
+| `POST /api/v1/hermes/investigate` | Deep AI-NOC investigation |
+| `GET /api/v1/cluster/status` | Cluster health & nodes |
+| `GET /api/v1/audit` | Audit logs |
 
 ---
 
-## 🔑 Panduan Reset Password Operator via CLI Langsung di Server
+## CLI Reference
 
-Untuk keperluan pemulihan darurat (*disaster recovery*), situasi saat administrator lupa password Web UI, atau akun NOC terkunci, Netora DNS menyediakan utilitas CLI native dan script otomatis yang dapat dijalankan langsung di server via SSH dengan **Zero-Downtime** (tanpa perlu restart Unbound maupun Netora API):
+The installer places `netora` at `/usr/local/bin/netora`:
 
-### 1. Metode Cepat: Menggunakan Perintah `netora reset-password` (Direkomendasikan)
-Perintah ini terintegrasi langsung dalam utility `/usr/local/bin/netora`:
-
-#### A. Mode Interaktif (Paling Aman — Password Tidak Tersimpan di History Shell)
-Cukup ketik perintah berikut tanpa argumen password:
 ```bash
-netora reset-password
-```
-Sistem akan menampilkan prompt rahasia:
-```text
-========================================================
-  Netora DNS - CLI Password Reset Utility
-========================================================
-Enter username to reset [admin]: admin
-Enter new password for 'admin' (min 6 characters): [Ketik Password]
-Confirm new password: [Ketik Ulang Password]
+netora status              # System health, Unbound status, updater state
+netora health              # DNS resolution & API health checks
+netora update              # Pull & apply latest from GitHub
+netora rollback            # Restore previous config snapshot
+netora restart             # Graceful restart Unbound + API
+netora logs unbound|api    # Stream live logs
+netora info                # Access endpoints, IP topology, credentials
+netora reset-password      # Interactive password reset
+netora users               # List registered operators
+netora set-token <pat>     # Update GitHub PAT (auto-verifies access)
 ```
 
-#### B. Mode Non-Interaktif / 1-Baris (Cocok untuk Script & Otomatisasi)
+For direct database operations (disaster recovery):
+
 ```bash
-netora reset-password <username> "<password_baru>"
-```
-*Contoh:*
-```bash
-netora reset-password admin "SuperSecretNocPass123"
-```
-
----
-
-### 2. Metode Skrip Dedicated: `netora-reset-password`
-Tersedia juga script eksekusi langsung di `/usr/local/bin/netora-reset-password`:
-```bash
-# Mode interaktif
-netora-reset-password
-
-# Mode langsung dengan parameter
-netora-reset-password admin "SuperSecretNocPass123"
-```
-
----
-
-### 3. Metode Native Binary: `netora-cli`
-Binary engine `/usr/local/bin/netora-cli` berkomunikasi langsung dengan database PostgreSQL dan menyediakan kontrol akun yang lengkap:
-
-#### A. Reset Password Akun Tertentu:
-```bash
-netora-cli -mode reset-password -username admin -new-password "SuperSecretNocPass123"
-```
-*Output:*
-```text
-========================================================
-  Netora DNS - Password Reset Successful
-========================================================
-  User ID   : usr-superadmin
-  Username  : admin
-  Role      : SUPER_ADMIN
-  Status    : Password successfully updated in PostgreSQL
-  Timestamp : 2026-09-26T06:26:17Z
-========================================================
-You can now sign in to the Netora NOC Web UI with your new password.
-```
-
-#### B. Menampilkan Daftar Operator Terdaftar:
-```bash
+netora-cli -mode reset-password -username admin -new-password "NewPass"
 netora-cli -mode list-users
-```
-*Output:*
-```text
-=========================================================================================
-  Netora DNS - Registered Operators
-=========================================================================================
-  USER ID          USERNAME         ROLE           LAST UPDATED          
------------------------------------------------------------------------------------------
-  usr-superadmin   admin            SUPER_ADMIN    2026-09-26 13:26:17   
-=========================================================================================
-```
-
-#### C. Membuat Akun Operator / Admin Baru Secara Darurat:
-```bash
-netora-cli -mode create-user -username noc_operator -new-password "PassOperator123" -role OPERATOR
+netora-cli -mode create-user -username noc_op -new-password "Pass" -role OPERATOR
 ```
 
 ---
 
-### 4. Metode Emergency Rescue Fallback (Direct PostgreSQL)
-Jika dalam skenario bencana (*disaster*) binary belum tersedia, Anda dapat langsung meng-update hash password melalui Python / PostgreSQL CLI bawaan server:
+## Development
+
+### Prerequisites
+
+- Go 1.21+
+- Node.js 18+ (for web UI)
+- PostgreSQL 15+ (or use the installer for automated setup)
+
+### Build
+
 ```bash
-python3 -c "
-import bcrypt, subprocess
-pw = b'SuperSecretNocPass123'
-hashed = bcrypt.hashpw(pw, bcrypt.gensalt(10)).decode('utf-8')
-subprocess.run(['sudo', '-u', 'postgres', 'psql', '-d', 'netora', '-c', f\"UPDATE users SET password_hash = '{hashed}', updated_at = NOW() WHERE username = 'admin';\"])
-print('Password successfully updated!')
-"
+# Backend
+go build -o netora-api ./cmd/netora-api/
+go build -o netora-cli ./cmd/netora-cli/
+
+# Frontend
+cd web && npm install && npm run build
+
+# Run tests
+go test ./...
 ```
 
-> [!NOTE]
-> **Keamanan & Konsistensi Database:**  
-> Seluruh password di-hash secara aman menggunakan algoritma **bcrypt** (cost 10) standar industri. Setiap perubahan kredensial via CLI otomatis dicatat ke tabel Audit Log (`audit_logs`) untuk keperluan kepatuhan (*compliance*) keamanan jaringan ISP.
+### RBAC Roles
+
+| Role | Permissions |
+|:---|:---|
+| `SUPER_ADMIN` | Full access |
+| `ADMIN` | All except user management |
+| `NOC` | Read nodes, diagnostics, audit, policy:read |
+| `OPERATOR` | Read-only node status |
 
 ---
 
-## 🔐 Panduan Update / Rotasi GitHub Token di Server
+## Operational Guides
 
-Token autentikasi GitHub disimpan secara aman di file konfigurasi `/etc/netora-dns/github.token` dengan permission ketat `600` (hanya dapat dibaca/ditulis oleh user `root`). Token ini digunakan oleh engine auto-updater (`netora-dns-update`), systemd background timer (`netora-dns-updater.timer`), dan fitur pembaruan 1-klik di Web UI.
+Detailed guides are maintained in `docs/`:
 
-### ❓ Kapan Token Perlu Diperbarui?
-1. **Token Kadaluarsa (*Expired*):** GitHub **Fine-Grained Personal Access Token (PAT)** memiliki masa berlaku terbatas (misal 30, 60, atau 90 hari) demi standar keamanan.
-2. **Rotasi Token Keamanan:** Dilakukan secara berkala sesuai kebijakan dan SOP keamanan jaringan ISP.
-3. **Gejala Token Expired:**
-   - Perintah `netora update` menghasilkan error:
-     ```text
-     [ERROR] update_failed: Cannot reach GitHub or invalid credentials. Preserving current DNS configuration.
-     ```
-   - Log auto-update di `/var/log/netora-dns/update.log` mencatat `fatal: Authentication failed`.
-   - Tombol / status update di Web UI gagal mendeteksi revisi commit terbaru dari repository GitHub.
+- [Autonomous CI/CD Engine SOP](docs/auto-update.md) — Update engine internals, staging, rollback
+- [Carrier Rollback & Recovery](docs/rollback.md) — Atomic rollback procedure
+- [Multi-Node Cluster Deployment](docs/deployment.md) — HA fleet setup
+- [Password Reset Guide](docs/password-reset.md) — CLI, interactive, and emergency fallback methods
+- [GitHub Token Rotation](docs/token-rotation.md) — PAT renewal & verification
 
----
+### Auto-Update Engine
 
-### 📋 Spesifikasi Token Baru yang Dibutuhkan
-Buat token baru di GitHub (**Settings** ➔ **Developer Settings** ➔ **Personal access tokens** ➔ **Fine-grained tokens**):
-* **Repository access:** *Only select repositories* ➔ Pilih repository Netora DNS (`desienkz-slp/unbound` atau repository privat Anda).
-* **Permissions (Repository permissions):**
-  * **Contents:** `Read-only`
-  * **Metadata:** `Read-only`
+The platform uses decentralized pull-based deployment:
+
+1. **Systemd timer** runs every 5 minutes with randomized jitter
+2. Candidates are staged in `/opt/netora-dns/staging/`
+3. Validated with `unbound-checkconf` before activation
+4. Atomic symlink swap at `/opt/netora-dns/current`
+5. Auto-rollback if health check fails post-activation
+6. Node IP topology and local configuration are preserved across updates
 
 ---
 
-### 🚀 Cara Update Token di Server
+## License
 
-Pilih salah satu metode berikut (dijalankan langsung di server via SSH):
-
-#### 1. Metode Cepat 1-Baris via SSH (Paling Praktis & Universal)
-Jalankan perintah berikut di terminal server (ganti `github_pat_yourNewTokenHere` dengan token baru Anda):
-
-```bash
-echo "github_pat_yourNewTokenHere" | sudo tee /etc/netora-dns/github.token > /dev/null && sudo chmod 600 /etc/netora-dns/github.token
-```
-
-*Atau jika Anda sudah login langsung sebagai user `root`:*
-```bash
-echo "github_pat_yourNewTokenHere" > /etc/netora-dns/github.token && chmod 600 /etc/netora-dns/github.token
-```
-
----
-
-#### 2. Metode Menggunakan CLI Utility `netora set-token` (Interaktif & Auto-Verifikasi)
-Utility `/usr/local/bin/netora` menyediakan perintah bawaan untuk memperbarui token dan langsung memverifikasi akses repository:
-
-**A. Mode Interaktif (Aman — Token tidak tersimpan di riwayat shell history):**
-```bash
-sudo netora set-token
-```
-Sistem akan meminta input token secara tersembunyi (*hidden input*):
-```text
-Enter new GitHub Personal Access Token (PAT): [Tempel Token Baru]
-GitHub Token successfully updated in /etc/netora-dns/github.token (mode 600).
-Verifying repository access with new token...
-Verification PASS: Token is valid and has read access!
-```
-
-**B. Mode Parameter 1-Baris:**
-```bash
-sudo netora set-token "github_pat_yourNewTokenHere"
-```
-
----
-
-#### 3. Metode Edit Manual Menggunakan Text Editor (`nano`)
-```bash
-sudo nano /etc/netora-dns/github.token
-```
-1. Hapus token lama, lalu tempel (*paste*) token baru (pastikan hanya berisi 1 baris string token tanpa spasi atau baris kosong tambahan).
-2. Simpan perubahan dengan menekan `Ctrl + O`, tekan `Enter`, lalu keluar dengan `Ctrl + X`.
-3. Pastikan izin file tetap aman (root-only):
-```bash
-sudo chmod 600 /etc/netora-dns/github.token
-```
-
----
-
-### 🔍 Cara Verifikasi Bahwa Token Baru Sudah Berfungsi
-
-> [!NOTE]
-> **Zero-Downtime:** Anda **TIDAK PERLU** merestart service Unbound maupun Netora API setelah memperbarui token. Token dibaca secara dinamis dari file `/etc/netora-dns/github.token` setiap kali proses auto-update atau pengecekan remote berjalan.
-
-Uji keberhasilan token baru dengan salah satu langkah berikut:
-
-#### A. Verifikasi Koneksi Git Remote Langsung:
-```bash
-TOKEN=$(sudo cat /etc/netora-dns/github.token)
-git ls-remote "https://${TOKEN}@github.com/desienkz-slp/unbound.git" refs/heads/main
-```
-*Jika token valid, output akan menampilkan hash commit terbaru (misalnya: `6c354b2... refs/heads/main`).*
-
-#### B. Uji Jalankan Auto-Update Manual:
-```bash
-sudo netora update
-```
-
-#### C. Uji Endpoint Status API:
-```bash
-curl -s http://127.0.0.1:8080/api/v1/system/status?check_remote=true | jq .
-```
-Output jika berhasil:
-```json
-{
-  "channel": "development",
-  "git_commit": "6c354b2",
-  "remote_commit": "6c354b2",
-  "update_available": false
-}
-```
-
----
-
-## 🔄 Autonomous CI/CD Auto-Update Engine
-
-Netora DNS uses a decentralized pull-based deployment model:
-* **Background Timer:** `/etc/systemd/system/netora-dns-updater.timer` runs every 5 minutes with randomized jitter to prevent server thundering herds.
-* **Web UI 1-Click Fleet Update:** Operators can trigger updates on demand via the "Perbarui Platform Sekarang" button in the footer popover modal.
-* **Sandboxed Staging:** Candidates from GitHub are assembled in `/opt/netora-dns/staging/` and pre-validated using `unbound-checkconf`.
-* **Atomic Swap:** Symlink `/opt/netora-dns/current` is atomically updated and Unbound is reloaded via `unbound-control reload`.
-* **Zero Configuration Loss:** Each node's unique IP topology (listeners `interface:`), local database data, and specific network bindings remain immutable across updates.
-* **Auto-Rollback on Failure:** If reload fails or post-activation health checks fail, the previous verified configuration is restored within seconds.
-* **Secure Token Storage:** GitHub token is stored at `/etc/netora-dns/github.token` (mode `600`). A **Fine-Grained PAT** with **Selected Repository + Contents: Read-only** scope is sufficient and recommended over classic all-repo tokens.
-
----
-
-## 🗑️ Uninstallation Runbook
-
-To completely remove Netora DNS and restore the default system resolver (`systemd-resolved`):
-
-```bash
-curl -sSL https://raw.githubusercontent.com/desienkz-slp/unbound/main/uninstall.sh | sudo bash
-```
-*(Or run `sudo ./uninstall.sh` from the repository root)*
-
----
-
-## 📚 Technical Documentation & References
-
-* [Final Engineering Walkthrough & Audit Report](walkthrough.md)
-* [Autonomous CI/CD Engine SOP](docs/auto-update.md)
-* [Carrier Rollback & Recovery Guide](docs/rollback.md)
-* [Multi-Node Cluster Deployment](docs/deployment.md)
-* [DNS Validation & CDN Compatibility Skill](.agents/skills/dns-validation/SKILL.md)
-
----
-
-<div align="center">
-  <small>© Netora DNS Platform • Engineered for High-Reliability Internet Service Providers.</small>
-</div>
+Proprietary. © Netora DNS Platform — Engineered for High-Reliability Internet Service Providers.
