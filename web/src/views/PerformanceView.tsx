@@ -202,7 +202,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const [saving, setSaving] = useState(false);
   const [autoTuningAll, setAutoTuningAll] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'resiliency' | 'logrotate'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'resiliency' | 'logrotate'>('compute');
 
   // ── Logrotate State ──────────────────────────────────────────────────────────
   const [logrotateReport, setLogrotateReport] = useState<LogrotateReport | null>(null);
@@ -685,17 +685,6 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
 
       {/* ── Tab Switcher ───────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-gray-800 pb-3 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'all'
-              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-          }`}
-        >
-          <Sliders className="w-3.5 h-3.5" />
-          Semua Sistem Tuning
-        </button>
         <button
           onClick={() => setActiveTab('compute')}
           className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
