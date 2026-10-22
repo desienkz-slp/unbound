@@ -50,9 +50,6 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-base tracking-wider text-white">NETORA</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 font-mono">
-                DNS NOC
-              </span>
             </div>
           </div>
         </div>
