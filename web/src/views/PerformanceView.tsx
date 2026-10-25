@@ -1092,16 +1092,16 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
             </div>
           </div>
 
-          {/* ── Client-Tier Tuning (Subscriber Density) ───────────────────────── */}
+          {/* ── Homepass-Tier Tuning ────────────────────────────────────────── */}
           <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <Gauge className="w-4 h-4 text-violet-400" />
-              Client-Tier Tuning (Subscriber Density)
+              Homepass-Tier Tuning
               <TierBadge tier={clientTier} />
             </h2>
             <p className="text-xs text-gray-400">
-              Masukkan jumlah pelanggan/subscriber untuk mendapatkan rekomendasi profil berdasarkan densitas client.
-              Sistem akan otomatis menentukan tier (Small ≤500, Medium ≤2000, Large &gt;2000).
+              Masukkan jumlah homepass (rumah pelanggan) yang dilayani DNS resolver ini.
+              Sistem akan menentukan tier dan merekomendasikan profil tuning berdasarkan estimasi device per homepass.
             </p>
 
             <ClientCountInput
@@ -1151,7 +1151,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                       setLocalConfig(updatedCfg);
                       setMsg({
                         type: 'success',
-                        text: `Profil Client-Tier '${p.name}' (${clientCount} clients → ${tierKey}) dipilih. Klik 'Apply Tuning' untuk menyimpan ke node.`,
+                        text: `Profil '${p.name}' (${clientCount} homepass → ${tierKey}) dipilih. Klik 'Apply Tuning' untuk menyimpan ke node.`,
                       });
                     }}
                   />

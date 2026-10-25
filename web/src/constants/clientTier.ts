@@ -1,27 +1,32 @@
-// Client tier thresholds and default profiles.
+// Homepass-based tier thresholds and tuning profiles.
+// 1 homepass = 1 rumah pelanggan ISP ≈ 5 device (rata-rata).
 // Thresholds match backend: pkg/model/config.go → ClientTierFromCount().
-export const CLIENT_TIER_THRESHOLDS = {
-  SMALL: 500,
-  MEDIUM: 2000,
+export const DEVICES_PER_HOMEPASS = 5;
+
+export const HOMEPASS_TIER_THRESHOLDS = {
+  SMALL: 500,   // 0–500 homepass ≈ 2.500 device
+  MEDIUM: 2000, // 501–2000 homepass ≈ 10.000 device
 } as const;
 
-export const MAX_CLIENT_COUNT = 5000;
+export const MAX_HOMEPASS_COUNT = 5000;
 
 /**
- * ProfileConfig mirrors the shape used by PerformanceView.applyProfile()
- * so that a tier card selection can be directly consumed by the same
- * spread-into-localConfig pattern used by the existing hardware profiles.
+ * ProfileConfig contains tuning values consumed by PerformanceView.applyProfile().
+ * Values are scaled for homepass density (1 homepass ≈ 5 DNS-querying devices).
  */
 export type ProfileConfig = {
   id: string;
   name: string;
   desc: string;
-  // Hardware recommendation (informational)
+  // Informational
   cores: number;
   ramMB: number;
   queueSize: number;
   description: string;
-  // Values consumed by applyProfile() — must match existing profiles[] shape
+  homepassRange: string;
+  estimatedDevices: string;
+  estimatedQPS: string;
+  // Values consumed by applyProfile()
   threads: number;
   slabs: number;
   rcvbuf: string;
@@ -33,18 +38,21 @@ export type ProfileConfig = {
 };
 
 /**
- * Static tier profiles.
- * Values are aligned with pkg/model/config.go → GetClientTierTuning().
+ * Static tier profiles scaled for homepass density.
+ * 1 homepass ≈ 5 device, each device ≈ 2–5 QPS peak.
  */
 export const TIER_PROFILES: Record<string, ProfileConfig> = {
   TIER_SMALL: {
     id: 'SMALL',
-    name: 'Small Edge / Lab',
-    desc: '0‑500 clients. 1‑2 vCPUs, ≤2 GB RAM. Minimal footprint.',
+    name: 'Small ISP / WISP',
+    desc: '≤500 homepass. Cocok untuk ISP kecil, WISP, atau RT/RW Net.',
     cores: 2,
     ramMB: 2048,
     queueSize: 500,
-    description: '0‑500 clients. 1‑2 vCPUs, ≤2 GB RAM. Minimal footprint.',
+    description: '≤500 homepass (~2.500 device). Optimized untuk ISP kecil dengan footprint minimal.',
+    homepassRange: '0 – 500',
+    estimatedDevices: '~2.500',
+    estimatedQPS: '~5.000 – 12.500',
     threads: 2,
     slabs: 2,
     rcvbuf: '4m',
@@ -56,12 +64,15 @@ export const TIER_PROFILES: Record<string, ProfileConfig> = {
   },
   TIER_MEDIUM: {
     id: 'MEDIUM',
-    name: 'Medium Regional Node',
-    desc: '501‑2000 clients. 4 vCPUs, 4‑8 GB RAM. Balanced throughput.',
+    name: 'Medium ISP Regional',
+    desc: '501–2.000 homepass. Balanced untuk ISP regional atau kampus besar.',
     cores: 4,
     ramMB: 4096,
     queueSize: 1000,
-    description: '501‑2000 clients. 4 vCPUs, 4‑8 GB RAM. Balanced throughput.',
+    description: '501–2.000 homepass (~10.000 device). Balanced throughput & cache untuk ISP regional.',
+    homepassRange: '501 – 2.000',
+    estimatedDevices: '~10.000',
+    estimatedQPS: '~20.000 – 50.000',
     threads: 4,
     slabs: 4,
     rcvbuf: '8m',
@@ -73,12 +84,15 @@ export const TIER_PROFILES: Record<string, ProfileConfig> = {
   },
   TIER_LARGE: {
     id: 'LARGE',
-    name: 'Large Core Resolver',
-    desc: '>2000 clients. 8+ vCPUs, 8‑16 GB RAM. High throughput.',
+    name: 'Large ISP / Carrier',
+    desc: '>2.000 homepass. High-throughput untuk ISP besar atau carrier grade.',
     cores: 8,
     ramMB: 8192,
     queueSize: 2000,
-    description: '>2000 clients. 8+ vCPUs, 8‑16 GB RAM. High throughput.',
+    description: '>2.000 homepass (~10.000+ device). Maximum throughput, deep cache, high queue depth.',
+    homepassRange: '> 2.000',
+    estimatedDevices: '~10.000+',
+    estimatedQPS: '~50.000 – 100.000+',
     threads: 8,
     slabs: 8,
     rcvbuf: '16m',
@@ -92,10 +106,10 @@ export const TIER_PROFILES: Record<string, ProfileConfig> = {
 
 /**
  * Mirrors backend ClientTierFromCount().
- * Returns the tier key for a given client count.
+ * Input: jumlah homepass (bukan device).
  */
-export function getClientTier(clientCount: number): 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE' {
-  if (clientCount <= CLIENT_TIER_THRESHOLDS.SMALL) return 'TIER_SMALL';
-  if (clientCount <= CLIENT_TIER_THRESHOLDS.MEDIUM) return 'TIER_MEDIUM';
+export function getClientTier(homepassCount: number): 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE' {
+  if (homepassCount <= HOMEPASS_TIER_THRESHOLDS.SMALL) return 'TIER_SMALL';
+  if (homepassCount <= HOMEPASS_TIER_THRESHOLDS.MEDIUM) return 'TIER_MEDIUM';
   return 'TIER_LARGE';
 }

@@ -47,25 +47,26 @@ const (
 	ProfileCustom PerformanceProfile = "CUSTOM" // Explicit user-defined parameters
 )
 
-// ClientTier defines a subscriber density tier that drives Unbound tuning.
-// Tiers are based on the number of unique subscriber IPs, not concurrent queries.
+// ClientTier defines a homepass density tier that drives Unbound tuning.
+// Tiers are based on the number of homepass (rumah pelanggan), where each
+// homepass is estimated to have ~5 DNS-querying devices.
 type ClientTier string
 
 const (
-	// TierSmall covers small deployments: 0–500 clients.
+	// TierSmall covers small ISP/WISP deployments: 0–500 homepass (~2,500 devices).
 	// Optimizes for low memory footprint and minimal buffer overhead.
 	TierSmall ClientTier = "TIER_SMALL"
 
-	// TierMedium covers mid-size ISP/campus deployments: 501–2000 clients.
+	// TierMedium covers mid-size ISP/campus deployments: 501–2000 homepass (~10,000 devices).
 	// Balances throughput and resource efficiency.
 	TierMedium ClientTier = "TIER_MEDIUM"
 
-	// TierLarge covers large ISP deployments: > 2000 clients.
+	// TierLarge covers large ISP deployments: > 2000 homepass (~10,000+ devices).
 	// Prioritizes maximum throughput, large cache, and high queue depth.
 	TierLarge ClientTier = "TIER_LARGE"
 )
 
-// ClientTierFromCount returns the appropriate ClientTier for a given subscriber count.
+// ClientTierFromCount returns the appropriate ClientTier for a given homepass count.
 func ClientTierFromCount(clientCount int) ClientTier {
 	switch {
 	case clientCount <= 500:
