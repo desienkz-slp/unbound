@@ -210,9 +210,15 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'resiliency' | 'logrotate'>('compute');
 
   // ── Client-Tier Tuning State ────────────────────────────────────────────────
+  const initialTierKey = (() => {
+    const activeId = config?.performance?.profile;
+    if (!activeId) return null;
+    const entry = Object.entries(TIER_PROFILES).find(([, p]) => p.id === activeId);
+    return entry ? entry[0] : null;
+  })();
   const [clientCount, setClientCount] = useState<number>(config?.client_count ?? 0);
   const [clientTier, setClientTier] = useState<ClientTier>(getClientTier(config?.client_count ?? 0));
-  const [selectedTierProfile, setSelectedTierProfile] = useState<string | null>(null);
+  const [selectedTierProfile, setSelectedTierProfile] = useState<string | null>(initialTierKey);
 
   // ── Logrotate State ──────────────────────────────────────────────────────────
   const [logrotateReport, setLogrotateReport] = useState<LogrotateReport | null>(null);
