@@ -61,9 +61,13 @@ const (
 	// Balances throughput and resource efficiency.
 	TierMedium ClientTier = "TIER_MEDIUM"
 
-	// TierLarge covers large ISP deployments: > 2000 homepass (~10,000+ devices).
+	// TierLarge covers large ISP deployments: 2001–5000 homepass (~25,000 devices).
 	// Prioritizes maximum throughput, large cache, and high queue depth.
 	TierLarge ClientTier = "TIER_LARGE"
+
+	// TierCarrier covers carrier-grade ISP deployments: > 5000 homepass (~25,000+ devices).
+	// Maximum capacity: SO_REUSEPORT, 32k queues, aggressive buffering.
+	TierCarrier ClientTier = "TIER_CARRIER"
 )
 
 // ClientTierFromCount returns the appropriate ClientTier for a given homepass count.
@@ -73,8 +77,10 @@ func ClientTierFromCount(clientCount int) ClientTier {
 		return TierSmall
 	case clientCount <= 2000:
 		return TierMedium
-	default:
+	case clientCount <= 5000:
 		return TierLarge
+	default:
+		return TierCarrier
 	}
 }
 

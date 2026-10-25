@@ -53,7 +53,7 @@ export const ClientCountInput: React.FC<ClientCountInputProps> = ({ value, onCha
         />
       </div>
       <p className="mt-1 text-xs text-gray-400">
-        ≤500 (Small), 501–2.000 (Medium), &gt;2.000 (Large)
+        ≤500 (Small), 501–2.000 (Medium), 2.001–5.000 (Large), &gt;5.000 (Carrier)
         {localValue > 0 && (
           <span className="ml-2 text-cyan-400">
             ≈ {estimatedDevices.toLocaleString()} device ({DEVICES_PER_HOMEPASS} device/homepass)

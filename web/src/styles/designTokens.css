@@ -5,6 +5,7 @@
   --bg-grad-small: linear-gradient(135deg, hsl(210, 80%, 30%), hsl(210, 70%, 45%));
   --bg-grad-medium: linear-gradient(135deg, hsl(160, 80%, 30%), hsl(160, 70%, 45%));
   --bg-grad-large: linear-gradient(135deg, hsl(30, 80%, 30%), hsl(30, 70%, 45%));
+  --bg-grad-carrier: linear-gradient(135deg, hsl(350, 80%, 30%), hsl(350, 70%, 45%));
   --text-primary: hsl(0, 0%, 95%);
   --text-secondary: hsl(0, 0%, 70%);
   --card-bg: rgba(255, 255, 255, 0.08);

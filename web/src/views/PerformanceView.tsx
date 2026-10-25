@@ -939,8 +939,8 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
               }}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(['TIER_SMALL', 'TIER_MEDIUM', 'TIER_LARGE'] as const).map((tierKey) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {(['TIER_SMALL', 'TIER_MEDIUM', 'TIER_LARGE', 'TIER_CARRIER'] as const).map((tierKey) => {
                 const profile = TIER_PROFILES[tierKey];
                 return (
                   <TierProfileCard

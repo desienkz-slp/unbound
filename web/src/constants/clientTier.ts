@@ -6,9 +6,10 @@ export const DEVICES_PER_HOMEPASS = 5;
 export const HOMEPASS_TIER_THRESHOLDS = {
   SMALL: 500,   // 0–500 homepass ≈ 2.500 device
   MEDIUM: 2000, // 501–2000 homepass ≈ 10.000 device
+  LARGE: 5000,  // 2001–5000 homepass ≈ 25.000 device
 } as const;
 
-export const MAX_HOMEPASS_COUNT = 5000;
+export const MAX_HOMEPASS_COUNT = 10000;
 
 /**
  * ProfileConfig contains tuning values consumed by PerformanceView.applyProfile().
@@ -102,14 +103,35 @@ export const TIER_PROFILES: Record<string, ProfileConfig> = {
     msgCache: '512m',
     rrsetCache: '1024m',
   },
+  TIER_CARRIER: {
+    id: 'ISP',
+    name: 'Carrier Grade ISP',
+    desc: '>5.000 homepass. Maximum capacity untuk ISP besar / carrier grade.',
+    cores: 16,
+    ramMB: 32768,
+    queueSize: 5000,
+    description: '>5.000 homepass (~25.000+ device). Carrier-grade: SO_REUSEPORT, 32k queues, aggressive buffering.',
+    homepassRange: '> 5.000',
+    estimatedDevices: '~25.000+',
+    estimatedQPS: '~100.000+',
+    threads: 16,
+    slabs: 16,
+    rcvbuf: '32m',
+    sndbuf: '32m',
+    queriesPerThread: 16384,
+    outgoingRange: 65536,
+    msgCache: '1024m',
+    rrsetCache: '2048m',
+  },
 };
 
 /**
  * Mirrors backend ClientTierFromCount().
  * Input: jumlah homepass (bukan device).
  */
-export function getClientTier(homepassCount: number): 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE' {
+export function getClientTier(homepassCount: number): 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE' | 'TIER_CARRIER' {
   if (homepassCount <= HOMEPASS_TIER_THRESHOLDS.SMALL) return 'TIER_SMALL';
   if (homepassCount <= HOMEPASS_TIER_THRESHOLDS.MEDIUM) return 'TIER_MEDIUM';
-  return 'TIER_LARGE';
+  if (homepassCount <= HOMEPASS_TIER_THRESHOLDS.LARGE) return 'TIER_LARGE';
+  return 'TIER_CARRIER';
 }

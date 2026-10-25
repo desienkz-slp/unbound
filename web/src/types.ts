@@ -127,7 +127,7 @@ export interface DesiredState {
   client_count?: number;
 }
 
-export type ClientTier = 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE';
+export type ClientTier = 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE' | 'TIER_CARRIER';
 
 export interface RateLimitConfig {
   enabled: boolean;

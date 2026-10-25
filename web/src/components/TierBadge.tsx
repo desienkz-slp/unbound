@@ -6,9 +6,10 @@ interface TierBadgeProps {
 }
 
 const TIER_META: Record<ClientTier, { label: string; gradVar: string }> = {
-  TIER_SMALL:  { label: 'Small',  gradVar: 'var(--bg-grad-small)'  },
-  TIER_MEDIUM: { label: 'Medium', gradVar: 'var(--bg-grad-medium)' },
-  TIER_LARGE:  { label: 'Large',  gradVar: 'var(--bg-grad-large)'  },
+  TIER_SMALL:   { label: 'Small',   gradVar: 'var(--bg-grad-small)'   },
+  TIER_MEDIUM:  { label: 'Medium',  gradVar: 'var(--bg-grad-medium)'  },
+  TIER_LARGE:   { label: 'Large',   gradVar: 'var(--bg-grad-large)'   },
+  TIER_CARRIER: { label: 'Carrier', gradVar: 'var(--bg-grad-carrier)' },
 };
 
 export const TierBadge: React.FC<TierBadgeProps> = ({ tier }) => {
