@@ -1,82 +1,91 @@
-# Walkthrough — NVR-Style Auto-Purge Arsip Log (.gz)
+﻿# Walkthrough — Client-Tier Tuning System
 
-## Fitur Baru
-Sistem auto-purge yang memantau disk usage setiap 5 menit dan otomatis menghapus arsip `.gz` tertua saat threshold tercapai — seperti NVR CCTV yang menghapus rekaman lama saat HDD penuh.
-
-## Komponen Perubahan
-
-### Backend (Go)
-| File | Perubahan |
-|---|---|
-| `pkg/model/config.go` | +2 field: `auto_purge`, `auto_purge_threshold` |
-| `pkg/logrotate/purger.go` | Core purge logic: collect archives oldest-first, delete with rate limit & safety |
-| `pkg/logrotate/purger_linux.go` | Disk usage via `syscall.Statfs` |
-| `pkg/logrotate/purger_other.go` | Non-Linux stub (simulated 40%) |
-| `pkg/logrotate/manager.go` | Background goroutine lifecycle, PurgeStatus tracking |
-| `pkg/logrotate/model.go` | +`PurgeStatus` struct, +`auto_purge_status` di report |
-| `pkg/logrotate/engine.go` | AI profiles include auto-purge: STORAGE_SAVER=50%, BALANCED=75%, ISP_AUDIT=90% |
-
-### Frontend (TypeScript/React)
-| File | Perubahan |
-|---|---|
-| `web/src/types.ts` | +`PurgeStatus` interface, auto_purge fields di `LogrotatePolicy` & `LogrotateReport` |
-| `web/src/views/PerformanceView.tsx` | Toggle auto-purge + 3 tombol threshold (50/75/90%) + live status indicator |
-
-## Safety Mechanisms
-- Minimal 1 arsip selalu dipertahankan
-- Max 5 file dihapus per cycle (rate limit)
-- Re-check disk setelah setiap deletion
-- Graceful shutdown via context cancellation
-- Hanya file pattern `unbound.log.*.gz` yang eligible
-
-## Build & Test Status
-- `go build ./...` ✅
-- `go test ./pkg/logrotate/` ✅ (6/6 pass)
-- `npx tsc --noEmit` ✅
-
-## Deploy
-Build binary & deploy ke server, lalu apply logrotate config via UI untuk mengaktifkan auto-purge.
+**Date:** 2026-10-25
+**Scope:** pkg/model/config.go
 
 ---
 
-# Walkthrough — PTR Auto-Inject Tidak Muncul di Server (Binary Lama Terdeploy)
+## Ringkasan Perubahan
 
-## Masalah
-Setelah update, DNS Rewrite node `dns-srnk-1` hanya punya A record. PTR tidak otomatis ditambahkan.
+Sistem tuning sebelumnya hanya berbasis **hardware** (CPU cores + RAM).
+Sekarang ditambahkan layer baru: **client tier** berdasarkan jumlah subscriber IP yang dilayani node.
 
-## Akar Masalah
-`scripts/netora-dns-update.sh` menyalin `deploy/bin/netora-api-linux-amd64` ke `/usr/local/bin/netora-api`.
-File itu bertanggal 17 Okt, sebelum fix PTR. Binary dengan fix ada di `deploy/netora-api`, yang tidak dipakai script.
+---
 
-Bukti:
-- Binary di server `16059405` byte, sama ukurannya dengan `deploy/bin/netora-api-linux-amd64` lama.
-- `-node-id dns-srnk-1` cocok dengan `nodes.id`, jadi bukan masalah nama node.
-- Journal tidak punya log `Synchronized node ...`.
-- DB `nodes.config_json.local_records` hanya berisi A (TTL 300), tanpa PTR.
+## Tier System
 
-## Perubahan
-- Build ulang `deploy/bin/netora-api-linux-amd64` (linux/amd64, CGO off, `-trimpath -ldflags="-s -w"`).
-- Commit `7ea0870`, sudah di-push ke `main`.
-- Kode PTR tidak diubah.
+| Tier | Batas Client | TIER Constant |
+|---|---|---|
+| Small | 0 - 500 client | TierSmall = TIER_SMALL |
+| Medium | 501 - 2.000 client | TierMedium = TIER_MEDIUM |
+| Large | > 2.000 client | TierLarge = TIER_LARGE |
 
-## Verifikasi
-- `go test ./pkg/model/... ./pkg/configengine/... ./pkg/storage/...` lulus.
-- SHA256 binary baru: `47B726FDB5F0F3F2D8BE1F86CA38CB17AABB42E913F9035406DA8F05F759EF79`.
-- Belum diverifikasi di server: update node, restart service, dan munculnya PTR di UI.
+---
 
-## Langkah di Server
-```bash
-# 1. Update lewat mekanisme yang ada (UI "Update Platform" atau script update)
-# 2. Cek hash harus sama dengan hash di atas
-sha256sum /usr/local/bin/netora-api
-# 3. Cek log startup
-journalctl -u netora-api --no-pager | grep -E "Synchronized|failed saving|failed to persist"
-# 4. Cek DB
-sudo -u postgres psql -d netora -c "select jsonb_pretty(config_json->'local_records') from nodes;"
-```
-Hasil yang benar: log `Synchronized node 'dns-srnk-1' DNS rewrites ...`, dan DB punya A + PTR untuk `172.18.20.146`.
+## Parameter yang Dikontrol per Tier
 
-## Risiko
-- Dua binary di `deploy/` (`netora-api` dan `bin/netora-api-linux-amd64`) rawan salah pakai. Build ke `deploy/bin/netora-api-linux-amd64` setiap kali kode berubah.
-- Footer UI `git:<hash>` berasal dari `version.json`/`update-state.json`, bukan dari binary API. Jangan dipakai sebagai bukti versi binary.
-- Aturan proyek melarang menimpa setting lokal. Fix ini hanya menambah PTR yang hilang. A record dan rewrite lain (`isolir.sornongko.net`) tidak disentuh.
+| Parameter Unbound | Small (<=500) | Medium (<=2K) | Large (>2K) |
+|---|---|---|---|
+| num-queries-per-thread | 1024 | 4096 | 8192 |
+| outgoing-range | 4096 | 8192 | 32768 |
+| incoming-num-tcp | 256 | 512 | 2048 |
+| so-rcvbuf / so-sndbuf | 2m | 4m | 8m |
+| cache-min-ttl (detik) | 60 | 45 | 30 |
+| ip-ratelimit (QPS/IP) | 200 | 500 | 1000 |
+| ratelimit (QPS/domain) | 1000 | 2000 | 5000 |
+| ip-ratelimit-size | 4m | 8m | 16m |
+| infra-host-ttl (detik) | 900 | 900 | 1800 |
+
+Thread count & cache size tetap dikontrol oleh hardware (cores/RAM).
+Tier hanya override buffer, queue, TCP, dan rate-limit parameters.
+
+---
+
+## File yang Diubah
+
+pkg/model/config.go satu-satunya file yang dimodifikasi.
+
+### Penambahan baru:
+1. ClientTier type + konstanta TierSmall, TierMedium, TierLarge
+2. ClientTierFromCount(n int) ClientTier - mapping jumlah client ke tier
+3. ClientTierTuning struct - container semua parameter per tier
+4. clientTierTable map - SSOT tabel nilai tuning per tier
+5. GetClientTierTuning(n int) ClientTierTuning - lookup dari jumlah client
+6. AutoTuneByClientCount(clientCount, cores, ramMB int) - entry point utama
+7. DesiredState.ClientCount int field baru (JSON: client_count, opsional)
+8. DesiredState.ApplyClientTier(clientCount, cores, ramMB int) - patch non-destruktif
+
+### Update:
+NewDefaultDesiredState -> menggunakan AutoTuneByClientCount(0, cores, ramMB) + rate limit dari TierMedium
+
+---
+
+## Cara Penggunaan
+
+### Buat state baru dengan tier:
+  state := model.NewDefaultDesiredState(nodeID, cores, ramMB)
+  state.ApplyClientTier(1500, cores, ramMB) // 1500 client -> TierMedium
+
+### Patch state eksisting dari database (non-destruktif):
+  state.ApplyClientTier(clientCount, cores, ramMB)
+
+### Query tier tanpa apply:
+  tier   := model.ClientTierFromCount(300)      // -> TierSmall
+  tuning := model.GetClientTierTuning(300)      // -> ClientTierTuning{...}
+
+---
+
+## Jaminan Non-Destruktif
+
+ApplyClientTier() TIDAK menyentuh:
+- Upstreams, ClientNetworks, Listeners
+- DNSSEC, LocalRecords, BlocklistFeeds
+- SafeSearch, ParentalControl, GamblingBlock
+- Performance.NumThreads dan semua *CacheSlabs
+
+---
+
+## Test Results
+
+  go test ./pkg/model/... -> PASS (11 tests, 0.415s)
+  go build ./...           -> OK (exit 0)

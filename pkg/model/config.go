@@ -47,6 +47,36 @@ const (
 	ProfileCustom PerformanceProfile = "CUSTOM" // Explicit user-defined parameters
 )
 
+// ClientTier defines a subscriber density tier that drives Unbound tuning.
+// Tiers are based on the number of unique subscriber IPs, not concurrent queries.
+type ClientTier string
+
+const (
+	// TierSmall covers small deployments: 0–500 clients.
+	// Optimizes for low memory footprint and minimal buffer overhead.
+	TierSmall ClientTier = "TIER_SMALL"
+
+	// TierMedium covers mid-size ISP/campus deployments: 501–2000 clients.
+	// Balances throughput and resource efficiency.
+	TierMedium ClientTier = "TIER_MEDIUM"
+
+	// TierLarge covers large ISP deployments: > 2000 clients.
+	// Prioritizes maximum throughput, large cache, and high queue depth.
+	TierLarge ClientTier = "TIER_LARGE"
+)
+
+// ClientTierFromCount returns the appropriate ClientTier for a given subscriber count.
+func ClientTierFromCount(clientCount int) ClientTier {
+	switch {
+	case clientCount <= 500:
+		return TierSmall
+	case clientCount <= 2000:
+		return TierMedium
+	default:
+		return TierLarge
+	}
+}
+
 // Listener represents a specific IP/Port binding on the node.
 type Listener struct {
 	ID       string       `json:"id"`
@@ -306,12 +336,21 @@ type DesiredState struct {
 	Logrotate        LogrotateConfig       `json:"logrotate"`
 	IncludeFiles     []string              `json:"include_files,omitempty"`
 	BlocklistFeeds   []FeedConfig          `json:"blocklist_feeds,omitempty"`
+
+	// ClientCount is the total number of unique subscriber IPs managed by this node.
+	// When non-zero, AutoTuneByClientCount() overrides the hardware-only tuning
+	// with parameters optimised for the actual subscriber density.
+	// Valid tiers: 0–500 → TIER_SMALL, 501–2000 → TIER_MEDIUM, >2000 → TIER_LARGE.
+	ClientCount int `json:"client_count,omitempty"`
 }
 
 // NewDefaultDesiredState returns a safe, production-grade baseline desired state.
+// Pass clientCount > 0 to seed client-tier tuning from the start; use 0 for
+// a pure hardware-only default (tier can be applied later via ApplyClientTier).
 func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
-	perf := AutoTunePerformance(cores, ramMB)
-	cache := AutoTuneCache(ramMB)
+	perf, cache := AutoTuneByClientCount(0, cores, ramMB)
+	// Use TierMedium rate-limit defaults so the baseline is reasonably conservative.
+	defaultTier := clientTierTable[TierMedium]
 
 	return &DesiredState{
 		VersionID:      fmt.Sprintf("v-%d", time.Now().Unix()),
@@ -425,10 +464,10 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,
-			IPRateLimit:       500,
+			IPRateLimit:       defaultTier.IPRateLimit,
 			IPRateLimitFactor: 10,
-			DomainRateLimit:   2000,
-			RateLimitSize:     "16m",
+			DomainRateLimit:   defaultTier.DomainRateLimit,
+			RateLimitSize:     defaultTier.RateLimitSize,
 			RateLimitSlabs:    perf.MsgCacheSlabs,
 		},
 		SafeSearch: SafeSearchConfig{
@@ -467,6 +506,35 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			ControlUseCert: false,
 		},
 	}
+}
+
+// ApplyClientTier re-tunes an existing DesiredState for a given subscriber count
+// without touching any protected operational fields (credentials, ACLs, blocklists,
+// upstream resolvers, local records, or SafeSearch/parental-control settings).
+// It is safe to call on a live state snapshot loaded from the database.
+func (s *DesiredState) ApplyClientTier(clientCount, cores, ramMB int) {
+	if s == nil || clientCount < 0 {
+		return
+	}
+	s.ClientCount = clientCount
+
+	perf, cache := AutoTuneByClientCount(clientCount, cores, ramMB)
+	// Preserve thread count and slabs from hardware baseline (caller may have overridden them).
+	perf.NumThreads = s.Performance.NumThreads
+	perf.MsgCacheSlabs = s.Performance.MsgCacheSlabs
+	perf.RRSetCacheSlabs = s.Performance.RRSetCacheSlabs
+	perf.KeyCacheSlabs = s.Performance.KeyCacheSlabs
+	perf.InfraCacheSlabs = s.Performance.InfraCacheSlabs
+
+	s.Performance = perf
+	s.Cache = cache
+
+	// Update rate-limit parameters from the new tier.
+	t := GetClientTierTuning(clientCount)
+	s.RateLimit.IPRateLimit = t.IPRateLimit
+	s.RateLimit.DomainRateLimit = t.DomainRateLimit
+	s.RateLimit.RateLimitSize = t.RateLimitSize
+	s.RateLimit.RateLimitSlabs = perf.MsgCacheSlabs
 }
 
 // EnsureNodeDnsRewrites verifies and ensures that the DesiredState contains default DNS rewrite (A records)
@@ -568,6 +636,104 @@ func (s *DesiredState) EnsureNodeDnsRewrites(nodeName string, ips []string) bool
 	return true
 }
 
+// ClientTierTuning holds the Unbound performance and cache overrides for a specific client tier.
+// Values are applied on top of the hardware-derived baseline from AutoTunePerformance.
+type ClientTierTuning struct {
+	Tier                ClientTier
+	NumQueriesPerThread int
+	OutgoingRange       int
+	IncomingNumTCP      int
+	SoRcvBuf            string
+	SoSndBuf            string
+	CacheMinTTL         int    // seconds — higher = better hit rate for small fleets
+	IPRateLimit         int    // QPS limit per subscriber IP
+	DomainRateLimit     int    // QPS limit per target domain
+	RateLimitSize       string // hash table memory
+	InfraHostTTL        int    // seconds
+}
+
+// clientTierTable is the single source-of-truth for all client-tier tuning.
+// Tier boundaries: TierSmall 0–500 | TierMedium 501–2000 | TierLarge >2000.
+var clientTierTable = map[ClientTier]ClientTierTuning{
+	TierSmall: {
+		Tier:                TierSmall,
+		NumQueriesPerThread: 1024,  // Low queue depth — avoids wasted RAM for small fleet
+		OutgoingRange:       4096,  // Max concurrent outgoing sockets
+		IncomingNumTCP:      256,   // TCP DNS rare at this scale
+		SoRcvBuf:            "2m",  // OS socket receive buffer
+		SoSndBuf:            "2m",  // OS socket send buffer
+		CacheMinTTL:         60,    // Shorter TTL floor → faster propagation
+		IPRateLimit:         200,   // 200 QPS/subscriber (small fleet, be generous)
+		DomainRateLimit:     1000,  // 1000 QPS/domain
+		RateLimitSize:       "4m",  // Small hash table
+		InfraHostTTL:        900,
+	},
+	TierMedium: {
+		Tier:                TierMedium,
+		NumQueriesPerThread: 4096,  // Medium queue — handles burst from 500–2K clients
+		OutgoingRange:       8192,  // Concurrent outgoing sockets
+		IncomingNumTCP:      512,   // Moderate TCP allowance
+		SoRcvBuf:            "4m",
+		SoSndBuf:            "4m",
+		CacheMinTTL:         45,    // Balance between freshness and hit rate
+		IPRateLimit:         500,   // 500 QPS/subscriber
+		DomainRateLimit:     2000,
+		RateLimitSize:       "8m",
+		InfraHostTTL:        900,
+	},
+	TierLarge: {
+		Tier:                TierLarge,
+		NumQueriesPerThread: 8192,  // Full depth — handles >2K concurrent subscribers
+		OutgoingRange:       32768, // Max concurrent outgoing sockets
+		IncomingNumTCP:      2048,  // Higher TCP for large deployments
+		SoRcvBuf:            "8m",
+		SoSndBuf:            "8m",
+		CacheMinTTL:         30,    // Lower floor — CDN TTLs matter at scale
+		IPRateLimit:         1000,  // 1000 QPS/subscriber (shared resolver)
+		DomainRateLimit:     5000,
+		RateLimitSize:       "16m",
+		InfraHostTTL:        1800,  // Longer infra TTL reduces upstream churn
+	},
+}
+
+// GetClientTierTuning returns the canonical tuning parameters for a given client count.
+// Falls back to TierMedium if the tier is unrecognised.
+func GetClientTierTuning(clientCount int) ClientTierTuning {
+	tier := ClientTierFromCount(clientCount)
+	if t, ok := clientTierTable[tier]; ok {
+		return t
+	}
+	return clientTierTable[TierMedium]
+}
+
+// AutoTuneByClientCount generates PerformanceConfig and CacheConfig optimised for the
+// given subscriber count and hardware. The client tier sets queue/buffer parameters
+// while the hardware baseline (cores, RAM) sets thread count and cache sizes.
+// If clientCount is 0, it falls back to pure hardware-based tuning.
+func AutoTuneByClientCount(clientCount, cores, ramMB int) (PerformanceConfig, CacheConfig) {
+	perf := AutoTunePerformance(cores, ramMB)
+	cache := AutoTuneCache(ramMB)
+
+	if clientCount <= 0 {
+		return perf, cache
+	}
+
+	t := GetClientTierTuning(clientCount)
+
+	// Override hardware-derived buffer parameters with client-tier values
+	perf.NumQueriesPerThread = t.NumQueriesPerThread
+	perf.OutgoingRange = t.OutgoingRange
+	perf.IncomingNumTCP = t.IncomingNumTCP
+	perf.SoRcvBuf = t.SoRcvBuf
+	perf.SoSndBuf = t.SoSndBuf
+
+	// Apply cache TTL floor and infra TTL from tier
+	cache.MinTTL = t.CacheMinTTL
+	cache.InfraHostTTL = t.InfraHostTTL
+
+	return perf, cache
+}
+
 // AutoTuneCache computes safe cache allocations based on available RAM in MB.
 func AutoTuneCache(ramMB int) CacheConfig {
 	if ramMB <= 512 {
@@ -653,6 +819,7 @@ func AutoTunePerformance(cores int, ramMB int) PerformanceConfig {
 		profile = ProfileLarge
 	}
 
+	// Hardware baseline for queue depth and buffer sizes (may be overridden by client tier).
 	numQueries := 4096
 	outgoing := 16384
 	incomingTCP := 2048
