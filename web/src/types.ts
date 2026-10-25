@@ -124,7 +124,10 @@ export interface DesiredState {
     port: number;
   };
   logrotate?: LogrotatePolicy;
+  client_count?: number;
 }
+
+export type ClientTier = 'TIER_SMALL' | 'TIER_MEDIUM' | 'TIER_LARGE';
 
 export interface RateLimitConfig {
   enabled: boolean;

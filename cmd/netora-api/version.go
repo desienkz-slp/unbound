@@ -30,9 +30,9 @@ const (
 // Order: built-in fallback < version.json < update-state.json (live deployment state).
 func readVersionInfo(nodeID string) map[string]interface{} {
 	info := map[string]interface{}{
-		"version":      "v1.1.17",
-		"commit_count": 167,
-		"build":        167,
+		"version":      "v1.1.18",
+		"commit_count": 168,
+		"build":        168,
 		"git_commit":   "e85ab42",
 		"git_branch":   "main",
 		"channel":      "production",

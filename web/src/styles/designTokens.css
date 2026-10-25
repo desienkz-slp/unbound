@@ -1,0 +1,59 @@
+/* Design tokens for Client‑Tier Tuning UI */
+
+/* Gradient backgrounds for each tier */
+:root {
+  --bg-grad-small: linear-gradient(135deg, hsl(210, 80%, 30%), hsl(210, 70%, 45%));
+  --bg-grad-medium: linear-gradient(135deg, hsl(160, 80%, 30%), hsl(160, 70%, 45%));
+  --bg-grad-large: linear-gradient(135deg, hsl(30, 80%, 30%), hsl(30, 70%, 45%));
+  --text-primary: hsl(0, 0%, 95%);
+  --text-secondary: hsl(0, 0%, 70%);
+  --card-bg: rgba(255, 255, 255, 0.08);
+  --card-blur: 12px;
+  --card-radius: 12px;
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Glass‑morphism card style */
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(var(--card-blur));
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 1.5rem;
+  color: var(--text-primary);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* Tier badge */
+.tier-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  color: #fff;
+  animation: badge-pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes badge-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* Input slider style */
+.client-count-slider {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+/* Ensure dark‑mode compatibility */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-primary: hsl(0, 0%, 95%);
+    --text-secondary: hsl(0, 0%, 70%);
+  }
+}

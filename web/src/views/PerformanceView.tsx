@@ -20,8 +20,13 @@ import {
   Sliders,
   Check,
 } from 'lucide-react';
-import { DesiredState, NodeRecord, LogrotateReport, LogrotatePolicy } from '../types';
+import { DesiredState, NodeRecord, LogrotateReport, LogrotatePolicy, ClientTier } from '../types';
 import { api } from '../services/api';
+import { ClientCountInput } from '../components/ClientCountInput';
+import { TierBadge } from '../components/TierBadge';
+import { TierProfileCard } from '../components/TierProfileCard';
+import { TIER_PROFILES, getClientTier, ProfileConfig } from '../constants/clientTier';
+import '../styles/designTokens.css';
 
 interface PerformanceViewProps {
   config: DesiredState | null;
@@ -203,6 +208,11 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
   const [autoTuningAll, setAutoTuningAll] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'compute' | 'resiliency' | 'logrotate'>('compute');
+
+  // ── Client-Tier Tuning State ────────────────────────────────────────────────
+  const [clientCount, setClientCount] = useState<number>(config?.client_count ?? 0);
+  const [clientTier, setClientTier] = useState<ClientTier>(getClientTier(config?.client_count ?? 0));
+  const [selectedTierProfile, setSelectedTierProfile] = useState<string | null>(null);
 
   // ── Logrotate State ──────────────────────────────────────────────────────────
   const [logrotateReport, setLogrotateReport] = useState<LogrotateReport | null>(null);
@@ -1079,6 +1089,74 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({
                 Disk usage beyond 75% triggers <span className="text-amber-400">warnings</span>;
                 beyond 90% causes update failures.
               </p>
+            </div>
+          </div>
+
+          {/* ── Client-Tier Tuning (Subscriber Density) ───────────────────────── */}
+          <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-5 space-y-4">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Gauge className="w-4 h-4 text-violet-400" />
+              Client-Tier Tuning (Subscriber Density)
+              <TierBadge tier={clientTier} />
+            </h2>
+            <p className="text-xs text-gray-400">
+              Masukkan jumlah pelanggan/subscriber untuk mendapatkan rekomendasi profil berdasarkan densitas client.
+              Sistem akan otomatis menentukan tier (Small ≤500, Medium ≤2000, Large &gt;2000).
+            </p>
+
+            <ClientCountInput
+              value={clientCount}
+              onChange={(v) => {
+                setClientCount(v);
+                const tier = getClientTier(v);
+                setClientTier(tier);
+              }}
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(['TIER_SMALL', 'TIER_MEDIUM', 'TIER_LARGE'] as const).map((tierKey) => {
+                const profile = TIER_PROFILES[tierKey];
+                return (
+                  <TierProfileCard
+                    key={tierKey}
+                    tier={tierKey}
+                    profile={profile}
+                    isRecommended={tierKey === clientTier}
+                    selected={selectedTierProfile === tierKey}
+                    onSelect={(p: ProfileConfig) => {
+                      setSelectedTierProfile(tierKey);
+                      // Reuse existing applyProfile pattern — spread into localConfig
+                      if (!localConfig) return;
+                      const updatedCfg: DesiredState = {
+                        ...localConfig,
+                        client_count: clientCount,
+                        performance: {
+                          ...(localConfig.performance || {}),
+                          profile: p.id,
+                          num_threads: p.threads,
+                          msg_cache_slabs: p.slabs,
+                          rrset_cache_slabs: p.slabs,
+                          so_rcvbuf: p.rcvbuf,
+                          so_sndbuf: p.sndbuf,
+                          num_queries_per_thread: p.queriesPerThread,
+                          outgoing_range: p.outgoingRange,
+                          so_reuseport: true,
+                        },
+                        cache: {
+                          ...(localConfig.cache || {}),
+                          msg_cache_size: p.msgCache,
+                          rrset_cache_size: p.rrsetCache,
+                        },
+                      };
+                      setLocalConfig(updatedCfg);
+                      setMsg({
+                        type: 'success',
+                        text: `Profil Client-Tier '${p.name}' (${clientCount} clients → ${tierKey}) dipilih. Klik 'Apply Tuning' untuk menyimpan ke node.`,
+                      });
+                    }}
+                  />
+                );
+              })}
             </div>
           </div>
 
