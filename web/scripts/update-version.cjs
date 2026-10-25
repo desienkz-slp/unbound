@@ -2,10 +2,9 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-let commitCount = 44;
-let shortSha = 'de28649';
+let commitCount = 0;
+let shortSha = '0000000';
 let branch = 'main';
-let baseTag = '';
 
 try {
   commitCount = parseInt(execSync('git rev-list --count HEAD').toString().trim(), 10);
@@ -15,52 +14,46 @@ try {
   console.warn('Git query warning:', e.message);
 }
 
-// Tag-based semver: vX.Y from latest tag, patch = commits since that tag.
-// Falls back to v1.0.<commitCount> when no tag exists yet.
-try {
-  baseTag = execSync('git describe --tags --abbrev=0').toString().trim();
-} catch (e) {
-  baseTag = '';
-}
+// ── Auto-version from git tags ──────────────────────────────────────────────
+// Strategy:
+//   1. Find the nearest ancestor tag matching vX.Y (minor release tag).
+//   2. Count commits since that tag → patch number.
+//   3. Version = vX.Y.<commits-since-tag>
+//   4. If uncommitted changes exist, patch += 1 (pre-commit build).
+//   5. Fallback: v1.0.<total-commit-count> if no vX.Y tag exists.
 
 let version;
 if (process.env.VERSION) {
   version = process.env.VERSION;
 } else {
-  const rootVersionPath = path.join(__dirname, '..', '..', 'version.json');
-  let rootConfigVersion = '';
-  if (fs.existsSync(rootVersionPath)) {
-    try {
-      const rootData = JSON.parse(fs.readFileSync(rootVersionPath, 'utf8'));
-      if (rootData && rootData.version) {
-        rootConfigVersion = rootData.version;
-      }
-    } catch (e) {}
-  }
+  // Find the nearest vX.Y tag (2-segment minor tag, not vX.Y.Z patch tags)
+  let minorTag = '';
+  try {
+    // List all tags matching vX.Y pattern, pick the one closest to HEAD
+    const allTags = execSync('git tag --list "v*" --sort=-v:refname').toString().trim().split('\n');
+    minorTag = allTags.find(t => /^v\d+\.\d+$/.test(t.trim())) || '';
+    minorTag = minorTag.trim();
+  } catch (e) {}
 
-  if (rootConfigVersion && process.env.AUTO_INCREMENT !== 'true') {
-    version = rootConfigVersion;
-  } else if (baseTag && /^v\d+\.\d+$/.test(baseTag)) {
-    let commitsSinceTag = parseInt(execSync(`git rev-list --count ${baseTag}..HEAD`).toString().trim(), 10);
-    // Account for the pending commit about to be made (uncommitted changes at build time)
+  if (minorTag) {
+    let commitsSinceTag = parseInt(
+      execSync(`git rev-list --count ${minorTag}..HEAD`).toString().trim(), 10
+    );
     try {
       const status = execSync('git status --porcelain').toString().trim();
-      if (status.length > 0) {
-        commitsSinceTag += 1;
-      }
+      if (status.length > 0) commitsSinceTag += 1;
     } catch (e) {}
-    version = `${baseTag}.${commitsSinceTag}`;
+    version = `${minorTag}.${commitsSinceTag}`;
   } else {
-    // Legacy fallback: no tag yet
+    // No minor tag found — legacy fallback
     try {
       const status = execSync('git status --porcelain').toString().trim();
-      if (status.length > 0) {
-        commitCount += 1;
-      }
+      if (status.length > 0) commitCount += 1;
     } catch (e) {}
     version = `v1.0.${commitCount}`;
   }
 }
+
 const versionData = {
   version,
   commit_count: commitCount,
