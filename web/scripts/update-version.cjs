@@ -24,25 +24,42 @@ try {
 }
 
 let version;
-if (baseTag && /^v\d+\.\d+$/.test(baseTag)) {
-  let commitsSinceTag = parseInt(execSync(`git rev-list --count ${baseTag}..HEAD`).toString().trim(), 10);
-  // Account for the pending commit about to be made (uncommitted changes at build time)
-  try {
-    const status = execSync('git status --porcelain').toString().trim();
-    if (status.length > 0) {
-      commitsSinceTag += 1;
-    }
-  } catch (e) {}
-  version = `${baseTag}.${commitsSinceTag}`;
+if (process.env.VERSION) {
+  version = process.env.VERSION;
 } else {
-  // Legacy fallback: no tag yet
-  try {
-    const status = execSync('git status --porcelain').toString().trim();
-    if (status.length > 0) {
-      commitCount += 1;
-    }
-  } catch (e) {}
-  version = `v1.0.${commitCount}`;
+  const rootVersionPath = path.join(__dirname, '..', '..', 'version.json');
+  let rootConfigVersion = '';
+  if (fs.existsSync(rootVersionPath)) {
+    try {
+      const rootData = JSON.parse(fs.readFileSync(rootVersionPath, 'utf8'));
+      if (rootData && rootData.version) {
+        rootConfigVersion = rootData.version;
+      }
+    } catch (e) {}
+  }
+
+  if (rootConfigVersion && process.env.AUTO_INCREMENT !== 'true') {
+    version = rootConfigVersion;
+  } else if (baseTag && /^v\d+\.\d+$/.test(baseTag)) {
+    let commitsSinceTag = parseInt(execSync(`git rev-list --count ${baseTag}..HEAD`).toString().trim(), 10);
+    // Account for the pending commit about to be made (uncommitted changes at build time)
+    try {
+      const status = execSync('git status --porcelain').toString().trim();
+      if (status.length > 0) {
+        commitsSinceTag += 1;
+      }
+    } catch (e) {}
+    version = `${baseTag}.${commitsSinceTag}`;
+  } else {
+    // Legacy fallback: no tag yet
+    try {
+      const status = execSync('git status --porcelain').toString().trim();
+      if (status.length > 0) {
+        commitCount += 1;
+      }
+    } catch (e) {}
+    version = `v1.0.${commitCount}`;
+  }
 }
 const versionData = {
   version,

@@ -1,8 +1,8 @@
 {
-  "version": "v1.1.16",
-  "commit_count": 162,
-  "build": 162,
-  "git_commit": "d20b33e",
+  "version": "v1.1.17",
+  "commit_count": 167,
+  "build": 167,
+  "git_commit": "e85ab42",
   "git_branch": "main",
-  "build_time": "2026-10-22T07:48:44.394Z"
+  "build_time": "2026-10-25T12:49:08.304Z"
 }
