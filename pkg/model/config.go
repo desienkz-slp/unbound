@@ -466,8 +466,8 @@ func NewDefaultDesiredState(nodeID string, cores int, ramMB int) *DesiredState {
 			QnameMinimisation:         false, // Disabled by default for ISP resolvers to avoid NXDOMAIN on non-compliant CDN GSLBs (e.g. Baishan, Shopee)
 			HideIdentity:              true,
 			HideVersion:               true,
-			LogQueries:                false, // Disabled by default for ISP performance (prevents disk bloat)
-			LogReplies:                false, // Disabled by default for ISP performance (prevents disk bloat)
+			LogQueries:                true,  // Required for Dashboard top clients/domains/blocked telemetry
+			LogReplies:                true,  // Required for per-query cache-hit/miss and latency tracking
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,

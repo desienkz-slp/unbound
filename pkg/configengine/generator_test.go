@@ -311,34 +311,34 @@ func TestGenerator_LogQueriesAndReplies(t *testing.T) {
 		t.Fatalf("failed to create generator: %v", err)
 	}
 
-	// Case 1: Default (false) -> log-queries: no, log-replies: no
+	// Case 1: Default (true) -> log-queries: yes, log-replies: yes
 	stateDefault := model.NewDefaultDesiredState("node-01", 2, 2048)
 	resDefault, err := gen.Generate(stateDefault, "/etc/unbound")
 	if err != nil {
 		t.Fatalf("failed to generate default config: %v", err)
 	}
 	mainConfDefault := string(resDefault.Files[0].Content)
-	if !strings.Contains(mainConfDefault, "log-queries: no") {
-		t.Errorf("expected log-queries: no by default")
+	if !strings.Contains(mainConfDefault, "log-queries: yes") {
+		t.Errorf("expected log-queries: yes by default")
 	}
-	if !strings.Contains(mainConfDefault, "log-replies: no") {
-		t.Errorf("expected log-replies: no by default")
+	if !strings.Contains(mainConfDefault, "log-replies: yes") {
+		t.Errorf("expected log-replies: yes by default")
 	}
 
-	// Case 2: Explicit true -> log-queries: yes, log-replies: yes
-	stateActive := model.NewDefaultDesiredState("node-02", 2, 2048)
-	stateActive.Features.LogQueries = true
-	stateActive.Features.LogReplies = true
-	resActive, err := gen.Generate(stateActive, "/etc/unbound")
+	// Case 2: Explicit false -> log-queries: no, log-replies: no
+	stateDisabled := model.NewDefaultDesiredState("node-02", 2, 2048)
+	stateDisabled.Features.LogQueries = false
+	stateDisabled.Features.LogReplies = false
+	resDisabled, err := gen.Generate(stateDisabled, "/etc/unbound")
 	if err != nil {
-		t.Fatalf("failed to generate active logging config: %v", err)
+		t.Fatalf("failed to generate disabled logging config: %v", err)
 	}
-	mainConfActive := string(resActive.Files[0].Content)
-	if !strings.Contains(mainConfActive, "log-queries: yes") {
-		t.Errorf("expected log-queries: yes when enabled")
+	mainConfDisabled := string(resDisabled.Files[0].Content)
+	if !strings.Contains(mainConfDisabled, "log-queries: no") {
+		t.Errorf("expected log-queries: no when disabled")
 	}
-	if !strings.Contains(mainConfActive, "log-replies: yes") {
-		t.Errorf("expected log-replies: yes when enabled")
+	if !strings.Contains(mainConfDisabled, "log-replies: no") {
+		t.Errorf("expected log-replies: no when disabled")
 	}
 }
 

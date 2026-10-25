@@ -1748,7 +1748,7 @@ export const DNSConfigView: React.FC<DNSConfigViewProps> = ({
                 <div>
                   <span className="text-xs font-semibold text-white">Log DNS Queries (log-queries)</span>
                   <span className="text-[11px] text-gray-400 block">
-                    Mencatat seluruh nama domain query yang masuk ke file log. (Rekomendasi ISP: Nonaktifkan untuk mencegah disk I/O bottleneck).
+                    Mencatat seluruh nama domain query ke log. Diperlukan untuk Dashboard (Top Clients/Domains/Blocked). Matikan jika disk I/O menjadi bottleneck.
                   </span>
                 </div>
               </label>
