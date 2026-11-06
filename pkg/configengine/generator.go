@@ -187,6 +187,19 @@ var DefaultWhitelistedDomains = []string{
 	"wa.me",
 	"bankmandiri.co.id",
 	"bca.co.id",
+	"connectivitycheck.gstatic.com",
+	"connectivitycheck.android.com",
+	"clients3.google.com",
+	"play.googleapis.com",
+	"captive.apple.com",
+	"appleiphonecell.com",
+	"airport.us",
+	"msftconnecttest.com",
+	"msftncsi.com",
+	"ipv6.msftconnecttest.com",
+	"connect.rom.miui.com",
+	"connectivitycheck.platform.hicloud.com",
+	"connectivity-check.ubuntu.com",
 }
 
 // CleanDomain sanitizes and extracts the bare domain name from ABP, hosts, or raw formats.

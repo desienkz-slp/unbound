@@ -1,3 +1,41 @@
+# ==============================================================================
+# Netora DNS — Whitelist & Transparent Exceptions
+# Format: ABP Filter (@@||domain^) atau plain domain
+# ==============================================================================
+
+# Core Services
 @@||doubleclick.net^
 @@||googleadservices.com^
 @@||wa.me^
+@@||bankmandiri.co.id^
+@@||bca.co.id^
+
+# ==============================================================================
+# Captive Portal & Internet Connectivity Detectors
+# Mencegah status "Tersambung tanpa internet" / tanda seru Wi-Fi pada perangkat
+# ==============================================================================
+
+# Google / Android / ChromeOS
+@@||connectivitycheck.gstatic.com^
+@@||connectivitycheck.android.com^
+@@||clients3.google.com^
+@@||play.googleapis.com^
+
+# Apple (iOS, iPadOS, macOS, watchOS)
+@@||captive.apple.com^
+@@||appleiphonecell.com^
+@@||airport.us^
+
+# Microsoft Windows (NCSI)
+@@||msftconnecttest.com^
+@@||msftncsi.com^
+@@||ipv6.msftconnecttest.com^
+
+# Xiaomi (MIUI / HyperOS)
+@@||connect.rom.miui.com^
+
+# Huawei (HarmonyOS / EMUI)
+@@||connectivitycheck.platform.hicloud.com^
+
+# Linux / Ubuntu (NetworkManager)
+@@||connectivity-check.ubuntu.com^
