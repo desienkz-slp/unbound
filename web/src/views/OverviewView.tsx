@@ -169,8 +169,12 @@ export const OverviewView: React.FC<OverviewProps> = ({
 
   // Real telemetry collections directly from Unbound log tailer & dump_infra
   const topClients = statsReport?.top_clients || [];
-  const topQueriedDomains = statsReport?.top_queried_domains || [];
-  const topBlockedDomains = statsReport?.top_blocked_domains || [];
+  const topQueriedDomains = (statsReport?.top_queried_domains || []).filter(
+    (d) => d.domain && d.domain !== 'null' && d.domain !== 'undefined' && d.domain.includes('.')
+  );
+  const topBlockedDomains = (statsReport?.top_blocked_domains || []).filter(
+    (d) => d.domain && d.domain !== 'null' && d.domain !== 'undefined' && d.domain.includes('.')
+  );
   const topUpstreams = statsReport?.top_upstreams && statsReport.top_upstreams.length > 0
     ? statsReport.top_upstreams
     : (config?.upstreams || []).map((up) => ({

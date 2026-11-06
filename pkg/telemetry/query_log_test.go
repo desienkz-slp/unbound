@@ -38,6 +38,8 @@ func TestQueryLogTailerParsing(t *testing.T) {
 [1790364732] unbound[30123:1] info: 172.18.20.254 shopee.co.id. A IN NOERROR 0.028466 0 46
 [1790364732] unbound[30123:0] info: 127.0.0.1 google.com. A IN NOERROR 0.000000 1 135
 [1790364735] unbound[30123:0] info: 127.0.0.1 sbobet.com. A IN NXDOMAIN 0.000000 1 28
+[1790364735] unbound[30123:0] info: 172.18.20.100 null. A IN NXDOMAIN 0.000000 1 28
+[1790364735] unbound[30123:0] info: 172.18.20.100 undefined. A IN NXDOMAIN 0.000000 1 28
 `
 	if _, err := tmpFile.WriteString(sampleLogs); err != nil {
 		t.Fatalf("failed to write to temp file: %v", err)
@@ -55,8 +57,8 @@ func TestQueryLogTailerParsing(t *testing.T) {
 	if report.BlockedQueries < 2 {
 		t.Errorf("expected at least 2 blocked queries (rak8s.com and sbobet.com), got %d", report.BlockedQueries)
 	}
-	if report.CacheHits != 4 {
-		t.Errorf("expected 4 cache hits, got %d", report.CacheHits)
+	if report.CacheHits != 6 {
+		t.Errorf("expected 6 cache hits, got %d", report.CacheHits)
 	}
 	if report.CacheMisses != 1 {
 		t.Errorf("expected 1 cache miss, got %d", report.CacheMisses)
@@ -66,7 +68,7 @@ func TestQueryLogTailerParsing(t *testing.T) {
 		t.Errorf("expected at least 2 clients, got %d", len(report.TopClients))
 	}
 
-	// Verify categories
+// Verify categories
 	if CategorizeDomain("sbobet.com") != "Judi Online" {
 		t.Errorf("expected Judi Online for sbobet.com, got %s", CategorizeDomain("sbobet.com"))
 	}
@@ -81,5 +83,48 @@ func TestQueryLogTailerParsing(t *testing.T) {
 	}
 	if report.BlockedAds < 0 {
 		t.Errorf("expected BlockedAds >= 0, got %d", report.BlockedAds)
+	}
+
+	for _, d := range report.TopQueriedDomains {
+		if d.Domain == "null" || d.Domain == "undefined" {
+			t.Errorf("junk domain %s should have been filtered out from TopQueriedDomains", d.Domain)
+		}
+	}
+}
+
+func TestIsCleanFQDN(t *testing.T) {
+	valid := []string{
+		"google.com",
+		"shopee.co.id",
+		"thirdplat.189cube.com",
+		"googleads.g.doubleclick.net",
+		"rphang.ac",
+		"xn--fiqs8s.cn",
+	}
+	invalid := []string{
+		"null",
+		"undefined",
+		"localhost",
+		"wpad",
+		"192.168.1.1",
+		"10.0.0.1.in-addr.arpa",
+		"local",
+		"none",
+		".com",
+		"google..com",
+		"domain.123",
+		"",
+	}
+
+	for _, d := range valid {
+		if !IsCleanFQDN(d) {
+			t.Errorf("expected %q to be a valid FQDN", d)
+		}
+	}
+
+	for _, d := range invalid {
+		if IsCleanFQDN(d) {
+			t.Errorf("expected %q to be rejected as invalid FQDN", d)
+		}
 	}
 }

@@ -335,6 +335,58 @@ func (t *QueryLogTailer) readNewLines() {
 	}
 }
 
+// IsCleanFQDN validates whether a domain string is a genuine, valid Internet FQDN
+// suitable for Top Queried Domains and Top Blocked Domains telemetry.
+// It filters out single-label junk (e.g. "null", "undefined", "localhost", "wpad"),
+// IP addresses, reverse DNS (.arpa), and invalid hostnames.
+func IsCleanFQDN(d string) bool {
+	if len(d) < 3 || len(d) > 253 {
+		return false
+	}
+	// Must contain at least one dot separating labels
+	lastDot := strings.LastIndex(d, ".")
+	if lastDot <= 0 || lastDot >= len(d)-1 {
+		return false
+	}
+	// Reverse DNS lookups (.arpa) are infrastructure queries, not user browsing domains
+	if strings.HasSuffix(d, ".arpa") {
+		return false
+	}
+	// Ignore if it's an IP address queried as a hostname
+	if net.ParseIP(d) != nil {
+		return false
+	}
+	// Filter out common junk and single-label pseudo-names
+	switch d {
+	case "null", "undefined", "none", "localhost", "broadcasthost", "local", "invalid":
+		return false
+	}
+	// Validate TLD: must be at least 2 chars and only alphabetic (or IDN punycode xn--)
+	tld := d[lastDot+1:]
+	if len(tld) < 2 {
+		return false
+	}
+	if !strings.HasPrefix(tld, "xn--") {
+		for i := 0; i < len(tld); i++ {
+			if tld[i] < 'a' || tld[i] > 'z' {
+				return false
+			}
+		}
+	}
+	// Validate full domain character set (RFC 1035: letters, digits, hyphen, dot, underscore)
+	if strings.HasPrefix(d, ".") || strings.HasPrefix(d, "-") || strings.Contains(d, "..") {
+		return false
+	}
+	for i := 0; i < len(d); i++ {
+		c := d[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // parseLine parses a single Unbound log line and updates aggregate stats.
 // Format: [<epoch>] unbound[<pid>:<tid>] info: <client_ip> <domain>. <qtype> <qclass> [<rcode> <elapsed> <cached> <bytes>]
 func (t *QueryLogTailer) parseLine(raw string) {
@@ -386,29 +438,36 @@ func (t *QueryLogTailer) parseLine(raw string) {
 	}
 	hourBucket := queryTime.Unix() / 3600
 
+	validFQDN := IsCleanFQDN(domain)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	// If it's a reply line, record it
 	if isReply {
 		t.clientCounts[clientIP]++
-		t.domainCounts[domain]++
+		if validFQDN {
+			t.domainCounts[domain]++
+		}
 		t.totalLogQueries++
 		t.hourlyQueries[hourBucket]++
 
 		if isBlocked {
-			t.domainBlocked[domain] = true
-			t.blockedCounts[domain]++
 			t.totalLogBlocked++
 			t.hourlyBlocked[hourBucket]++
 
-			cat := CategorizeDomain(domain)
-			if cat == "Malware Shield" {
-				t.hourlyMalware[hourBucket]++
-			} else if cat == "18+ Adult" {
-				t.hourlyAdult[hourBucket]++
-			} else if cat == "Judi Online" {
-				t.hourlyGambling[hourBucket]++
+			if validFQDN {
+				t.domainBlocked[domain] = true
+				t.blockedCounts[domain]++
+
+				cat := CategorizeDomain(domain)
+				if cat == "Malware Shield" {
+					t.hourlyMalware[hourBucket]++
+				} else if cat == "18+ Adult" {
+					t.hourlyAdult[hourBucket]++
+				} else if cat == "Judi Online" {
+					t.hourlyGambling[hourBucket]++
+				}
 			}
 		}
 
@@ -433,7 +492,9 @@ func (t *QueryLogTailer) parseLine(raw string) {
 		// Only increment if we don't have reply lines
 		if t.totalLogQueries == 0 {
 			t.clientCounts[clientIP]++
-			t.domainCounts[domain]++
+			if validFQDN {
+				t.domainCounts[domain]++
+			}
 		}
 	}
 }
